@@ -1,0 +1,120 @@
+# =============================================================================
+# Cube Core 生产部署
+# =============================================================================
+# 镜像说明:
+#   cubejs/cube:local               ← 本地构建（前后端 + Rust 编译）
+#   cubejs/cubestore:arm64v8        ← Docker Hub（预聚合存储）
+#   postgres:16                     ← Docker Hub（测试数据源）
+#
+# 注意: Cube Core（开源版）不支持 Redis 做 cache/queue，
+#       由 CubeStore 集群统一承担缓存 + 队列 + 预聚合存储。
+#
+# 扩缩容:
+#   docker compose up -d --scale cube_api=3
+#   docker compose up -d --scale cubestore_worker=4
+# =============================================================================
+
+services:
+
+  # ─── PostgreSQL 测试数据源 ──────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: cube_test
+      POSTGRES_USER: cube
+      POSTGRES_PASSWORD: cube_pass
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cube -d cube_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Cube API Server ────────────────────────────────────────────────
+  cube_api:
+    image: cubejs/cube:local
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+      - "15432:15432"
+    env_file:
+      - .env
+    environment:
+      - CUBEJS_CUBESTORE_HOST=cubestore_router
+      - CUBEJS_DEV_MODE=true
+    volumes:
+      - ./model:/cube/conf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cubestore_router:
+        condition: service_started
+
+  # ─── Cube 刷新 Worker ──────────────────────────────────────────────
+  cube_refresh_worker:
+    image: cubejs/cube:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - CUBEJS_CUBESTORE_HOST=cubestore_router
+      - CUBEJS_REFRESH_WORKER=true
+      - CUBEJS_DEV_MODE=false
+    volumes:
+      - ./model:/cube/conf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cubestore_router:
+        condition: service_started
+
+  # ─── CubeStore Router ──────────────────────────────────────────────
+  cubestore_router:
+    image: cubejs/cubestore:local
+    restart: unless-stopped
+    environment:
+      - CUBESTORE_SERVER_NAME=cubestore_router:9999
+      - CUBESTORE_META_PORT=9999
+      - CUBESTORE_WORKERS=cubestore_worker_1:10001,cubestore_worker_2:10002
+      - CUBESTORE_REMOTE_DIR=/cube/data
+    volumes:
+      - cubestore_data:/cube/data
+
+  # ─── CubeStore Worker 1 ────────────────────────────────────────────
+  cubestore_worker_1:
+    image: cubejs/cubestore:local
+    restart: unless-stopped
+    environment:
+      - CUBESTORE_SERVER_NAME=cubestore_worker_1:10001
+      - CUBESTORE_WORKER_PORT=10001
+      - CUBESTORE_META_ADDR=cubestore_router:9999
+      - CUBESTORE_WORKERS=cubestore_worker_1:10001,cubestore_worker_2:10002
+      - CUBESTORE_REMOTE_DIR=/cube/data
+    volumes:
+      - cubestore_data:/cube/data
+    depends_on:
+      - cubestore_router
+
+  # ─── CubeStore Worker 2 ────────────────────────────────────────────
+  cubestore_worker_2:
+    image: cubejs/cubestore:local
+    restart: unless-stopped
+    environment:
+      - CUBESTORE_SERVER_NAME=cubestore_worker_2:10002
+      - CUBESTORE_WORKER_PORT=10002
+      - CUBESTORE_META_ADDR=cubestore_router:9999
+      - CUBESTORE_WORKERS=cubestore_worker_1:10001,cubestore_worker_2:10002
+      - CUBESTORE_REMOTE_DIR=/cube/data
+    volumes:
+      - cubestore_data:/cube/data
+    depends_on:
+      - cubestore_router
+
+volumes:
+  pg_data:
+  cubestore_data:

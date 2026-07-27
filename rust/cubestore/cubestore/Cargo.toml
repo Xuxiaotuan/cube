@@ -141,3 +141,6 @@ harness = false
 # When enabled, child processes will die whenever parent process exits.
 # Highly recomended for production, available only on Linux with prctl system call.
 process-cleanup = ["libc"]
+
+[patch.crates-io]
+cloud-storage = { path = "../../../patches/cloud-storage" }
