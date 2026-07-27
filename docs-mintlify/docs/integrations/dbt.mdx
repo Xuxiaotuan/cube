@@ -22,9 +22,10 @@ your dbt repository — so your semantic layer stays in sync with dbt as it evol
 
 <Info>
 
-The integration is one-directional: **dbt → Cube**. Cube never writes back to your
-dbt project. dbt stays the source of truth for how tables are transformed; Cube
-serves those models to BI tools, APIs, and AI agents.
+**dbt pull** runs in one direction — **dbt → Cube**. dbt stays the source of truth for how
+tables are transformed; Cube serves those models to BI tools, APIs, and AI agents. The
+reverse direction — promoting a cube back into your dbt project as a pull request — is
+available via [dbt push](#push-cubes-to-dbt), currently in preview.
 
 </Info>
 
@@ -41,10 +42,12 @@ Cube spins up a short-lived, isolated sandbox and:
 5. **Commits the generated files** to a branch for review, then tears the sandbox
    down.
 
-**No connection to your data warehouse is made during a pull.** Cube uses
+**By default, no connection to your data warehouse is made during a pull.** Cube uses
 `dbt parse`, not `dbt run` or `dbt compile`, so it reads your project's structure
 without ever querying your warehouse. dbt pull generates cube definitions; it assumes
-the underlying tables were already built by your own production `dbt run`.
+the underlying tables were already built by your own production `dbt run`. The one
+exception is [Infer column types from dbt catalog](#infer-column-types-from-dbt-catalog),
+an opt-in option that reads real column types from your warehouse.
 
 ## Prerequisites
 
@@ -145,6 +148,33 @@ automated — uses the same configuration:
 | **Add default measures** | On | Adds a `count` measure to every cube, and `sum` measures for additive numeric columns. |
 | **Include descriptions** | On | Carries dbt model and column descriptions into cubes and dimensions. |
 | **Generate joins** | On | Infers joins between cubes from dbt `relationships` tests and foreign-key constraints. |
+| **Infer column types from dbt catalog** | Off | Reads real warehouse column types from dbt's `catalog.json` instead of guessing from column names. See [below](#infer-column-types-from-dbt-catalog). |
+
+### Infer column types from dbt catalog
+
+<Warning>
+
+This option is currently in preview, and its behavior may still change. Reach out to the
+[Cube support team](/admin/account-billing/support) if you run into issues.
+
+</Warning>
+
+Without it, a dimension's type comes from a `data_type` declared in your dbt YAML, and —
+when none is declared — from a column-name heuristic (`*_id` → `number`, `created_at` →
+`time`, …). Enable this option and the pull additionally runs `dbt docs generate` to
+produce dbt's `catalog.json`, which carries the **actual warehouse column types**.
+
+Type precedence becomes: **declared `data_type` → catalog type → column-name heuristic**.
+An explicit `data_type` in your dbt YAML still wins; the catalog only fills the gaps.
+
+- **This step connects to your warehouse** (`dbt docs generate` queries the warehouse
+  metadata), unlike the rest of the pull. The models must already be built.
+- **Supported on Snowflake, Amazon Redshift, and PostgreSQL.** It's skipped on Google
+  BigQuery, Databricks, and Amazon Athena, whose sandbox profiles can't open a
+  connection.
+- **Best-effort.** If catalog generation or the catalog read fails — no connectivity,
+  unbuilt models, unreadable file — it's logged and skipped, and the pull completes on
+  declared and name-based types exactly as it would with the option off.
 
 ## Pass environment variables to dbt
 
@@ -301,14 +331,21 @@ For each dbt model in your project:
   value of the deployment's `CUBEJS_DB_DATABRICKS_CATALOG` environment variable,
   or `hive_metastore` if it isn't set.
 - **Each column becomes a dimension.** The dimension type is inferred from the
-  column's `data_type` where available, otherwise from the column name:
+  column's `data_type` where available, then — if
+  [Infer column types from dbt catalog](#infer-column-types-from-dbt-catalog) is
+  enabled — from the warehouse type in `catalog.json`, and otherwise from the column
+  name:
 
-  | dbt `data_type` | Cube dimension type |
+  | Column type | Cube dimension type |
   | --- | --- |
-  | `varchar`, `text`, `string`, `char` | `string` |
-  | `integer`, `int`, `bigint`, `smallint`, `decimal`, `numeric`, `float`, `double`, `real` | `number` |
+  | `varchar`, `text`, `string`, `char`, and non-scalar types (`json`, `variant`, `array`, …) | `string` |
+  | `integer`, `int`, `bigint`, `smallint`, `decimal`, `numeric`, `number`, `float`, `double`, `real` | `number` |
   | `date`, `datetime`, `timestamp`, `timestamptz`, `time` | `time` |
   | `boolean`, `bool` | `boolean` |
+
+  Vendor spellings and parameters are normalized, so `NUMBER(38,0)`,
+  `character varying(256)`, `TIMESTAMP_NTZ(9)`, `INT64`, and `double precision` all map
+  as expected.
 
 - **Model and column descriptions** from your dbt project are carried over to the
   cubes and dimensions.
@@ -383,15 +420,129 @@ pull. Keep customizations in a separate cube that `extends` the generated one �
 
 </Warning>
 
+## Push cubes to dbt
+
+<Warning>
+
+dbt push is currently in preview, and its behavior may still change. If you run into
+issues, reach out to the [Cube support team](/admin/account-billing/support).
+
+</Warning>
+
+**dbt push** is the reverse direction: it promotes a cube back into your dbt project as a
+reviewed pull request. A cube you built in Cube on an inline `sql:` becomes a dbt model —
+a `<model>.sql` plus a per-model `<model>.yml` properties file — validated by a real
+`dbt parse` in Cube's sandbox **before** the PR is opened, so the change arrives green.
+
+This closes the modeling loop: prototype fast in Cube, then harden the logic in dbt where
+it's materialized, tested, and owned by analytics engineering. Once the pull request
+merges, your existing [pull](#keep-cube-in-sync-automatically) picks the new model back up.
+
+### Before you push
+
+- **Write access to the dbt repository.** Pull only needs read access; push needs a PAT
+  with write scope, or an SSH deploy key registered with write access. Cube verifies this
+  without pushing anything (see below).
+- Push is **off by default** and enabled per deployment.
+
+### Enable push
+
+<Steps>
+
+<Step title="Open the dbt settings">
+
+Edit the **default data source** under **Settings → Data Sources**, expand the
+**dbt project** section, and find **Push to dbt**.
+
+</Step>
+
+<Step title="Turn push on and verify write access">
+
+Enable **push**, then click **Verify write access**. Cube checks that the stored
+credential can write to the repository — a `git-receive-pack` probe for a PAT, a
+`push --dry-run` for SSH — without creating any branch or commit.
+
+</Step>
+
+<Step title="Choose where models land and how they're delivered">
+
+| Setting | Description |
+| --- | --- |
+| **Models path** | Directory in the dbt project where generated model files are written. Defaults to `models/marts/cube/`. |
+| **Delivery mode** | **Open a pull request** (default) pushes to a `cube/dbt-push/*` branch and opens a PR/MR. **Commit directly to a branch** commits straight to a branch you name — validation still runs. |
+
+Then **Save dbt settings**.
+
+</Step>
+
+</Steps>
+
+### Push a cube
+
+<Steps>
+
+<Step title="Enter development mode">
+
+Open the deployment's **data model** page and enter **development mode** — push runs from a
+dev branch, like a manual pull.
+
+</Step>
+
+<Step title="Open the push dialog">
+
+Open the **Integrations** menu → **dbt** → **Push**, pick the cube to promote, and give the
+dbt model a name. Only cubes defined in YAML with an inline `sql:` are eligible; a cube
+backed only by `sql_table` (nothing to materialize) or defined in JavaScript/Python is
+reported as ineligible.
+
+</Step>
+
+<Step title="Review the preview">
+
+Cube shows the generated `<model>.sql` and `<model>.yml` in an editable preview, along with
+any conversion warnings. **What you see is what ships** — edit either file here if you need
+to.
+
+</Step>
+
+<Step title="Push">
+
+Confirm. Cube clones the repo, writes the files (**create-only** — it never overwrites an
+existing model and never force-pushes), and runs `dbt deps` + `dbt parse`. If parse fails,
+the push stops with dbt's own output and **no pull request is opened**. On success, a
+progress toast ends with a link to the pull request — or, for SSH or non-GitHub/GitLab
+hosts, a prefilled compare link to open it yourself.
+
+</Step>
+
+</Steps>
+
+### What gets pushed
+
+Each push creates exactly two new files:
+
+- **`<model>.sql`** — the cube's `sql:` wrapped in a CTE that projects one column per
+  dimension, so every column the properties file documents exists by construction. Table
+  references that match a [pulled](#what-gets-generated) dbt model are rewritten to
+  `{{ ref('<model>') }}`, making the generated model a first-class node in your dbt DAG.
+- **`<model>.yml`** — a per-model properties file: model and column descriptions,
+  `unique` + `not_null` tests on primary-key dimensions, `relationships` tests synthesized
+  from the cube's joins (only to targets that originated in dbt), and the cube's measures
+  preserved under `meta.cube.measures` for context.
+
 ## Limitations
 
 - **Supported warehouses:** Snowflake, Amazon Redshift, PostgreSQL, Google
   BigQuery, Databricks, and Amazon Athena.
 - **Imports models, columns, and relationships only** — not dbt metrics, semantic
   models, tests, or exposures.
-- **One-directional** — Cube never pushes anything back to your dbt repository.
+- **Pull is one-directional** — dbt pull never writes back to your dbt repository.
+  Promoting cubes into dbt is the [dbt push](#push-cubes-to-dbt) direction (in preview).
 - **No warehouse connection** — a pull doesn't trigger a `dbt run`; it assumes your
-  tables are already built.
+  tables are already built. The only exception is the opt-in
+  [Infer column types from dbt catalog](#infer-column-types-from-dbt-catalog) option
+  (in preview), which runs `dbt docs generate` on Snowflake, Amazon Redshift, and
+  PostgreSQL.
 - **One dbt project per deployment.**
 
 ## Troubleshooting
