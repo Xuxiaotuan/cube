@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cubestore-router-operator
+  namespace: default
+rules:
+  - apiGroups: ["" ]
+    resources: ["pods", "pods/status", "events", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["cubestore.io"]
+    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]

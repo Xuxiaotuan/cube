@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cube-operator
+  namespace: cube-operator-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cube-operator
+      component: operator
+  template:
+    metadata:
+      labels:
+        app: cube-operator
+        component: operator
+    spec:
+      serviceAccountName: cube-operator
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: manager
+          image: cube-operator:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--leader-elect=true"
+          env:
+            - name: WATCH_NAMESPACE
+              value: cube-operator-demo
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

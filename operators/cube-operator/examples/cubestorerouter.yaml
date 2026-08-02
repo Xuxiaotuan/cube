@@ -1,0 +1,16 @@
+apiVersion: cubestore.io/v1alpha1
+kind: CubestoreRouter
+metadata:
+  name: demo
+  namespace: default
+spec:
+  namespace: default
+  selector:
+    app: cube-routers
+  routerPort: 3030
+  healthPath: /router/status
+  electionStrategy: strict
+  # leaderStateStore:
+  #   type: postgres
+  #   dsn: "postgres://user:password@postgres.default.svc:5432/cubeha?sslmode=disable"
+  #   pgTable: "cubestore_router_leader_state"

@@ -26,6 +26,7 @@ interface SentMessage {
   resolve: (value: any) => void;
   reject: (reason?: any) => void;
   buffer: Uint8Array;
+  replaySafe: boolean;
 }
 
 export type QueryParameter = null | boolean | number | string | Buffer;
@@ -34,6 +35,7 @@ export type WebSocketQueryOptions = {
   inlineTables?: InlineTable[];
   queryTracingObj?: any;
   responseFormat: QueryResultFormat;
+  replaySafe?: boolean;
 };
 
 interface CubeStoreWebSocket extends WebSocket {
@@ -134,18 +136,38 @@ export class WebSocketConnection {
         webSocket.on('close', () => {
           clearInterval(pingInterval);
 
-          if (Object.keys(webSocket.sentMessages).length) {
+          const pendingMessageKeys = Object.keys(webSocket.sentMessages);
+          if (pendingMessageKeys.length) {
             setTimeout(async () => {
               try {
                 const nextWebSocket = await this.initWebSocket();
+                const replaySafeEntries: [string, SentMessage][] = [];
                 // eslint-disable-next-line no-restricted-syntax
-                for (const key of Object.keys(webSocket.sentMessages)) {
-                  nextWebSocket.sentMessages[key] = webSocket.sentMessages[key];
-                  await nextWebSocket.sendAsync(webSocket.sentMessages[key].buffer);
+                for (const key of pendingMessageKeys) {
+                  const pending = webSocket.sentMessages[key];
+                  if (pending?.replaySafe) {
+                    replaySafeEntries.push([key, pending]);
+                  }
+                }
+
+                // eslint-disable-next-line no-restricted-syntax
+                for (const [key, pending] of replaySafeEntries) {
+                  nextWebSocket.sentMessages[key] = pending;
+                  await nextWebSocket.sendAsync(pending.buffer);
+                }
+
+                // eslint-disable-next-line no-restricted-syntax
+                for (const key of pendingMessageKeys) {
+                  const pending = webSocket.sentMessages[key];
+                  if (pending && !pending.replaySafe) {
+                    pending.reject(new ConnectionError(
+                      'CubeStore connection closed during non-idempotent request',
+                    ));
+                  }
                 }
               } catch (e) {
                 // eslint-disable-next-line no-restricted-syntax
-                for (const key of Object.keys(webSocket.sentMessages)) {
+                for (const key of pendingMessageKeys) {
                   webSocket.sentMessages[key].reject(e);
                 }
               }
@@ -168,7 +190,13 @@ export class WebSocketConnection {
           delete webSocket.sentMessages[httpMessage.messageId()];
 
           if (httpMessage.commandType() === HttpCommand.HttpError) {
-            resolver.reject(new QueryError(`${httpMessage.command(new HttpError())?.error()}`));
+            const message = `${httpMessage.command(new HttpError())?.error()}`;
+            const normalizedMessage = message.toLowerCase();
+            if (normalizedMessage.includes('wrongconnection') || normalizedMessage.includes('wrong connection')) {
+              resolver.reject(new ConnectionError(`CubeStore connection error: ${message}`));
+            } else {
+              resolver.reject(new QueryError(message));
+            }
             return;
           }
 
@@ -192,7 +220,47 @@ export class WebSocketConnection {
     return 1000 * (this.currentConnectionTry + 1);
   }
 
-  private async sendMessage(messageId: number, buffer: Uint8Array): Promise<any> {
+  protected isReplaySafeQuery(query: string): boolean {
+    let normalized = `${query}`.replace(/^\uFEFF/, '').trimStart();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const blockMatch = normalized.match(/^\/\*[\s\S]*?\*\//);
+      const lineMatch = normalized.match(/^--.*?(?:\r\n|\r|\n|$)/);
+      const shellMatch = normalized.match(/^#.*?(?:\r\n|\r|\n|$)/);
+
+      if (blockMatch) {
+        normalized = normalized.slice(blockMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (lineMatch) {
+        normalized = normalized.slice(lineMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (shellMatch) {
+        normalized = normalized.slice(shellMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      break;
+    }
+
+    const normalizedUpper = normalized.toUpperCase();
+    if (!normalized) {
+      return false;
+    }
+
+    const head = normalizedUpper.split(/\s+/)[0];
+    const replaySafeHeads = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'PRAGMA'];
+    return replaySafeHeads.includes(head);
+  }
+
+  private async sendMessage(messageId: number, buffer: Uint8Array, replaySafe = false): Promise<any> {
     const socket = await this.initWebSocket();
     return new Promise((resolve, reject) => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -210,7 +278,8 @@ export class WebSocketConnection {
       socket.sentMessages[messageId] = {
         resolve,
         reject,
-        buffer
+        buffer,
+        replaySafe,
       };
     });
   }
@@ -293,6 +362,7 @@ export class WebSocketConnection {
 
   public async query(query: string, parameters: QueryParameter[], options: WebSocketQueryOptions): Promise<any[]> {
     const { inlineTables, queryTracingObj, responseFormat } = options;
+    const replaySafe = options.replaySafe ?? this.isReplaySafeQuery(query);
 
     const builder = new flatbuffers.Builder(1024);
     const queryOffset = builder.createString(query);
@@ -367,7 +437,11 @@ export class WebSocketConnection {
     const connectionIdOffset = builder.createString(this.connectionId);
     const message = HttpMessage.createHttpMessage(builder, messageId, HttpCommand.HttpQuery, httpQueryOffset, connectionIdOffset);
     builder.finish(message);
-    return this.sendMessage(messageId, builder.asUint8Array());
+    return this.sendMessage(
+      messageId,
+      builder.asUint8Array(),
+      replaySafe,
+    );
   }
 
   public async getCubeStoreVersion(): Promise<string> {
@@ -379,8 +453,10 @@ export class WebSocketConnection {
   }
 
   public close() {
-    if (this.webSocket) {
-      this.webSocket.close();
+    const webSocket = this.webSocket;
+    this.webSocket = null;
+    if (webSocket) {
+      webSocket.close();
     }
   }
 }

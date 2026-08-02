@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cube-operator
+  namespace: cube-operator-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cube-operator
+  namespace: cube-operator-demo
+rules:
+  - apiGroups: ["" ]
+    resources: ["pods", "pods/status", "events", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cubestore.io"]
+    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cube-operator
+  namespace: cube-operator-demo
+subjects:
+  - kind: ServiceAccount
+    name: cube-operator
+    namespace: cube-operator-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cube-operator

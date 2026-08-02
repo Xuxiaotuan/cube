@@ -1,0 +1,18 @@
+apiVersion: cubestore.io/v1alpha1
+kind: CubestoreRouter
+metadata:
+  name: demo
+  namespace: cube-operator-demo
+spec:
+  namespace: cube-operator-demo
+  selector:
+    app: cube-router
+  routerPort: 3030
+  healthPath: /router/status
+  electionStrategy: strict
+  roleConfigMapName: cube-router-demo-router-role-state
+  # 可选：使用外部持久化状态（pg/redis）替代仅 ConfigMap
+  # leaderStateStore:
+  #   type: redis
+  #   dsn: "redis://redis.default.svc:6379/0"
+  #   redisKey: "cube-router/leader-state"

@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cube-router-demo
+  namespace: cube-operator-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cube-router
+      app.kubernetes.io/name: cube-router-demo
+  template:
+    metadata:
+      labels:
+        app: cube-router
+        app.kubernetes.io/name: cube-router-demo
+    spec:
+      containers:
+        - name: cube-studio-router
+          image: ${ROUTER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CUBESTORE_SERVER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CUBESTORE_ROUTER_ROLE_STRICT
+              value: "true"
+            - name: CUBESTORE_ROUTER_ROLE_FILE
+              value: /etc/cubestore/router-role/route-role.json
+            - name: CUBESTORE_HTTP_PORT
+              value: "3030"
+            - name: CUBESTORE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          readinessProbe:
+            httpGet:
+              path: /router/status
+              port: 3030
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            timeoutSeconds: 1
+          livenessProbe:
+            httpGet:
+              path: /router/status
+              port: 3030
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            timeoutSeconds: 1
+          ports:
+            - containerPort: 3030
+            - containerPort: 3306
+          volumeMounts:
+            - name: router-role-state
+              mountPath: /etc/cubestore/router-role
+              readOnly: true
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: router-role-state
+          configMap:
+            name: cube-router-demo-router-role-state
+            optional: true
+            items:
+              - key: route-role.json
+                path: route-role.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cube-router
+  namespace: cube-operator-demo
+  labels:
+    app: cube-router
+spec:
+  selector:
+    app: cube-router
+  ports:
+    - name: http
+      port: 3030
+      targetPort: 3030
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cube-router-demo-router-role-state
+  namespace: cube-operator-demo
+data:
+  route-role.json: |
+    {}

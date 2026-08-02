@@ -31,10 +31,13 @@ use log::error;
 use log::info;
 use log::trace;
 use serde::Deserialize;
+use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::convert::TryFrom;
 use std::net::SocketAddr;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 use tokio::io::BufReader;
 use tokio::sync::mpsc::Sender;
@@ -64,6 +67,7 @@ crate::di_service!(HttpServer, []);
 pub enum CubeRejection {
     NotAuthorized,
     Internal(String),
+    NotLeader,
 }
 
 impl From<CubeError> for warp::reject::Rejection {
@@ -257,6 +261,35 @@ impl HttpServer {
                     body,
                 )
             });
+
+        let router_status_route = warp::path!("router" / "status").map(|| {
+            let is_leader = Self::is_router_leader();
+            let role = if is_leader { "leader" } else { "follower" };
+            let mode = if is_leader { "primary" } else { "follower" };
+            let node_name = env::var("CUBESTORE_NODE_NAME")
+                .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
+                .or_else(|_| env::var("HOSTNAME"))
+                .unwrap_or_else(|_| "unknown".to_string());
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let role_state = Self::router_role_state_payload();
+            let active_leader = role_state.get("activeLeader").and_then(Value::as_str);
+            let leader_epoch = role_state.get("leaderEpoch").cloned().unwrap_or(Value::Null);
+
+            warp::reply::json(&json!({
+                "node_name": node_name,
+                "is_leader": is_leader,
+                "role": role,
+                "mode": mode,
+                "leaderStateSource": Self::router_role_source(),
+                "activeLeader": active_leader,
+                "leaderEpoch": leader_epoch,
+                "timestamp_unix_secs": timestamp,
+                "leaderState": role_state,
+            }))
+        });
 
         let sql_service = self.sql_service.clone();
 
@@ -523,7 +556,7 @@ impl HttpServer {
             },
         );
         let cancel_token = self.cancel_token.clone();
-        let (_, server_future) = warp::serve(query_route.or(upload_route).recover(
+        let (_, server_future) = warp::serve(query_route.or(upload_route).or(router_status_route).recover(
             |err: Rejection| async move {
                 let mut obj = HashMap::new();
                 if let Some(ws_error) = err.find::<CubeRejection>() {
@@ -533,6 +566,13 @@ impl HttpServer {
                             Ok(warp::reply::with_status(
                                 warp::reply::json(&obj),
                                 StatusCode::FORBIDDEN,
+                            ))
+                        }
+                        CubeRejection::NotLeader => {
+                            obj.insert("error".to_string(), "Router not leader".to_string());
+                            Ok(warp::reply::with_status(
+                                warp::reply::json(&obj),
+                                StatusCode::SERVICE_UNAVAILABLE,
                             ))
                         }
                         CubeRejection::Internal(e) => {
@@ -560,6 +600,10 @@ impl HttpServer {
         upload_query: UploadQuery,
         mut body: impl Stream<Item = Result<impl warp::Buf, warp::Error>> + Unpin,
     ) -> Result<impl Reply, Rejection> {
+        if !Self::is_router_leader() {
+            return Err(warp::reject::custom(CubeRejection::NotLeader));
+        }
+
         let temp_file = NamedTempFile::new_in(
             sql_service
                 .temp_uploads_dir(sql_query_context.clone())
@@ -598,6 +642,12 @@ impl HttpServer {
         sql_query_context: SqlQueryContext,
         command: HttpCommand,
     ) -> Result<HttpCommand, CubeError> {
+        if !Self::is_router_leader() {
+            return Err(CubeError::wrong_connection(
+                "This router instance is not active leader".to_string(),
+            ));
+        }
+
         match command {
             HttpCommand::Query {
                 query,
@@ -639,6 +689,96 @@ impl HttpServer {
             }
             x => Err(CubeError::user(format!("Unexpected command: {:?}", x))),
         }
+    }
+
+    fn is_router_leader() -> bool {
+        let strict_mode = env::var("CUBESTORE_ROUTER_ROLE_STRICT")
+            .ok()
+            .map(|v| {
+                v.eq_ignore_ascii_case("1") || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(false);
+
+        match Self::parse_router_role_from_file().or_else(|| Self::parse_router_role(env::var("CUBESTORE_ROUTER_ROLE").ok())) {
+            Some(is_leader) => is_leader,
+            None => !strict_mode,
+        }
+    }
+
+    fn router_role_source() -> &'static str {
+        if Self::parse_router_role_from_file().is_some() {
+            "file"
+        } else {
+            "env"
+        }
+    }
+
+    fn parse_router_role_from_file() -> Option<bool> {
+        let state = Self::read_router_role_state()?;
+        let active_leader = state.get("activeLeader").and_then(Value::as_str);
+
+        if active_leader.is_none() && state.as_str().is_none() {
+            return None;
+        }
+        if let Some(active_leader) = active_leader {
+            let active_leader = active_leader.trim();
+            if !active_leader.is_empty() {
+                let current_node = env::var("CUBESTORE_NODE_NAME")
+                    .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
+                    .or_else(|_| env::var("HOSTNAME"))
+                    .ok()?;
+
+                return Some(current_node == active_leader);
+            }
+        }
+        if let Some(role) = state.get("role").and_then(Value::as_str) {
+            return Self::parse_router_role(Some(role.to_string()));
+        }
+        if let Some(role) = state.as_str() {
+            return Self::parse_router_role(Some(role.to_string()));
+        }
+        None
+    }
+
+    fn parse_router_role(raw_role: Option<String>) -> Option<bool> {
+        let role = raw_role?.trim().to_ascii_lowercase();
+        if role.is_empty() {
+            return None;
+        }
+
+        match role.as_str() {
+            "leader" | "primary" => Some(true),
+            "follower" | "secondary" => Some(false),
+            _ => None,
+        }
+    }
+
+    fn router_role_state_payload() -> Value {
+        if let Some(state) = Self::read_router_role_state() {
+            if let Some(active_leader) = state.get("activeLeader").and_then(Value::as_str) {
+                return json!({
+                    "activeLeader": active_leader,
+                    "updatedAt": state.get("updatedAt").cloned().unwrap_or(Value::Null),
+                    "leaderEpoch": state.get("leaderEpoch").cloned().unwrap_or(Value::Null),
+                });
+            }
+
+            return state;
+        }
+
+        Value::Null
+    }
+
+    fn read_router_role_state() -> Option<Value> {
+        let role_file_path = env::var("CUBESTORE_ROUTER_ROLE_FILE").ok()?;
+        let raw_role = fs::read_to_string(role_file_path).ok()?;
+        let trimmed = raw_role.trim();
+
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        serde_json::from_str::<Value>(trimmed).ok()
     }
 
     pub async fn authorize(

@@ -1,9 +1,11 @@
+import { createHash } from 'crypto';
 import { pipeline, Writable } from 'stream';
 import { createGzip } from 'zlib';
 import { createReadStream, createWriteStream } from 'fs';
 import { unlink } from 'fs-extra';
 import tempy from 'tempy';
 import csvWriter from 'csv-write-stream';
+import { createClient } from 'redis';
 import {
   BaseDriver,
   CreateTableIndex,
@@ -24,6 +26,7 @@ import { escape, format as formatSql } from 'sqlstring';
 import fetch from 'node-fetch';
 
 import { ConnectionConfig } from './types';
+import { ConnectionError } from './errors';
 import { WebSocketConnection } from './WebSocketConnection';
 import { QueryResultFormat } from '../codegen';
 
@@ -69,14 +72,274 @@ type CreateTableOptions = {
 type CubeStoreQueryOptions = QueryOptions & {
   sendParameters?: boolean,
   responseFormat?: QueryResultFormat,
+  retryable?: boolean,
+  mutationId?: string,
+};
+
+type IdempotencyRecordStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
+
+type IdempotencyErrorRecord = {
+  name: string;
+  message: string;
+  code?: string;
+  stack?: string;
+};
+
+type IdempotencyRecord = {
+  status: IdempotencyRecordStatus;
+  fingerprint: string;
+  startedAt?: number;
+  finishedAt?: number;
+  result?: any[];
+  error?: IdempotencyErrorRecord;
+  node?: string;
+};
+
+type RouterStatusPayload = {
+  is_leader?: unknown;
+  timestamp_unix_secs?: unknown;
+  node_name?: unknown;
+  activeLeader?: unknown;
+  leaderState?: unknown;
+  leaderEpoch?: unknown;
+};
+
+type RouterRoleStatePayload = {
+  activeLeader?: unknown;
+  leaderEpoch?: unknown;
 };
 
 export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   protected readonly config: any;
 
-  protected readonly connection: WebSocketConnection;
+  protected readonly connections: WebSocketConnection[];
 
-  protected readonly baseUrl: string;
+  protected readonly routerStatusUrls: string[];
+
+  protected readonly routerBaseUrls: string[];
+
+  protected activeConnectionIndex = 0;
+
+  protected leaderProbeInProgress: Promise<number | null> | null = null;
+
+  protected leaderProbeExpiresAt = 0;
+
+  protected leaderIndexCache: number | null = null;
+
+  protected leaderEpochCache: number | null = null;
+
+  protected leaderIndexCommitted: number | null = null;
+
+  protected readonly leaderProbeUseStatus: boolean = getEnv(
+    'cubeStoreRouterLeaderProbeUseStatus',
+  ) !== 'false';
+
+  protected readonly leaderProbeStatusMaxAgeSecs: number = (() => {
+    const raw = getEnv('cubeStoreRouterLeaderStatusMaxAgeSecs');
+    if (!raw) {
+      return 90;
+    }
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 90;
+  })();
+
+  protected readonly leaderProbeTimeoutMs: number = Number(
+    getEnv('cubeStoreRouterLeaderProbeTimeoutMs') || 1500,
+  );
+
+  protected readonly leaderProbeStatusTimeoutMs: number = Number(
+    getEnv('cubeStoreRouterLeaderStatusProbeTimeoutMs') || 900,
+  );
+
+  protected readonly leaderProbeTtlMs: number = Number(
+    getEnv('cubeStoreRouterLeaderProbeTtlMs') || 2500,
+  );
+
+  protected readonly leaderEpochFence: boolean = getEnv(
+    'cubeStoreRouterLeaderEpochFence',
+  ) !== 'false';
+
+  protected readonly leaderConnectionResetOnChange: boolean = getEnv(
+    'cubeStoreRouterLeaderConnectionResetOnChange',
+  ) !== 'false';
+
+  protected readonly strictWriteRetryWithoutMutationId: boolean = getEnv(
+    'cubeStoreStrictWriteRetryWithoutMutationId',
+  ) !== 'false';
+
+  protected readonly idempotencyRedisDsn?: string;
+
+  protected readonly idempotencyRedisKeyPrefix: string;
+
+  protected readonly idempotencyCompletedTtlSeconds: number;
+
+  protected readonly idempotencyFailedTtlSeconds: number;
+
+  protected readonly idempotencyPendingTtlSeconds: number;
+
+  protected readonly idempotencyPollIntervalMs: number;
+
+  protected readonly idempotencyPollMaxAttempts: number;
+
+  protected idempotencyRedisClient: any = null;
+
+  protected idempotencyRedisConnecting: Promise<void> | null = null;
+
+  protected closeAllConnections(): void {
+    this.connections.forEach((connection) => connection.close());
+  }
+
+  protected async maybeResetOnLeaderShift(nextLeaderIndex: number | null): Promise<void> {
+    if (!this.leaderConnectionResetOnChange) {
+      this.leaderIndexCommitted = nextLeaderIndex;
+      return;
+    }
+
+    if (this.leaderIndexCommitted === nextLeaderIndex) {
+      return;
+    }
+
+    if (nextLeaderIndex === null) {
+      this.leaderIndexCommitted = null;
+      return;
+    }
+
+    this.closeAllConnections();
+    this.leaderIndexCommitted = nextLeaderIndex;
+  }
+
+  protected parseLeaderEpoch(raw: unknown): number | null {
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.trunc(raw);
+    }
+
+    if (typeof raw === 'string') {
+      const value = Number(raw.trim());
+      if (!Number.isFinite(value)) {
+        return null;
+      }
+      return Math.trunc(value);
+    }
+
+    return null;
+  }
+
+  protected parseEnvInt(raw: string | undefined, fallback: number, minValue = 0): number {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    const rounded = Math.trunc(value);
+    if (rounded < minValue) {
+      return fallback;
+    }
+    return rounded;
+  }
+
+  protected async getIdempotencyRedisClient(): Promise<any | null> {
+    if (!this.idempotencyRedisDsn) {
+      return null;
+    }
+
+    if (this.idempotencyRedisClient?.isOpen) {
+      return this.idempotencyRedisClient;
+    }
+
+    if (!this.idempotencyRedisConnecting) {
+      const connectingPromise = (async () => {
+        const client = createClient({ url: this.idempotencyRedisDsn });
+        this.idempotencyRedisClient = client;
+        await client.connect();
+      })();
+      this.idempotencyRedisConnecting = connectingPromise;
+    }
+
+    try {
+      await this.idempotencyRedisConnecting;
+      return this.idempotencyRedisClient;
+    } catch {
+      await this.idempotencyRedisClient?.quit();
+      this.idempotencyRedisClient = null;
+      return null;
+    } finally {
+      this.idempotencyRedisConnecting = null;
+    }
+  }
+
+  protected getIdempotencyKey(mutationId: string): string {
+    return `${this.idempotencyRedisKeyPrefix}:${mutationId}`;
+  }
+
+  protected parseIdempotencyRecord(raw: string): IdempotencyRecord | null {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && (parsed.status === 'PENDING' || parsed.status === 'COMPLETED' || parsed.status === 'FAILED')) {
+        return parsed as IdempotencyRecord;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  protected serializeError(error: any): IdempotencyErrorRecord {
+    if (error instanceof Error) {
+      return {
+        name: error.name || 'Error',
+        message: error.message || String(error),
+        code: (error as any).code ? `${(error as any).code}` : undefined,
+        stack: error.stack,
+      };
+    }
+
+    return {
+      name: 'Error',
+      message: `${error}`,
+    };
+  }
+
+  protected buildIdempotencyError(record: IdempotencyErrorRecord): Error {
+    const error = new Error(record.message || 'idempotent mutation previously failed');
+    error.name = record.name || 'Error';
+    (error as any).code = record.code;
+    if (record.stack) {
+      error.stack = record.stack;
+    }
+    return error;
+  }
+
+  protected sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  protected stableStringify(value: any): string {
+    return JSON.stringify(value, (key, nestedValue) => {
+      if (key === 'mutationId' || key === 'mutation_id') {
+        return undefined;
+      }
+
+      if (nestedValue instanceof Date) {
+        return nestedValue.toISOString();
+      }
+      if (typeof nestedValue === 'bigint') {
+        return `${nestedValue.toString()}n`;
+      }
+      if (Buffer.isBuffer(nestedValue)) {
+        return `__buffer__:${nestedValue.toString('base64')}`;
+      }
+      if (nestedValue && typeof nestedValue === 'object' && !Array.isArray(nestedValue)) {
+        return Object.keys(nestedValue).sort().reduce((acc, k) => {
+          acc[k] = nestedValue[k];
+          return acc;
+        }, {} as any);
+      }
+      return nestedValue;
+    });
+  }
+
+  protected createIdempotencyFingerprintWithCanonicalQuery(sql: string, values: any[]): string {
+    return createHash('sha256').update(this.stableStringify([sql, values])).digest('hex');
+  }
 
   public constructor(config?: Partial<ConnectionConfig>) {
     super();
@@ -91,14 +354,39 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
       user: config?.user || getEnv('cubeStoreUser'),
       password: config?.password || getEnv('cubeStorePass'),
     };
-    this.baseUrl = (this.config.url || `ws://${this.config.host}:${this.config.port}/`).replace(/\/ws$/, '/').replace(/\/$/, '');
-    this.connection = new WebSocketConnection(`${this.baseUrl}/ws`);
+
+    this.idempotencyRedisDsn = process.env.CUBE_STORE_IDEMPOTENCY_REDIS_DSN
+      || process.env.CUBEJS_CUBESTORE_IDEMPOTENCY_REDIS_DSN
+      || process.env.CUBEJS_CUBESTORE_IDEMPOTENCY_REDIS_URL;
+    this.idempotencyRedisKeyPrefix = process.env.CUBE_STORE_IDEMPOTENCY_REDIS_KEY_PREFIX || 'cubejs:cubestore:mutation';
+    this.idempotencyCompletedTtlSeconds = this.parseEnvInt(process.env.CUBE_STORE_IDEMPOTENCY_COMPLETED_TTL_SECONDS, 86400);
+    this.idempotencyFailedTtlSeconds = this.parseEnvInt(process.env.CUBE_STORE_IDEMPOTENCY_FAILED_TTL_SECONDS, 86400);
+    this.idempotencyPendingTtlSeconds = this.parseEnvInt(process.env.CUBE_STORE_IDEMPOTENCY_PENDING_TTL_SECONDS, 30);
+    this.idempotencyPollIntervalMs = this.parseEnvInt(process.env.CUBE_STORE_IDEMPOTENCY_POLL_INTERVAL_MS, 250, 10);
+    this.idempotencyPollMaxAttempts = this.parseEnvInt(process.env.CUBE_STORE_IDEMPOTENCY_POLL_MAX_ATTEMPTS, 120, 1);
+
+    const rawHost = this.config.url
+      ? this.config.url
+      : `${this.config.host}`;
+    const rawPort = this.config.port || '3030';
+    const routerHosts = this.config.url
+      ? [rawHost]
+      : String(rawHost).split(',').map((host: string) => host.trim()).filter(Boolean);
+
+    const baseUrls = this.normalizeRouterBaseUrls(routerHosts, rawPort);
+    if (!baseUrls.length) {
+      throw new Error('cubejs-cubestore-driver: no valid router endpoint configured');
+    }
+
+    this.routerBaseUrls = baseUrls;
+    this.routerStatusUrls = baseUrls.map(baseUrl => this.routerStatusUrl(baseUrl));
+    this.connections = baseUrls.map(baseUrl => new WebSocketConnection(`${baseUrl}/ws`));
   }
 
   public async hasCapability(capability: CubeStoreCapability): Promise<boolean> {
     const minVersion = CubeStoreCapabilityMinVersion[capability];
 
-    return isVersionGte(await this.connection.getCubeStoreVersion(), minVersion);
+    return this.withFailover(async (connection) => isVersionGte(await connection.getCubeStoreVersion(), minVersion));
   }
 
   public async testConnection() {
@@ -106,25 +394,506 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   public async query<R = any>(query: string, values: any[], options?: CubeStoreQueryOptions): Promise<R[]> {
-    const { inlineTables, sendParameters, responseFormat, ...queryTracingObj } = options ?? {};
+    const {
+      inlineTables,
+      sendParameters,
+      responseFormat,
+      retryable,
+      ...queryTracingObj
+    } = options ?? {};
 
     if (!sendParameters) {
       query = formatSql(query, values || []);
     }
 
-    const tracingObj = { ...queryTracingObj, instance: getEnv('instanceId') };
+    const tracingObj = { ...queryTracingObj, instance: getEnv('instanceId') } as Record<string, any>;
+    const isReplaySafeByDefault = this.shouldRetryOnFailure(query);
+    const normalizedMutationId = this.normalizeMutationId(tracingObj.mutationId || tracingObj.mutation_id);
 
-    return this.connection.query(query, sendParameters ? values : [], {
+    if (normalizedMutationId) {
+      tracingObj.mutationId = normalizedMutationId;
+      tracingObj.mutation_id = normalizedMutationId;
+    }
+
+    const isMutating = !isReplaySafeByDefault;
+    const requestedRetryable = typeof retryable === 'boolean' ? retryable : isReplaySafeByDefault;
+    const replaySafe = this.resolveRetryablePolicy(requestedRetryable, isMutating, normalizedMutationId);
+    const sendValues = sendParameters ? values : [];
+
+    const executeQuery = () => this.withFailover(async (connection) => connection.query(query, sendValues, {
       inlineTables: inlineTables ?? [],
       queryTracingObj: tracingObj,
       responseFormat: responseFormat ?? (
         await this.hasCapability('arrowFormat') ? QueryResultFormat.Arrow : QueryResultFormat.Legacy
       ),
+      replaySafe,
+    }), { retryable: replaySafe });
+
+    if (isMutating && normalizedMutationId && this.idempotencyRedisDsn) {
+      return this.withMutationIdempotency(normalizedMutationId, query, sendValues, () => executeQuery());
+    }
+
+    return executeQuery();
+  }
+
+  protected resolveRetryablePolicy(requestedRetryable: boolean, isMutating: boolean, mutationId?: string): boolean {
+    if (!this.strictWriteRetryWithoutMutationId) {
+      return requestedRetryable;
+    }
+
+    if (isMutating && !mutationId) {
+      return false;
+    }
+
+    return requestedRetryable;
+  }
+
+  protected async withMutationIdempotency<R>(
+    mutationId: string,
+    query: string,
+    values: any[],
+    action: () => Promise<R[]>,
+  ): Promise<R[]> {
+    const redis = await this.getIdempotencyRedisClient();
+    if (!redis) {
+      return action();
+    }
+
+    const key = this.getIdempotencyKey(mutationId);
+    const fingerprint = this.createIdempotencyFingerprintWithCanonicalQuery(query, values);
+
+    const currentRaw = await redis.get(key);
+    if (currentRaw) {
+      const currentRecord = this.parseIdempotencyRecord(currentRaw);
+      if (!currentRecord) {
+        return this.executeAndPersistMutationIdempotency(redis, key, fingerprint, mutationId, action);
+      }
+
+      if (currentRecord.fingerprint !== fingerprint) {
+        throw new Error(`mutationId conflict: same mutationId=${mutationId} but different fingerprint`);
+      }
+
+      if (currentRecord.status === 'COMPLETED') {
+        return (currentRecord.result || []) as R[];
+      }
+
+      if (currentRecord.status === 'FAILED') {
+        throw this.buildIdempotencyError(currentRecord.error || {
+          name: 'Error',
+          message: `mutation ${mutationId} previously failed`,
+        });
+      }
+
+      return this.waitForMutationCompletion(redis, key, fingerprint, mutationId, 0);
+    }
+
+    return this.executeAndPersistMutationIdempotency(redis, key, fingerprint, mutationId, action);
+  }
+
+  protected async executeAndPersistMutationIdempotency<R>(
+    redis: any,
+    key: string,
+    fingerprint: string,
+    mutationId: string,
+    action: () => Promise<R[]>,
+  ): Promise<R[]> {
+    const startedAt = Date.now();
+    const pending = await redis.set(key, JSON.stringify({
+      status: 'PENDING',
+      fingerprint,
+      startedAt,
+      node: getEnv('instanceId'),
+    }), {
+      NX: true,
+      EX: this.idempotencyPendingTtlSeconds,
     });
+
+    if (pending !== 'OK') {
+      return this.waitForMutationCompletion(redis, key, fingerprint, mutationId, 0);
+    }
+
+    try {
+      const result = await action();
+      await redis.set(key, JSON.stringify({
+        status: 'COMPLETED',
+        fingerprint,
+        node: getEnv('instanceId'),
+        startedAt,
+        finishedAt: Date.now(),
+        result,
+      }), { XX: true, EX: this.idempotencyCompletedTtlSeconds });
+      return result;
+    } catch (error: any) {
+      if (!(error instanceof ConnectionError)) {
+        await redis.set(key, JSON.stringify({
+          status: 'FAILED',
+          fingerprint,
+          node: getEnv('instanceId'),
+          startedAt,
+          finishedAt: Date.now(),
+          error: this.serializeError(error),
+        }), { XX: true, EX: this.idempotencyFailedTtlSeconds });
+      }
+      throw error;
+    }
+  }
+
+  protected async waitForMutationCompletion<R>(
+    redis: any,
+    key: string,
+    fingerprint: string,
+    mutationId: string,
+    attempt: number,
+  ): Promise<R[]> {
+    if (attempt >= this.idempotencyPollMaxAttempts) {
+      throw new Error(`mutationId ${mutationId} is waiting for completion for too long`);
+    }
+
+    await this.sleep(this.idempotencyPollIntervalMs);
+    const raw = await redis.get(key);
+    if (!raw) {
+      throw new Error(`mutationId ${mutationId} completed processing but idempotency state has been removed`);
+    }
+
+    const record = this.parseIdempotencyRecord(raw);
+    if (!record) {
+      throw new Error(`mutationId ${mutationId} idempotency state is invalid`);
+    }
+
+    if (record.fingerprint !== fingerprint) {
+      throw new Error(`mutationId ${mutationId} conflict: fingerprint changed during in-flight replay`);
+    }
+
+    if (record.status === 'COMPLETED') {
+      return (record.result || []) as R[];
+    }
+
+    if (record.status === 'FAILED') {
+      throw this.buildIdempotencyError(record.error || {
+        name: 'Error',
+        message: `mutation ${mutationId} previously failed`,
+      });
+    }
+
+    return this.waitForMutationCompletion<R>(redis, key, fingerprint, mutationId, attempt + 1);
+  }
+
+  protected normalizeMutationId(rawMutationId: unknown): string | undefined {
+    if (typeof rawMutationId !== 'string') {
+      return undefined;
+    }
+
+    const normalized = rawMutationId.trim();
+    return normalized.length ? normalized : undefined;
   }
 
   public async release() {
-    return this.connection.close();
+    await this.idempotencyRedisClient?.quit();
+    this.idempotencyRedisClient = null;
+    await Promise.all(this.connections.map(async connection => connection.close()));
+  }
+
+  protected normalizeRouterBaseUrl(rawHost: string, port: string | number): string {
+    const normalized = rawHost.trim();
+    if (!normalized) {
+      return normalized;
+    }
+
+    if (normalized.startsWith('ws://') || normalized.startsWith('wss://')) {
+      const parsed = new URL(normalized);
+      return `${parsed.origin}`;
+    }
+
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      const parsed = new URL(normalized.replace(/^https?:\/\//, normalized.startsWith('https://') ? 'wss://' : 'ws://'));
+      return `${parsed.origin}`;
+    }
+
+    return `ws://${normalized.includes(':') ? normalized : `${normalized}:${port}`}`;
+  }
+
+  protected normalizeRouterBaseUrls(routerHosts: string[], port: string | number): string[] {
+    const normalized = routerHosts
+      .map(host => this.normalizeRouterBaseUrl(host, port))
+      .filter(Boolean)
+      .map(url => url.replace(/\/$/, ''));
+
+    return [...new Set(normalized)];
+  }
+
+  protected routerStatusUrl(baseUrl: string): string {
+    if (baseUrl.startsWith('wss://')) {
+      return `${baseUrl.replace(/^wss:\/\//, 'https://')}/router/status`;
+    }
+
+    if (baseUrl.startsWith('ws://')) {
+      return `${baseUrl.replace(/^ws:\/\//, 'http://')}/router/status`;
+    }
+
+    return `${baseUrl}/router/status`;
+  }
+
+  protected uploadBaseUrl(baseUrl: string): string {
+    if (baseUrl.startsWith('wss://')) {
+      return baseUrl.replace(/^wss:\/\//, 'https://');
+    }
+
+    if (baseUrl.startsWith('ws://')) {
+      return baseUrl.replace(/^ws:\/\//, 'http://');
+    }
+
+    return baseUrl;
+  }
+
+  protected activeRouterBaseUrl(): string {
+    return this.routerBaseUrls[this.activeConnectionIndex] || this.routerBaseUrls[0];
+  }
+
+  protected async fetchWithTimeout(url: string, timeoutMs: number): Promise<any> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  protected shouldRetryOnFailure(query: string): boolean {
+    const normalized = this.normalizeQueryCommand(query);
+    if (!normalized) {
+      return false;
+    }
+
+    const head = normalized.split(/\s+/)[0];
+    const retryableHeads = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'PRAGMA'];
+    return retryableHeads.includes(head);
+  }
+
+  protected normalizeQueryCommand(query: string): string {
+    let normalized = `${query}`.replace(/^\uFEFF/, '').trimStart();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const blockMatch = normalized.match(/^\/\*[\s\S]*?\*\//);
+      const lineMatch = normalized.match(/^--.*?(?:\r\n|\r|\n|$)/);
+      const shellMatch = normalized.match(/^#.*?(?:\r\n|\r|\n|$)/);
+
+      if (blockMatch) {
+        normalized = normalized.slice(blockMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (lineMatch) {
+        normalized = normalized.slice(lineMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (shellMatch) {
+        normalized = normalized.slice(shellMatch[0].length).trimStart();
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      break;
+    }
+
+    return normalized.toUpperCase();
+  }
+
+  protected async withFailover<T>(
+    action: (connection: WebSocketConnection) => Promise<T>,
+    options: { retryable: boolean } = { retryable: true },
+  ): Promise<T> {
+    if (!this.connections.length) {
+      throw new Error('cubejs-cubestore-driver: no Cubestore router connections configured');
+    }
+
+    const total = this.connections.length;
+    let lastError: any;
+    const leaderIndex = await this.detectLeaderIndex();
+    await this.maybeResetOnLeaderShift(leaderIndex);
+    if (leaderIndex !== null) {
+      this.activeConnectionIndex = leaderIndex;
+    }
+
+    // A Kubernetes leader Service is intentionally represented by one host.
+    // A stale WebSocket can still be connected to the deleted leader after the
+    // Service EndpointSlice changes, so replay-safe queries get one fresh
+    // connection attempt through the Service. Writes keep the old no-replay
+    // behavior and never enter this recovery path.
+    const maxAttempts = total === 1 ? 2 : total;
+    for (let offset = 0; offset < maxAttempts; offset += 1) {
+      const index = (this.activeConnectionIndex + offset) % total;
+      const connection = this.connections[index];
+      try {
+        const result = await action(connection);
+        this.activeConnectionIndex = index;
+        return result;
+      } catch (e) {
+        lastError = e;
+        if (!options.retryable || !(e instanceof ConnectionError) || offset + 1 >= maxAttempts) {
+          throw e;
+        }
+
+        if (total === 1) {
+          connection.close();
+          await new Promise(resolve => setTimeout(resolve, Math.min(500, this.leaderProbeTimeoutMs)));
+          this.activeConnectionIndex = 0;
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
+        const refreshedLeaderIndex = await this.detectLeaderIndex(true);
+        if (refreshedLeaderIndex !== null) {
+          await this.maybeResetOnLeaderShift(refreshedLeaderIndex);
+          this.activeConnectionIndex = refreshedLeaderIndex;
+        } else {
+          await this.maybeResetOnLeaderShift((index + 1) % total);
+          this.activeConnectionIndex = (index + 1) % total;
+        }
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new Error('cubejs-cubestore-driver: failed to execute query on any router');
+  }
+
+  protected async detectLeaderIndex(force = false): Promise<number | null> {
+    if (this.connections.length <= 1) {
+      return 0;
+    }
+
+    const now = Date.now();
+    if (
+      !force &&
+      this.leaderIndexCache !== null &&
+      now < this.leaderProbeExpiresAt
+    ) {
+      return this.leaderIndexCache;
+    }
+
+    if (!force && this.leaderProbeInProgress) {
+      return this.leaderProbeInProgress;
+    }
+
+    this.leaderProbeInProgress = this.detectLeaderIndexImpl();
+    const index = await this.leaderProbeInProgress;
+    this.leaderIndexCache = index;
+    this.leaderProbeExpiresAt = now + (index === null ? Math.min(500, this.leaderProbeTtlMs) : this.leaderProbeTtlMs);
+    this.leaderProbeInProgress = null;
+    return index;
+  }
+
+  protected async detectLeaderIndexImpl(): Promise<number | null> {
+    if (this.leaderProbeUseStatus) {
+      const statusIndex = await this.detectLeaderIndexImplByStatus();
+      if (statusIndex !== null) {
+        return statusIndex;
+      }
+    }
+
+    return this.detectLeaderIndexImplByQuery();
+  }
+
+  protected async detectLeaderIndexImplByStatus(): Promise<number | null> {
+    const checks = this.routerStatusUrls.map(async (statusUrl, index) => {
+      try {
+        const response = await this.fetchWithTimeout(statusUrl, this.leaderProbeStatusTimeoutMs);
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const payload = await response.json() as RouterStatusPayload;
+        if (payload && payload.is_leader === true) {
+          const roleState = payload.leaderState as RouterRoleStatePayload | undefined;
+          let activeLeader: string | undefined;
+          if (typeof payload.activeLeader === 'string') {
+            activeLeader = payload.activeLeader;
+          } else if (typeof roleState?.activeLeader === 'string') {
+            activeLeader = roleState.activeLeader;
+          }
+          const payloadLeaderEpoch = payload.leaderEpoch ?? roleState?.leaderEpoch;
+          const leaderEpoch = this.parseLeaderEpoch(payloadLeaderEpoch);
+          const nodeName = typeof payload.node_name === 'string' ? payload.node_name : undefined;
+
+          if (activeLeader && nodeName && activeLeader !== nodeName) {
+            return null;
+          }
+
+          if (this.leaderEpochFence && leaderEpoch !== null) {
+            if (this.leaderEpochCache !== null && leaderEpoch < this.leaderEpochCache) {
+              return null;
+            }
+          }
+
+          const rawTimestamp = (payload as RouterStatusPayload).timestamp_unix_secs;
+          const updatedAt = typeof rawTimestamp === 'number' ? rawTimestamp : undefined;
+          const now = Math.floor(Date.now() / 1000);
+
+          if (
+            this.leaderProbeStatusMaxAgeSecs <= 0
+            || updatedAt === undefined
+            || (now - updatedAt <= this.leaderProbeStatusMaxAgeSecs && now >= updatedAt)
+          ) {
+            if (this.leaderEpochFence && leaderEpoch !== null) {
+              this.leaderEpochCache = Math.max(this.leaderEpochCache ?? leaderEpoch, leaderEpoch);
+            }
+            return index;
+          }
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    });
+
+    const settled = await Promise.all(checks);
+    const leaders = settled.filter((candidate) => candidate !== null);
+
+    if (leaders.length !== 1) {
+      return null;
+    }
+
+    return leaders[0];
+  }
+
+  protected async detectLeaderIndexImplByQuery(): Promise<number | null> {
+    const checks = this.connections.map(async (connection, index) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        await Promise.race([
+          connection.query('SELECT 1', [], {
+            inlineTables: [],
+            queryTracingObj: {},
+            responseFormat: QueryResultFormat.Legacy,
+            replaySafe: true,
+          }),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('leader probe timeout')), this.leaderProbeTimeoutMs);
+          }),
+        ]);
+        return index;
+      } catch {
+        return null;
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    });
+
+    const settled = await Promise.all(checks);
+    return settled.find((candidate) => candidate !== null) ?? null;
   }
 
   public informationSchemaQuery() {
@@ -362,7 +1131,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         aggregations
       };
 
-      const { baseUrl } = this;
+      const baseUrl = this.uploadBaseUrl(this.activeRouterBaseUrl());
       let fileCounter = 0;
 
       this.createTableSql(table, columns);

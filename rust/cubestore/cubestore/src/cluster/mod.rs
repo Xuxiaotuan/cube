@@ -68,12 +68,15 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::SystemTime;
+use serde_json::Value;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{Receiver, Sender};
@@ -658,7 +661,7 @@ impl Cluster for ClusterImpl {
     }
 
     async fn available_nodes(&self) -> Result<Vec<String>, CubeError> {
-        Ok(vec![self.server_name.to_string()])
+        Ok(self.router_node_candidates())
     }
 
     fn server_name(&self) -> &str {
@@ -802,6 +805,16 @@ impl Cluster for ClusterImpl {
     #[instrument(level = "trace", skip(self, m))]
     async fn process_message_on_worker(&self, m: NetworkMessage) -> NetworkMessage {
         match m {
+            NetworkMessage::GetRouterInfo => NetworkMessage::RouterInfo {
+                node_name: self.server_name.to_string(),
+                is_leader: self.is_router_leader(),
+                known_nodes: self.router_node_candidates(),
+            },
+            NetworkMessage::RouterInfo { .. } => NetworkMessage::RouterInfo {
+                node_name: self.server_name.to_string(),
+                is_leader: self.is_router_leader(),
+                known_nodes: self.router_node_candidates(),
+            },
             NetworkMessage::RouterSelect(plan) => {
                 let res = self
                     .query_executor
@@ -1233,6 +1246,70 @@ impl JobResultListener {
 }
 
 impl ClusterImpl {
+    fn router_node_candidates(&self) -> Vec<String> {
+        let mut nodes = self.server_addresses.clone();
+        nodes.push(self.server_name.clone());
+        nodes.retain(|node| !node.is_empty());
+        nodes.into_iter().unique().collect::<Vec<String>>()
+    }
+
+    fn is_router_leader(&self) -> bool {
+        let strict_mode = env::var("CUBESTORE_ROUTER_ROLE_STRICT")
+            .ok()
+            .map(|v| {
+                v.eq_ignore_ascii_case("1") || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(false);
+
+        match Self::parse_router_role_from_file().or_else(|| Self::parse_router_role(env::var("CUBESTORE_ROUTER_ROLE").ok())) {
+            Some(is_leader) => is_leader,
+            None => !strict_mode,
+        }
+    }
+
+    fn parse_router_role_from_file() -> Option<bool> {
+        let role_file_path = env::var("CUBESTORE_ROUTER_ROLE_FILE").ok()?;
+        let raw_role = fs::read_to_string(role_file_path).ok()?;
+        let trimmed = raw_role.trim();
+
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        if let Ok(state) = serde_json::from_str::<Value>(trimmed) {
+            if let Some(active_leader) = state.get("activeLeader").and_then(|v| v.as_str()) {
+                let active_leader = active_leader.trim();
+                if !active_leader.is_empty() {
+                    let current_node = env::var("CUBESTORE_NODE_NAME")
+                        .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
+                        .or_else(|_| env::var("HOSTNAME"))
+                        .ok()?;
+
+                    return Some(current_node == active_leader);
+                }
+            }
+
+            if let Some(role) = state.get("role").and_then(|v| v.as_str()) {
+                return Self::parse_router_role(Some(role.to_string()));
+            }
+        }
+
+        Self::parse_router_role(Some(trimmed.to_string()))
+    }
+
+    fn parse_router_role(raw_role: Option<String>) -> Option<bool> {
+        let role = raw_role?.trim().to_ascii_lowercase();
+        if role.is_empty() {
+            return None;
+        }
+
+        match role.as_str() {
+            "leader" | "primary" => Some(true),
+            "follower" | "secondary" => Some(false),
+            _ => None,
+        }
+    }
+
     pub fn new(
         server_name: String,
         server_addresses: Vec<String>,

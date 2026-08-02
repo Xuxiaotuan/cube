@@ -1,0 +1,15 @@
+{
+  "name": "cube-router-ha-api-demo",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@cubejs-backend/api-gateway": "file:packages/cubejs-api-gateway",
+    "@cubejs-backend/base-driver": "file:packages/cubejs-base-driver",
+    "@cubejs-backend/cubestore-driver": "file:packages/cubejs-cubestore-driver",
+    "@cubejs-backend/query-orchestrator": "file:packages/cubejs-query-orchestrator",
+    "@cubejs-backend/schema-compiler": "file:packages/cubejs-schema-compiler",
+    "@cubejs-backend/server": "file:packages/cubejs-server",
+    "@cubejs-backend/server-core": "file:packages/cubejs-server-core",
+    "@cubejs-backend/shared": "file:packages/cubejs-backend-shared"
+  }
+}

@@ -1880,6 +1880,31 @@ const variables: Record<string, (...args: any) => any> = {
   cubeStoreRollingWindowJoin: () => get('CUBEJS_CUBESTORE_ROLLING_WINDOW_JOIN')
     .default('true')
     .asBoolStrict(),
+  cubeStoreRouterLeaderProbeUseStatus: () => {
+    const value = get('CUBEJS_CUBESTORE_ROUTER_LEADER_PROBE_USE_STATUS')
+      .asString();
+    if (value !== undefined) {
+      return value;
+    }
+    return get('cubeStoreRouterLeaderProbeUseStatus').asString();
+  },
+  cubeStoreRouterLeaderStatusMaxAgeSecs: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_STATUS_MAX_AGE_SECS')
+    .asInt(),
+  cubeStoreRouterLeaderProbeTimeoutMs: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_PROBE_TIMEOUT_MS')
+    .asInt(),
+  cubeStoreRouterLeaderStatusProbeTimeoutMs: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_STATUS_PROBE_TIMEOUT_MS')
+    .asInt(),
+  cubeStoreRouterLeaderProbeTtlMs: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_PROBE_TTL_MS')
+    .asInt(),
+  cubeStoreRouterLeaderEpochFence: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_EPOCH_FENCE')
+    .default('true')
+    .asBoolStrict(),
+  cubeStoreRouterLeaderConnectionResetOnChange: () => get('CUBEJS_CUBESTORE_ROUTER_LEADER_CONNECTION_RESET_ON_CHANGE')
+    .default('true')
+    .asBoolStrict(),
+  cubeStoreStrictWriteRetryWithoutMutationId: () => get('CUBEJS_CUBESTORE_STRICT_WRITE_RETRY_WITHOUT_MUTATION_ID')
+    .default('true')
+    .asBoolStrict(),
   allowUngroupedWithoutPrimaryKey: () => get('CUBEJS_ALLOW_UNGROUPED_WITHOUT_PRIMARY_KEY')
     .default(get('CUBESQL_SQL_PUSH_DOWN').default('true').asString())
     .asBoolStrict(),
