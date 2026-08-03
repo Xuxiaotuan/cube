@@ -1,17 +1,16 @@
+const schema = process.env.ROUTER_HA_SCHEMA || 'router_ha_probe';
+const table = process.env.ROUTER_HA_TABLE || 'router_ha_data';
+
 cube('RouterHaProbe', {
-  sql: `SELECT 1 AS value`,
+  sql: `SELECT id, amount FROM ${schema}.${table}`,
 
   measures: {
-    total: {
-      sql: `value`,
-      type: `sum`
-    }
+    rowCount: { type: `count`, sql: `id` },
+    totalAmount: { type: `sum`, sql: `amount` }
   },
 
   dimensions: {
-    value: {
-      sql: `value`,
-      type: `number`
-    }
+    id: { sql: `id`, type: `number`, primaryKey: true },
+    amount: { sql: `amount`, type: `number` }
   }
 });
