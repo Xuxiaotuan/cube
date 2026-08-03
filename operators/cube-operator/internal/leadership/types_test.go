@@ -2,6 +2,8 @@ package leadership
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,6 +44,24 @@ func TestRouterSpecApplyDefaults(t *testing.T) {
 	}
 }
 
+func TestRouterSpecValidateAppliesDefaults(t *testing.T) {
+	spec := validRouterSpec()
+	spec.ElectionStrategy = ""
+	spec.LeaseDurationSeconds = 0
+	spec.RenewDeadlineSeconds = 0
+	spec.RetryPeriodSeconds = 0
+
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("Validate should accept omitted defaulted values: %v", err)
+	}
+	if spec.ElectionStrategy != v1alpha1.ElectionStrategyLease ||
+		spec.LeaseDurationSeconds != v1alpha1.DefaultLeaseDurationSeconds ||
+		spec.RenewDeadlineSeconds != v1alpha1.DefaultRenewDeadlineSeconds ||
+		spec.RetryPeriodSeconds != v1alpha1.DefaultRetryPeriodSeconds {
+		t.Fatalf("Validate did not apply defaults: %#v", spec)
+	}
+}
+
 func TestRouterSpecRejectsInvalidSelector(t *testing.T) {
 	spec := validRouterSpec()
 	spec.Selector = map[string]string{}
@@ -51,12 +71,21 @@ func TestRouterSpecRejectsInvalidSelector(t *testing.T) {
 	}
 }
 
+func TestRouterSpecRejectsEmptyNamespace(t *testing.T) {
+	spec := validRouterSpec()
+	spec.Namespace = ""
+
+	if err := spec.Validate(); err == nil {
+		t.Fatal("expected empty namespace to be rejected")
+	}
+}
+
 func TestRouterSpecRejectsInvalidTiming(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*v1alpha1.CubestoreRouterSpec)
 	}{
-		{name: "non-positive duration", mutate: func(spec *v1alpha1.CubestoreRouterSpec) { spec.LeaseDurationSeconds = 0 }},
+		{name: "non-positive duration", mutate: func(spec *v1alpha1.CubestoreRouterSpec) { spec.LeaseDurationSeconds = -1 }},
 		{name: "non-positive deadline", mutate: func(spec *v1alpha1.CubestoreRouterSpec) { spec.RenewDeadlineSeconds = -1 }},
 		{name: "deadline equals duration", mutate: func(spec *v1alpha1.CubestoreRouterSpec) { spec.RenewDeadlineSeconds = spec.LeaseDurationSeconds }},
 	}
@@ -88,6 +117,98 @@ func TestRouterSpecValidatesSecretReferences(t *testing.T) {
 			t.Fatal("expected missing object store secret namespace to be rejected")
 		}
 	})
+}
+
+func TestRouterSpecAcceptsLegacyDSNForMigration(t *testing.T) {
+	spec := validRouterSpec()
+	spec.StateStore = nil
+	spec.LeaderStateStore = &v1alpha1.LeaderStateStore{
+		Type: "redis",
+		DSN:  "redis://legacy.example.invalid:6379/0",
+	}
+
+	if err := spec.Validate(); err != nil {
+		t.Fatalf("legacy DSN should remain valid for migration: %v", err)
+	}
+}
+
+func TestLeaseStoreFencesStaleEpoch(t *testing.T) {
+	store := &fencingLeaseStore{}
+	ctx := context.Background()
+
+	first, acquired, err := store.Acquire(ctx, "cluster-a", "holder-a", time.Hour)
+	if err != nil || !acquired {
+		t.Fatalf("first holder should acquire: record=%#v acquired=%v err=%v", first, acquired, err)
+	}
+	if err := store.Release(ctx, first); err != nil {
+		t.Fatalf("release should succeed: %v", err)
+	}
+
+	second, acquired, err := store.Acquire(ctx, "cluster-a", "holder-b", time.Hour)
+	if err != nil || !acquired {
+		t.Fatalf("second holder should acquire: record=%#v acquired=%v err=%v", second, acquired, err)
+	}
+	if second.Epoch != first.Epoch+1 || second.Token == first.Token {
+		t.Fatalf("new holder must receive a new fencing epoch and token: first=%#v second=%#v", first, second)
+	}
+
+	if renewed, ok, err := store.Renew(ctx, first, time.Hour); err != nil || ok || renewed.Epoch != second.Epoch {
+		t.Fatalf("stale holder must be fenced: record=%#v renewed=%v err=%v", renewed, ok, err)
+	}
+	if renewed, ok, err := store.Renew(ctx, second, time.Hour); err != nil || !ok || renewed.Token != second.Token {
+		t.Fatalf("current holder should renew: record=%#v renewed=%v err=%v", renewed, ok, err)
+	}
+}
+
+type fencingLeaseStore struct {
+	mu        sync.Mutex
+	record    LeaseRecord
+	nextEpoch int64
+}
+
+func (s *fencingLeaseStore) Acquire(_ context.Context, clusterID, holderID string, duration time.Duration) (LeaseRecord, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.record.Token != "" && s.record.ExpiresAt.After(time.Now()) {
+		return s.record, false, nil
+	}
+	s.nextEpoch++
+	now := time.Now()
+	s.record = LeaseRecord{
+		ClusterID: clusterID,
+		HolderID:  holderID,
+		Epoch:     s.nextEpoch,
+		Token:     fmt.Sprintf("token-%d", s.nextEpoch),
+		IssuedAt:  now,
+		ExpiresAt: now.Add(duration),
+	}
+	return s.record, true, nil
+}
+
+func (s *fencingLeaseStore) Renew(_ context.Context, lease LeaseRecord, duration time.Duration) (LeaseRecord, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if lease.Token != s.record.Token || lease.Epoch != s.record.Epoch || !s.record.ExpiresAt.After(time.Now()) {
+		return s.record, false, nil
+	}
+	s.record.ExpiresAt = time.Now().Add(duration)
+	return s.record, true, nil
+}
+
+func (s *fencingLeaseStore) Release(_ context.Context, lease LeaseRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if lease.Token != s.record.Token || lease.Epoch != s.record.Epoch {
+		return fmt.Errorf("stale lease")
+	}
+	s.record = LeaseRecord{}
+	return nil
+}
+
+func (s *fencingLeaseStore) Get(_ context.Context, _ string) (LeaseRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.record, nil
 }
 
 func validRouterSpec() v1alpha1.CubestoreRouterSpec {

@@ -112,10 +112,13 @@ type RouterCandidateStatus struct {
 }
 
 type LeaderStateStore struct {
-	Type      string                 `json:"type"`
-	SecretRef corev1.SecretReference `json:"secretRef"`
-	RedisKey  string                 `json:"redisKey,omitempty"`
-	PGTable   string                 `json:"pgTable,omitempty"`
+	Type string `json:"type"`
+	// DSN is retained only so existing v1alpha1 objects can be read and
+	// migrated. New objects must use SecretRef on stateStore.
+	DSN       string                   `json:"dsn,omitempty"`
+	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
+	RedisKey  string                   `json:"redisKey,omitempty"`
+	PGTable   string                   `json:"pgTable,omitempty"`
 }
 
 // ApplyDefaults applies the CRD defaults for callers that construct router
@@ -136,8 +139,11 @@ func (in *CubestoreRouterSpec) ApplyDefaults() {
 }
 
 // Validate mirrors the CRD admission constraints for clients that need to
-// validate a router spec before submitting it to the API server.
-func (in CubestoreRouterSpec) Validate() error {
+// validate a router spec before submitting it to the API server. Defaults are
+// applied before validation so callers cannot accidentally validate an
+// un-defaulted object.
+func (in *CubestoreRouterSpec) Validate() error {
+	in.ApplyDefaults()
 	if len(in.Selector) == 0 {
 		return fmt.Errorf("selector must not be empty")
 	}
@@ -162,8 +168,16 @@ func (in CubestoreRouterSpec) Validate() error {
 		}
 	}
 	if in.LeaderStateStore != nil {
-		if err := validateSecretReference("leaderStateStore.secretRef", in.LeaderStateStore.SecretRef); err != nil {
-			return err
+		if in.LeaderStateStore.DSN != "" && in.LeaderStateStore.SecretRef != nil {
+			return fmt.Errorf("leaderStateStore must use either dsn or secretRef, not both")
+		}
+		if in.LeaderStateStore.DSN == "" && in.LeaderStateStore.SecretRef == nil {
+			return fmt.Errorf("leaderStateStore migration field must include dsn or secretRef")
+		}
+		if in.LeaderStateStore.SecretRef != nil {
+			if err := validateSecretReference("leaderStateStore.secretRef", *in.LeaderStateStore.SecretRef); err != nil {
+				return err
+			}
 		}
 	}
 	if in.MetaStore.Address == "" {
@@ -213,6 +227,10 @@ func (in *CubestoreRouter) DeepCopyInto(out *CubestoreRouter) {
 	}
 	if in.Spec.LeaderStateStore != nil {
 		ls := *in.Spec.LeaderStateStore
+		if in.Spec.LeaderStateStore.SecretRef != nil {
+			secretRef := *in.Spec.LeaderStateStore.SecretRef
+			ls.SecretRef = &secretRef
+		}
 		out.Spec.LeaderStateStore = &ls
 	}
 	if in.Spec.Storage.ObjectStoreSecretRef != nil {

@@ -35,6 +35,7 @@ spec:
                     type: string
                 namespace:
                   type: string
+                  minLength: 1
                 routerPort:
                   type: integer
                   format: int32
@@ -116,15 +117,19 @@ spec:
                 leaderStateStore:
                   type: object
                   description: Deprecated v1alpha1 migration-only field. Migrate to stateStore; plaintext DSNs are unsupported.
-                  required:
-                    - type
-                    - secretRef
+                  x-kubernetes-validations:
+                    - rule: (has(self.dsn) && !has(self.secretRef)) || (!has(self.dsn) && has(self.secretRef))
+                      message: leaderStateStore migration field must contain exactly one of dsn or secretRef
                   properties:
                     type:
                       type: string
                       enum:
                         - redis
                         - postgres
+                    dsn:
+                      type: string
+                      minLength: 1
+                      description: Deprecated plaintext compatibility field. Migrate to stateStore.secretRef and do not use for new objects.
                     secretRef:
                       type: object
                       required:
@@ -191,12 +196,6 @@ spec:
                         type: string
                       type:
                         type: string
-                        enum:
-                          - LeaseAcquired
-                          - LeaderReady
-                          - MetaStoreReady
-                          - DataPlaneReady
-                          - Degraded
                 candidates:
                   type: array
                   items:
