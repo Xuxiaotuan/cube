@@ -152,7 +152,8 @@ impl CubeServices {
                 futures.extend(scheduler.spawn_processing_loops());
             }
 
-            if self
+            if self.cluster.is_select_worker()
+                && self
                 .injector
                 .has_service_typed::<CacheStoreSchedulerImpl>()
                 .await

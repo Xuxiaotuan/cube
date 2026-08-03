@@ -7,14 +7,31 @@ cd "$ROOT"
 IMAGE="${IMAGE:-cube-operator:dev}"
 ROUTER_IMAGE="${ROUTER_IMAGE:-cube-studio-router:ha-local}"
 WORKER_IMAGE="${WORKER_IMAGE:-$ROUTER_IMAGE}"
+LEASE_AGENT_IMAGE="${LEASE_AGENT_IMAGE:-cube-operator:dev}"
+REDIS_URL="${REDIS_URL:-redis://redis.cube-operator-demo.svc:6379/0}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+META_STORE_ADDRESS="${META_STORE_ADDRESS:-cubestore-metastore.cube-operator-demo.svc:9999}"
 API_IMAGE="${API_IMAGE:-cube-studio-api:ha-local}"
 BUILD_API_IMAGE="${BUILD_API_IMAGE:-true}"
+BUILD_OPERATOR_IMAGE="${BUILD_OPERATOR_IMAGE:-true}"
 KUBECTL="${KUBECTL:-kubectl}"
 ROUTER_NAMESPACE="cube-operator-demo"
 ROUTER_DEPLOYMENT="cube-router-demo"
 KUBECTL_VALIDATE="${KUBECTL_VALIDATE:-auto}"
 KUBECTL_VALIDATE_FALLBACK="${KUBECTL_VALIDATE_FALLBACK:-true}"
 DRY_RUN="false"
+
+render_router_manifest() {
+  local source="$1"
+  local target="$2"
+  sed \
+    -e "s|\${ROUTER_IMAGE}|${ROUTER_IMAGE}|g" \
+    -e "s|\${LEASE_AGENT_IMAGE}|${LEASE_AGENT_IMAGE}|g" \
+    -e "s|\${REDIS_URL}|${REDIS_URL}|g" \
+    -e "s|\${REDIS_PASSWORD}|${REDIS_PASSWORD}|g" \
+    -e "s|\${META_STORE_ADDRESS}|${META_STORE_ADDRESS}|g" \
+    "$source" > "$target"
+}
 
 case "${1:-}" in
   "") ;;
@@ -48,7 +65,7 @@ run_dry_run() {
   router_manifest="$tmp_dir/routers.yaml"
   sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$metastore_manifest"
   sed "s|image: .*|image: ${WORKER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$worker_manifest"
-  sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-routers.yaml > "$router_manifest"
+  render_router_manifest demo/k8s/mock-routers.yaml "$router_manifest"
 
   for manifest in \
     demo/k8s/namespace.yaml \
@@ -132,12 +149,37 @@ apply_manifest() {
   $KUBECTL apply --validate=false -f "$manifest_file"
 }
 
+apply_redis_secret() {
+  local secret_manifest
+  secret_manifest="$(mktemp)"
+  "$KUBECTL" -n "$ROUTER_NAMESPACE" create secret generic cube-router-demo-lease-store \
+    --from-literal=dsn="$REDIS_URL" \
+    --from-literal=url="$REDIS_URL" \
+    --from-literal=password="$REDIS_PASSWORD" \
+    --dry-run=client -o yaml > "$secret_manifest"
+  apply_manifest "$secret_manifest"
+  rm -f "$secret_manifest"
+}
+
 cat <<'MSG'
 [1/7] 安装 CRD / 资源
 MSG
 apply_manifest config/crd/bases/cubestore.io_cubestorerouters.yaml
 apply_manifest demo/k8s/namespace.yaml
 apply_manifest demo/k8s/operator-rbac.yaml
+
+cat <<'MSG'
+[1.25/7] 部署 demo Redis（lease-agent 与 Operator 共用）
+MSG
+apply_manifest demo/k8s/redis.yaml
+$KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/redis --timeout=120s
+
+cat <<'MSG'
+[1.4/7] 部署共享 CubeStore 对象存储（MinIO）
+MSG
+apply_manifest demo/k8s/minio.yaml
+$KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/cube-router-object-store --timeout=180s
+$KUBECTL -n "$ROUTER_NAMESPACE" wait --for=condition=complete job/cube-router-object-store-init --timeout=180s
 
 cat <<'MSG'
 [1.5/7] 部署唯一 authoritative Cubestore MetaStore
@@ -160,11 +202,15 @@ $KUBECTL -n "$ROUTER_NAMESPACE" rollout status statefulset/cube-worker-demo --ti
 cat <<'MSG'
 [2/7] 构建 Operator 镜像
 MSG
-if command -v docker >/dev/null 2>&1; then
-  docker build -t "$IMAGE" -f "$ROOT/Dockerfile" "$ROOT"
+if [ "$BUILD_OPERATOR_IMAGE" = "true" ]; then
+  if command -v docker >/dev/null 2>&1; then
+    docker build -t "$IMAGE" -f "$ROOT/Dockerfile" "$ROOT"
+  else
+    echo "error: docker not found. please install docker or set BUILD_OPERATOR_IMAGE=false with a prebuilt image." >&2
+    exit 1
+  fi
 else
-  echo "error: docker not found. please install docker or set IMAGE to prebuilt image and skip." >&2
-  exit 1
+  log "跳过 Operator 镜像构建：BUILD_OPERATOR_IMAGE=${BUILD_OPERATOR_IMAGE}，复用 ${IMAGE}"
 fi
 
 cat <<'MSG'
@@ -195,9 +241,10 @@ cat <<'MSG'
 [4/7] 检查并部署/升级真实 Router 实例（cube-studio-router）
 MSG
 TMP_ROUTER_MANIFEST="$(mktemp)"
-sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-routers.yaml > "$TMP_ROUTER_MANIFEST"
+render_router_manifest demo/k8s/mock-routers.yaml "$TMP_ROUTER_MANIFEST"
 apply_manifest "$TMP_ROUTER_MANIFEST"
 rm -f "$TMP_ROUTER_MANIFEST"
+apply_redis_secret
 $KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/"$ROUTER_DEPLOYMENT" --timeout=180s
 
 cat <<'MSG'

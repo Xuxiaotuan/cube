@@ -5,8 +5,11 @@ metadata:
   namespace: default
 rules:
   - apiGroups: ["" ]
-    resources: ["pods", "pods/status", "events", "configmaps"]
+    resources: ["pods", "pods/status", "events", "configmaps", "services", "endpoints", "secrets"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["cubestore.io"]
     resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

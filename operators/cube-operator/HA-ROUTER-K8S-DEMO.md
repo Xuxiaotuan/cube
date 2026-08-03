@@ -448,6 +448,65 @@ PASS: Cube API -> CubeStoreDriver -> Leader Service -> Router failover response 
 
 本次演示仍不是“所有生产写入场景已证明无损”：非幂等写请求的进行中事务、上传临时态、预聚合队列和 Redis mutationId 幂等写入需要单独的写入/并发/超时/重复提交测试。生产部署必须使用不可变 API 镜像 tag，并继续保留业务侧 mutationId、事务提交和重试边界。
 
+## 2026-08-04 最新检查、修复与真实验证
+
+### 本轮发现并修复的问题
+
+1. **Router 本地文件导致切主后数据不可见**：旧演示没有配置共享对象存储，切主后新 Router 报 `chunk.parquet doesn't exist in remote file system`，并将表降为 `is_ready=false`。新增 `demo/k8s/minio.yaml`，Router 与 Worker 统一使用 MinIO bucket `cube-router-ha`、subpath `cubestore-demo`。
+2. **Router 内存配置过小**：原 limit 为 `128Mi`，真实导入/查询期间被 Kubernetes `OOMKilled`。现调整为 request `256Mi`、limit `1Gi`。
+3. **业务状态接口误作 liveness 探针**：慢查询时 `/router/status` 可能超过探针超时，导致误重启。现改为 TCP liveness，HTTP `/router/status` 仅用于 readiness，超时放宽为 `10s`。
+4. **Operator 状态同步使用缓存对象**：ConfigMap resourceVersion 可能落后于 API server，出现 `server rejected our request`，主备长期停在 fenced。ConfigMap 同步改为优先读取 `APIReader` 的最新对象，并保留 lease fencing。
+5. **Cube API 演示 schema 不可编译/不可查询**：schema 沙箱不提供 `process`，且主键默认不可见。固定演示表配置，`RouterHaProbe.id` 设置 `public: true`，API Deployment 显式设置 `CUBEJS_SCHEMA_PATH=schema`。
+6. **验证脚本时序不安全**：现在等待表注册、数据行数、聚合值和 `is_ready=true`，导入后重启演示 API 清除旧的 missing-table 编译缓存；before 快照失败时禁止删除 leader。
+7. **Cube API 缓存队列与 Router 数据验证解耦**：演示 API 使用 `CUBEJS_CACHE_AND_QUEUE_DRIVER=memory`，本轮只验证 Cubestore 数据读路径和 Router 切主；生产仍需单独完成 Cubestore-backed cache mutation 的 UNKNOWN outcome 恢复。
+
+### 本轮实际运行日志与数据
+
+```text
+Router image: cube-studio-router:ha-local
+Router image ID: sha256:71642434d84d80464d32aa79bf43715a6087bb84cec72e7a0f91ab56b5dbc32c
+Operator image ID: sha256:5db3f6f8d2e4713357b8ca0b773a0196607a75f1de7b79a29ef410fb9ed1e309
+Cube API image ID: sha256:d636f26c8830e6bf34f0ff4611ab3c0abaa93953e267382f755179ad4cdd5b8e
+
+Cube API before: rows=12 amount=780 concrete_row_id=7 hash=2ec29e4ff1a8a777a8381411d5dd8706a4e04f324fc00a8a2ece4371333c3b9c
+pod "cube-router-demo-74598d948f-gh9rg" deleted
+Cube API after: rows=12 amount=780 concrete_row_id=7 hash=2ec29e4ff1a8a777a8381411d5dd8706a4e04f324fc00a8a2ece4371333c3b9c
+PASS: Cube API real-data rows, concrete row, grouped aggregate and query result preserved (leader=cube-router-demo-74598d948f-492nz epoch=43)
+```
+
+验证含义：真实请求从 Cube API 进入 CubeStoreDriver，再经 `cube-router-leader` Service 到当前 leader；删除 leader 后 EndpointSlice 只保留新 leader，Cube API 的聚合、明细、分组结果和 hash 保持一致。
+
+### 本轮测试结果
+
+- `go test ./...`：通过。
+- `REDIS_URL=... REDIS_PASSWORD=... go test ./internal/leadership`：通过，真实 Redis CAS/lease 集成测试通过。
+- Rust focused tests：Router remote MetaStore 配置测试和 HTTP tests 共 `10 passed`。
+- `cargo test -p cubestore --lib`：`317 passed, 2 failed`。失败项为已有的 `metastore::tests::delete_old_snapshots` 时序敏感测试和 `sql::tests::explain_analyze_detailed` channel closed 测试，不能作为全量 Rust 通过证据，仍需单独修复/隔离。
+- Cube API 真数据切主 E2E：通过，切主前后结果 hash 相同。
+
+### 当前部署关系
+
+```mermaid
+flowchart LR
+  API[Cube API\nCUBEJS_SCHEMA_PATH=schema] --> Driver[CubeStoreDriver\nLeader Service]
+  Driver --> LS[cube-router-leader\nEndpointSlice only leader]
+  LS --> R1[Router A\nleader or follower]
+  LS --> R2[Router B\nleader or follower]
+  R1 --> MS[Authoritative MetaStore\nRWO PVC]
+  R2 --> MS
+  R1 --> OBJ[MinIO\ncube-router-ha/cubestore-demo]
+  R2 --> OBJ
+  W1[Worker 0] --> OBJ
+  W2[Worker 1] --> OBJ
+  Operator[Cube Operator\nRedis lease + K8s fencing] --> R1
+  Operator --> R2
+  Redis[(External Redis)] --> Operator
+```
+
+### 生产结论
+
+本地 K8s 演示已经实现“单写 Router 主备切换 + 共享 MetaStore + 共享对象存储 + Cube API 真请求验证”。这证明 Router HA 的基础读路径和切主数据连续性成立，但**不等于全部生产能力已闭环**：Job/upload/pre-aggregation/Refresher 的恢复入口、非幂等写 UNKNOWN outcome、对象发布事务、MetaStore 灾备恢复和全量 Rust 两个失败测试仍需完成生产验收。
+
 ## 环境要求
 
 ### 本地工具链

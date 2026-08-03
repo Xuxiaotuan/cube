@@ -71,7 +71,11 @@ spec:
         backup.velero.io/backup-volumes: metastore-data
     spec:
       serviceAccountName: cubestore-metastore
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 120
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: cubestore-metastore
           image: cube-studio-router:ha-local
@@ -112,6 +116,16 @@ spec:
             preStop:
               exec:
                 command: ["/bin/sh", "-c", "sleep 30"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # The local demo image currently runs as root. Keep this explicit
+            # for the demo only; production images must run non-root and then
+            # restore runAsNonRoot: true with an appropriate UID/GID.
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
           volumeMounts:
             - name: metastore-data
               mountPath: /cube/.cubestore/data

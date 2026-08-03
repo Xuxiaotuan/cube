@@ -27,6 +27,8 @@ API_ROLLOUT_TIMEOUT_SECONDS="${API_ROLLOUT_TIMEOUT_SECONDS:-240}"
 API_READY_WAIT_SECONDS="${API_READY_WAIT_SECONDS:-120}"
 API_READY_CHECK_INTERVAL_SECONDS="${API_READY_CHECK_INTERVAL_SECONDS:-2}"
 API_REQUEST_TIMEOUT_SECONDS="${API_REQUEST_TIMEOUT_SECONDS:-45}"
+ROUTER_READY_WAIT_SECONDS="${ROUTER_READY_WAIT_SECONDS:-120}"
+ROUTER_READY_CHECK_INTERVAL_SECONDS="${ROUTER_READY_CHECK_INTERVAL_SECONDS:-2}"
 FIXTURE="${FIXTURE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixtures/router-ha-data.sql}"
 SCHEMA="${ROUTER_HA_SCHEMA:-router_ha_probe}"
 TABLE="${ROUTER_HA_TABLE:-router_ha_data}"
@@ -58,12 +60,17 @@ require_positive_integer() {
 for timeout_name in \
   MYSQL_CLIENT_STARTUP_TIMEOUT_SECONDS MYSQL_QUERY_TIMEOUT_SECONDS IMPORT_WAIT_SECONDS IMPORT_CHECK_INTERVAL_SECONDS \
   FAILOVER_WAIT_SECONDS FAILOVER_CHECK_INTERVAL_SECONDS API_ROLLOUT_TIMEOUT_SECONDS \
-  API_READY_WAIT_SECONDS API_READY_CHECK_INTERVAL_SECONDS API_REQUEST_TIMEOUT_SECONDS; do
+  API_READY_WAIT_SECONDS API_READY_CHECK_INTERVAL_SECONDS API_REQUEST_TIMEOUT_SECONDS \
+  ROUTER_READY_WAIT_SECONDS ROUTER_READY_CHECK_INTERVAL_SECONDS; do
   require_positive_integer "$timeout_name" "${!timeout_name}"
 done
 
 get_leader() { "$KUBECTL" -n "$NAMESPACE" get cubestorerouter "$CR_NAME" -o jsonpath='{.status.leader}'; }
 get_epoch() { "$KUBECTL" -n "$NAMESPACE" get cubestorerouter "$CR_NAME" -o jsonpath='{.status.leaderEpoch}'; }
+get_promotion_ready() {
+  "$KUBECTL" -n "$NAMESPACE" get cubestorerouter "$CR_NAME" \
+    -o jsonpath='{.status.conditions[?(@.type=="PromotionReady")].status}'
+}
 get_service_endpoint_pod() {
   "$KUBECTL" -n "$NAMESPACE" get endpointslice -l "kubernetes.io/service-name=$LEADER_SERVICE_NAME" -o json |
     jq -r '[.items[].endpoints[]?.targetRef.name] | map(select(. != null)) | unique | .[0] // empty'
@@ -96,21 +103,37 @@ query_cube_api() {
   '
 }
 assert_fixture_loaded() {
-  local rows amount
+  local rows amount ready
   rows="$(mysql_query "SELECT count(*) FROM $SCHEMA.$TABLE" | tr -d '[:space:]')"
   amount="$(mysql_query "SELECT sum(amount) FROM $SCHEMA.$TABLE" | tr -d '[:space:]')"
+  ready="$(mysql_query "SELECT is_ready FROM system.tables WHERE table_schema = '$SCHEMA' AND table_name = '$TABLE'" | tr -d '[:space:]')"
   [ "$rows" = "$EXPECTED_ROW_COUNT" ] || { echo "fatal: fixture row count mismatch (want=$EXPECTED_ROW_COUNT got=$rows)" >&2; return 1; }
   [ "$amount" = "$EXPECTED_TOTAL_AMOUNT" ] || { echo "fatal: fixture total amount mismatch (want=$EXPECTED_TOTAL_AMOUNT got=$amount)" >&2; return 1; }
+  [ "$ready" = "true" ] || { echo "fatal: fixture table is not ready (got=$ready)" >&2; return 1; }
 }
 import_fixture() {
-  local sql existing_table
+  local sql existing_table waited=0
   sql="$(sed -e "s/__SCHEMA__/$SCHEMA/g" -e "s/__TABLE__/$TABLE/g" "$FIXTURE")"
   existing_table="$(mysql_query "SELECT id FROM system.tables WHERE table_schema = '$SCHEMA' AND table_name = '$TABLE'")"
   if [ -n "$existing_table" ]; then
     mysql_query "DROP TABLE $SCHEMA.$TABLE" >/dev/null
+    while [ "$waited" -le "$IMPORT_WAIT_SECONDS" ]; do
+      existing_table="$(mysql_query "SELECT id FROM system.tables WHERE table_schema = '$SCHEMA' AND table_name = '$TABLE'" || true)"
+      [ -z "$existing_table" ] && break
+      sleep "$IMPORT_CHECK_INTERVAL_SECONDS"
+      waited=$((waited + IMPORT_CHECK_INTERVAL_SECONDS))
+    done
   fi
   mysql_query "$(printf '%s\n' "$sql" | sed -n '2p')" >/dev/null
   mysql_query "$(printf '%s\n' "$sql" | sed -n '3p')" >/dev/null
+  waited=0
+  while [ "$waited" -le "$IMPORT_WAIT_SECONDS" ]; do
+    existing_table="$(mysql_query "SELECT id FROM system.tables WHERE table_schema = '$SCHEMA' AND table_name = '$TABLE'" || true)"
+    [ -n "$existing_table" ] && break
+    sleep "$IMPORT_CHECK_INTERVAL_SECONDS"
+    waited=$((waited + IMPORT_CHECK_INTERVAL_SECONDS))
+  done
+  [ -n "$existing_table" ] || { echo "fatal: table was not registered after CREATE TABLE" >&2; return 1; }
   mysql_query "$(printf '%s\n' "$sql" | sed -n '4,$p' | tr '\n' ' ')" >/dev/null
 }
 wait_for_fixture() {
@@ -154,6 +177,20 @@ wait_for_failover() {
   done
   return 1
 }
+wait_for_router_serving() {
+  local waited=0
+  while [ "$waited" -le "$ROUTER_READY_WAIT_SECONDS" ]; do
+    local leader endpoint promotion
+    leader="$(get_leader)"; endpoint="$(get_service_endpoint_pod)"; promotion="$(get_promotion_ready)"
+    if [ -n "$leader" ] && [ "$leader" = "$endpoint" ] && [ "$promotion" = "True" ]; then
+      return 0
+    fi
+    sleep "$ROUTER_READY_CHECK_INTERVAL_SECONDS"
+    waited=$((waited + ROUTER_READY_CHECK_INTERVAL_SECONDS))
+  done
+  echo "fatal: Router did not reach serving state within ${ROUTER_READY_WAIT_SECONDS}s" >&2
+  return 1
+}
 wait_for_cube_api_data() {
   local waited=0 output error_file="/tmp/cube-api-e2e-api.err"
   while [ "$waited" -le "$API_READY_WAIT_SECONDS" ]; do
@@ -167,6 +204,13 @@ wait_for_cube_api_data() {
   cat "$error_file" >&2 || true
   return 1
 }
+refresh_cube_api_after_fixture() {
+  # Cube's query compiler may cache a missing-table planning error when the
+  # fixture is created after the API Pod starts. Restart only the demo API so
+  # the HA assertion tests Router failover, not stale schema metadata.
+  "$KUBECTL" -n "$NAMESPACE" rollout restart "deploy/$API_DEPLOYMENT" >/dev/null
+  "$KUBECTL" -n "$NAMESPACE" rollout status "deploy/$API_DEPLOYMENT" --timeout="${API_ROLLOUT_TIMEOUT_SECONDS}s" >/dev/null
+}
 
 trap cleanup_mysql_client EXIT
 "$KUBECTL" -n "$NAMESPACE" rollout status "deploy/$API_DEPLOYMENT" --timeout="${API_ROLLOUT_TIMEOUT_SECONDS}s" >/dev/null
@@ -174,6 +218,7 @@ start_mysql_client
 old_leader="$(get_leader)"; old_epoch="$(get_epoch)"
 [ -n "$old_leader" ] || { echo "error: no active Router leader" >&2; exit 1; }
 [ -n "$old_epoch" ] && [ "$old_epoch" != 0 ] || { echo "error: leaderEpoch is missing or zero" >&2; exit 1; }
+wait_for_router_serving
 aggregate_query='{"measures":["RouterHaProbe.rowCount","RouterHaProbe.totalAmount"]}'
 row_query='{"dimensions":["RouterHaProbe.id","RouterHaProbe.amount","RouterHaProbe.region","RouterHaProbe.payload"],"filters":[{"member":"RouterHaProbe.id","operator":"equals","values":["7"]}],"limit":1}'
 groups_query='{"measures":["RouterHaProbe.rowCount","RouterHaProbe.totalAmount"],"dimensions":["RouterHaProbe.region"],"order":{"RouterHaProbe.region":"asc"}}'
@@ -187,15 +232,24 @@ capture_api() {
 
 import_fixture
 wait_for_fixture
+refresh_cube_api_after_fixture
 wait_for_cube_api_data
-before="$(capture_api)"; before_hash="$(printf '%s' "$before" | hash_snapshot)"
+if ! before="$(capture_api)"; then
+  echo "fatal: Cube API before snapshot failed; refusing to delete the current leader" >&2
+  exit 1
+fi
+before_hash="$(printf '%s' "$before" | hash_snapshot)"
 printf 'Cube API before: rows=%s amount=%s concrete_row_id=%s hash=%s\n' "$EXPECTED_ROW_COUNT" "$EXPECTED_TOTAL_AMOUNT" "$EXPECTED_ROW_ID" "$before_hash"
 "$KUBECTL" -n "$NAMESPACE" delete pod "$old_leader"
 new_leader="$(wait_for_failover "$old_leader")" || { echo "error: Cube API E2E failover timed out after ${FAILOVER_WAIT_SECONDS}s" >&2; exit 1; }
 new_epoch="$(get_epoch)"
 [ "$new_epoch" -gt "$old_epoch" ] || { echo "error: leaderEpoch did not increase (before=$old_epoch after=$new_epoch)" >&2; exit 1; }
 wait_for_cube_api_data
-after="$(capture_api)"; after_hash="$(printf '%s' "$after" | hash_snapshot)"
+if ! after="$(capture_api)"; then
+  echo "fatal: Cube API after snapshot failed" >&2
+  exit 1
+fi
+after_hash="$(printf '%s' "$after" | hash_snapshot)"
 [ "$before_hash" = "$after_hash" ] || { echo "fatal: Cube API real-data result changed across failover" >&2; exit 1; }
 printf 'Cube API after: rows=%s amount=%s concrete_row_id=%s hash=%s\n' "$EXPECTED_ROW_COUNT" "$EXPECTED_TOTAL_AMOUNT" "$EXPECTED_ROW_ID" "$after_hash"
 printf 'PASS: Cube API real-data rows, concrete row, grouped aggregate and query result preserved (leader=%s epoch=%s)\n' "$new_leader" "$new_epoch"

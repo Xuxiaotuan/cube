@@ -1,5 +1,8 @@
-const schema = process.env.ROUTER_HA_SCHEMA || 'router_ha_probe';
-const table = process.env.ROUTER_HA_TABLE || 'router_ha_data';
+// Cube schema files run inside Cube's sandbox, where Node's `process` global
+// is intentionally unavailable. Keep the E2E fixture deterministic instead
+// of reading environment variables from the schema compiler.
+const schema = 'router_ha_probe';
+const table = 'router_ha_data';
 
 cube('RouterHaProbe', {
   sql: `SELECT id, amount, region, payload FROM ${schema}.${table}`,
@@ -10,7 +13,7 @@ cube('RouterHaProbe', {
   },
 
   dimensions: {
-    id: { sql: `id`, type: `number`, primaryKey: true },
+    id: { sql: `id`, type: `number`, primaryKey: true, public: true },
     amount: { sql: `amount`, type: `number` },
     region: { sql: `region`, type: `string` },
     payload: { sql: `payload`, type: `string` }

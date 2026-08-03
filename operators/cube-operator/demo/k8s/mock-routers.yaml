@@ -7,9 +7,9 @@ type: Opaque
 stringData:
   # Keep these values in the deployment Secret. The lease agent reads url and
   # password from the environment; the Operator reads dsn for the same Redis.
-  dsn: redis://redis.default.svc:6379/0
-  url: redis://redis.default.svc:6379/0
-  password: ""
+  dsn: ${REDIS_URL}
+  url: ${REDIS_URL}
+  password: "${REDIS_PASSWORD}"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -75,7 +75,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsNonRoot: true
+            # The local demo image runs as root. Production images must use a
+            # non-root UID and restore runAsNonRoot: true.
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
         - name: cube-studio-router
           image: ${ROUTER_IMAGE}
           imagePullPolicy: IfNotPresent
@@ -88,38 +92,51 @@ spec:
               value: "true"
             - name: CUBESTORE_ROUTER_LEADERSHIP_FILE
               value: /var/run/cubestore-ha/leadership.json
-            - name: CUBESTORE_ROUTER_ROLE_FILE
-              value: /var/run/cubestore-promotion/route-role.json
-            - name: CUBESTORE_META_ADDR
-              valueFrom:
-                configMapKeyRef:
-                  name: cubestore-metastore-client
-                  key: CUBESTORE_META_ADDR
-            - name: CUBESTORE_WORKERS
-              valueFrom:
-                configMapKeyRef:
-                  name: cubestore-metastore-client
-                  key: CUBESTORE_WORKERS
+            - name: CUBESTORE_ROUTER_PROMOTION_FILE
+              value: /var/run/cubestore-promotion/promotion.json
             - name: CUBESTORE_HTTP_PORT
               value: "3030"
+            - name: CUBESTORE_META_ADDR
+              value: "${META_STORE_ADDRESS}"
             - name: CUBESTORE_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: CUBESTORE_DATA_DIR
+              value: /cube/.cubestore/data
+            - name: CUBESTORE_MINIO_BUCKET
+              value: cube-router-ha
+            - name: CUBESTORE_MINIO_SUB_PATH
+              value: cubestore-demo
+            - name: CUBESTORE_MINIO_REGION
+              value: us-east-1
+            - name: CUBESTORE_MINIO_SERVER_ENDPOINT
+              value: http://cube-router-object-store.cube-operator-demo.svc.cluster.local:9000
+            - name: CUBESTORE_MINIO_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cube-router-demo-object-store
+                  key: accessKey
+            - name: CUBESTORE_MINIO_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cube-router-demo-object-store
+                  key: secretKey
           readinessProbe:
             httpGet:
               path: /router/status
               port: 3030
             initialDelaySeconds: 1
             periodSeconds: 2
-            timeoutSeconds: 1
+            timeoutSeconds: 10
+            failureThreshold: 6
           livenessProbe:
-            httpGet:
-              path: /router/status
+            tcpSocket:
               port: 3030
-            initialDelaySeconds: 1
-            periodSeconds: 2
-            timeoutSeconds: 1
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 5
           ports:
             - containerPort: 3030
             - containerPort: 3306
@@ -130,13 +147,15 @@ spec:
             - name: cubestore-promotion
               mountPath: /var/run/cubestore-promotion
               readOnly: true
+            - name: router-local-data
+              mountPath: /cube/.cubestore/data
           resources:
             requests:
-              cpu: 20m
-              memory: 64Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 1
+              memory: 1Gi
           lifecycle:
             preStop:
               exec:
@@ -145,7 +164,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsNonRoot: true
+            # The local demo image runs as root. Production images must use a
+            # non-root UID and restore runAsNonRoot: true.
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
       volumes:
         # This volume is private to the sidecar and Router in this Pod. It is
         # intentionally not a ConfigMap projection or a Kubernetes lease.
@@ -160,7 +183,9 @@ spec:
             optional: true
             items:
               - key: route-role.json
-                path: route-role.json
+                path: promotion.json
+        - name: router-local-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

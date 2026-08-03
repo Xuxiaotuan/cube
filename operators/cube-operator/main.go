@@ -8,6 +8,7 @@ import (
 	"github.com/cube-js/cube-operator/api/v1alpha1"
 	"github.com/cube-js/cube-operator/controllers"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -20,6 +21,7 @@ var scheme = runtime.NewScheme()
 func init() {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(discoveryv1.AddToScheme(scheme))
 }
 
 func main() {
@@ -50,8 +52,9 @@ func main() {
 	}
 
 	if err = (&controllers.CubestoreRouterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		os.Exit(1)
 	}

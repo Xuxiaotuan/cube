@@ -9,8 +9,12 @@ spec:
     app: cube-router
   routerPort: 3030
   healthPath: /router/status
-  electionStrategy: strict
+  electionStrategy: lease
   roleConfigMapName: cube-router-demo-router-role-state
+  metaStore:
+    address: cubestore-metastore.cube-operator-demo.svc:9999
+  storage:
+    dataPVC: worker-data
   stateStore:
     type: redis
     secretRef:

@@ -28,8 +28,12 @@ spec:
               value: cube-router-leader.cube-operator-demo.svc.cluster.local
             - name: CUBEJS_CUBESTORE_PORT
               value: "3030"
+            # Keep this E2E focused on Router data continuity. CubeStore-backed
+            # cache mutations have a separate UNKNOWN-outcome recovery contract.
             - name: CUBEJS_CACHE_AND_QUEUE_DRIVER
-              value: cubestore
+              value: memory
+            - name: CUBEJS_SCHEMA_PATH
+              value: schema
             - name: CUBEJS_PORT
               value: "4000"
           readinessProbe:

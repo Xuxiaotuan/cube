@@ -140,12 +140,12 @@ func TestSyncReflectsHolderChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	record = validRecord("router-b", 8, "b", now.Add(time.Second))
-	if err := agent.Sync(context.Background()); err != nil {
-		t.Fatal(err)
+	if err := agent.Sync(context.Background()); !errors.Is(err, ErrNotHolder) {
+		t.Fatalf("holder change error = %v, want ErrNotHolder", err)
 	}
 	file := readLeadershipFile(t, agent.path)
-	if file.HolderID != "router-b" || file.Epoch != 8 || file.TokenHash != tokenHash("b") {
-		t.Fatalf("holder change was not reflected: %+v", file)
+	if file.HolderID != "" || !file.ExpiresAt.Before(now.Add(time.Second)) {
+		t.Fatalf("holder change did not fail closed: %+v", file)
 	}
 }
 

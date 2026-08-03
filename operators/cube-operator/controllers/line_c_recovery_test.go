@@ -9,7 +9,7 @@ import (
 
 func TestPromotionAcknowledgedRequiresExactEpochTokenHashAndMetaStore(t *testing.T) {
 	lease := leadership.LeaseRecord{Epoch: 7, Token: "current-token"}
-	candidate := candidate{
+	acknowledged := candidate{
 		StatusContract: true,
 		IsLeader:       true,
 		LeaderEpoch:    7,
@@ -18,19 +18,19 @@ func TestPromotionAcknowledgedRequiresExactEpochTokenHashAndMetaStore(t *testing
 		MetaStoreReady: true,
 	}
 
-	if !promotionAcknowledged(candidate, lease) {
+	if !promotionAcknowledged(acknowledged, lease) {
 		t.Fatal("expected an exact promotion acknowledgement to be accepted")
 	}
 
 	for name, mutate := range map[string]func(*candidate){
-		"old leader epoch": func(c *candidate) { c.LeaderEpoch = 6 },
-		"old lease epoch":  func(c *candidate) { c.LeaseEpoch = 6 },
-		"old token":        func(c *candidate) { c.LeaseTokenHash = hashLeaseToken("old-token") },
+		"old leader epoch":  func(c *candidate) { c.LeaderEpoch = 6 },
+		"old lease epoch":   func(c *candidate) { c.LeaseEpoch = 6 },
+		"old token":         func(c *candidate) { c.LeaseTokenHash = hashLeaseToken("old-token") },
 		"missing metastore": func(c *candidate) { c.MetaStoreReady = false },
 		"missing contract":  func(c *candidate) { c.StatusContract = false },
 	} {
 		t.Run(name, func(t *testing.T) {
-			stale := candidate
+			stale := acknowledged
 			mutate(&stale)
 			if promotionAcknowledged(stale, lease) {
 				t.Fatal("stale or incomplete promotion acknowledgement was accepted")

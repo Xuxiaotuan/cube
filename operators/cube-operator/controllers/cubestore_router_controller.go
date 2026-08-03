@@ -77,6 +77,7 @@ return 1
 
 type CubestoreRouterReconciler struct {
 	client.Client
+	APIReader    client.Reader
 	*runtime.Scheme
 	leaseMu      sync.Mutex
 	routerLeases map[string]leadership.LeaseRecord
@@ -125,6 +126,9 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 	if promotionErr == nil {
 		promotionLeader, promotionPhase, promotionErr = r.reconcilePromotion(ctx, &cr, targetNS, candidates, leader, lease)
+		if promotionErr != nil && !errors.Is(promotionErr, errPromotionPending) {
+			log.Error(promotionErr, "promotion reconciliation failed", "phase", promotionPhase, "epoch", lease.Epoch)
+		}
 	}
 	promotionReady := promotionLeader != nil && promotionPhase == promotionPhaseServing
 	nextStatus.Conditions = r.withLeaderCondition(candidates, promotionLeader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
@@ -132,9 +136,13 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	syncStateErr := promotionErr
 	if syncStateErr == nil {
-		stateLeader := promotionLeader
-		if promotionPhase != promotionPhaseServing {
-			stateLeader = nil
+		// Publish the fenced lease holder before waiting for its Router
+		// acknowledgement. The Router needs activeLeader, epoch, and token
+		// from this marker to produce the readiness acknowledgement; delaying
+		// the marker until serving creates a circular promotion deadlock.
+		stateLeader := leader
+		if promotionPhase == promotionPhaseServing && promotionLeader != nil {
+			stateLeader = promotionLeader
 		}
 		syncStateErr = r.syncRoleState(ctx, targetNS, &cr, candidates, stateLeader, lease.Epoch, resolveRoleConfigMapName(&cr), lease)
 		if syncStateErr != nil && promotionLeader != nil {
@@ -174,6 +182,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if syncStateErr != nil {
+		log.Error(syncStateErr, "role state synchronization failed", "phase", promotionPhase, "epoch", lease.Epoch)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, syncStateErr
 	}
 
@@ -190,6 +199,14 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 	clusterID := resolveLeaderStateRecordID(cr.Namespace, cr.Name)
 	current, err := store.Get(ctx, clusterID)
 	if err == nil {
+		currentCandidate := readyCandidateByName(candidates, current.HolderID)
+		if currentCandidate == nil {
+			// Never renew a lease for a Pod that is no longer a ready
+			// candidate. During a rollout or deletion the old holder must
+			// expire naturally so a current Pod can acquire the next epoch.
+			r.clearLocalRouterLease(clusterID, current.Token)
+			return nil, current, nil
+		}
 		if local, ok := r.localRouterLease(clusterID); ok && local.HolderID == current.HolderID && local.Token == current.Token {
 			renewed, renewedOK, renewErr := store.Renew(ctx, local, routerLeaseTTL(cr))
 			if renewErr != nil {
@@ -202,7 +219,7 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 			r.setLocalRouterLease(clusterID, renewed)
 			current = renewed
 		}
-		return readyCandidateByName(candidates, current.HolderID), current, nil
+		return currentCandidate, current, nil
 	}
 	if !errors.Is(err, leadership.ErrLeaseNotFound) {
 		return nil, leadership.LeaseRecord{}, err
@@ -494,14 +511,21 @@ func fencedConfigMapPatch(cm *corev1.ConfigMap, data map[string]string, lease le
 }
 
 func (r *CubestoreRouterReconciler) updatePodRoleWithFence(ctx context.Context, pod *corev1.Pod, role string, cr *v1alpha1.CubestoreRouter, lease leadership.LeaseRecord) error {
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
+	current := &corev1.Pod{}
+	if err := reader.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, current); err != nil {
+		return err
+	}
 	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
 		return err
 	}
-	if err := r.ensureObjectFence(ctx, pod, lease); err != nil {
+	if err := r.ensureObjectFence(ctx, current, lease); err != nil {
 		return err
 	}
-	current := &corev1.Pod{}
-	if err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, current); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, current); err != nil {
 		return err
 	}
 	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
@@ -515,21 +539,30 @@ func (r *CubestoreRouterReconciler) updatePodRoleWithFence(ctx context.Context, 
 }
 
 func (r *CubestoreRouterReconciler) updateRouterStatusWithFence(ctx context.Context, cr *v1alpha1.CubestoreRouter, status v1alpha1.CubestoreRouterStatus, lease leadership.LeaseRecord) error {
-	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
-		return err
-	}
-	if err := r.ensureObjectFence(ctx, cr, lease); err != nil {
-		return err
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
 	}
 	fresh := &v1alpha1.CubestoreRouter{}
-	if err := r.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, fresh); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, fresh); err != nil {
+		return err
+	}
+	if err := r.validateLeaseBeforeWrite(ctx, fresh, lease); err != nil {
+		return err
+	}
+	if err := r.ensureObjectFence(ctx, fresh, lease); err != nil {
+		return err
+	}
+	if err := reader.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, fresh); err != nil {
 		return err
 	}
 	if err := r.validateLeaseBeforeWrite(ctx, fresh, lease); err != nil {
 		return err
 	}
 	patch := []leaseJSONPatchOperation{
-		{Op: "test", Path: "/metadata/resourceVersion", Value: fresh.GetResourceVersion()},
+		// The lease annotations are the authoritative fencing predicate. A
+		// resourceVersion test is unsafe here because controller-runtime's cache
+		// can lag immediately after the lease/promotion annotation patch.
 		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseClusterAnnotation), Value: lease.ClusterID},
 		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseEpochAnnotation), Value: strconv.FormatInt(lease.Epoch, 10)},
 		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseTokenAnnotation), Value: lease.Token},
@@ -1071,8 +1104,12 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 	roleState []byte,
 	lease leadership.LeaseRecord,
 ) error {
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
 	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, cm); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, cm); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return err
 		}
@@ -1108,7 +1145,7 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 		return err
 	}
 	fresh := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, fresh); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, fresh); err != nil {
 		return err
 	}
 	if fresh.Data[defaultRoleDataKey] == string(roleState) {

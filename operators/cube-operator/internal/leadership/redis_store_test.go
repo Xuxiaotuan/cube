@@ -13,14 +13,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const configuredRedisURL = "redis://100.82.226.63:30078/0"
-
 func redisStoreForTest(t *testing.T) *RedisStore {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("REDIS_URL"))
 	if dsn == "" {
-		dsn = configuredRedisURL
-		t.Log("REDIS_URL is not set; using the configured Redis endpoint")
+		t.Skip("REDIS_URL is not set; skipping real Redis integration test")
 	}
 	options, err := redis.ParseURL(dsn)
 	if err != nil {
