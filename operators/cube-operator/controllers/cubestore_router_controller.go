@@ -51,6 +51,28 @@ const (
 
 const leaderStateOpTimeout = 4 * time.Second
 
+var redisStateFenceScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if not current then
+  redis.call('SET', KEYS[1], ARGV[1])
+  return 1
+end
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or type(decoded.leaseEpoch) ~= 'number' or type(decoded.leaseClusterID) ~= 'string' or type(decoded.leaseToken) ~= 'string' then
+  return 2
+end
+local current_epoch = tonumber(decoded.leaseEpoch)
+local proposed_epoch = tonumber(ARGV[2])
+if not current_epoch or not proposed_epoch or current_epoch > proposed_epoch then
+  return 0
+end
+if current_epoch == proposed_epoch and (decoded.leaseClusterID ~= ARGV[3] or decoded.leaseToken ~= ARGV[4]) then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1])
+return 1
+`)
+
 type CubestoreRouterReconciler struct {
 	client.Client
 	*runtime.Scheme
@@ -398,6 +420,22 @@ func fencedRolePatch(obj client.Object, role string, lease leadership.LeaseRecor
 	return json.Marshal(operations)
 }
 
+func fencedConfigMapPatch(cm *corev1.ConfigMap, data map[string]string, lease leadership.LeaseRecord) ([]byte, error) {
+	operations := []leaseJSONPatchOperation{
+		{Op: "test", Path: "/metadata/resourceVersion", Value: cm.GetResourceVersion()},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseClusterAnnotation), Value: lease.ClusterID},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseEpochAnnotation), Value: strconv.FormatInt(lease.Epoch, 10)},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseTokenAnnotation), Value: lease.Token},
+	}
+	path := "/data"
+	if cm.Data == nil {
+		operations = append(operations, leaseJSONPatchOperation{Op: "add", Path: path, Value: data})
+	} else {
+		operations = append(operations, leaseJSONPatchOperation{Op: "replace", Path: path, Value: data})
+	}
+	return json.Marshal(operations)
+}
+
 func (r *CubestoreRouterReconciler) updatePodRoleWithFence(ctx context.Context, pod *corev1.Pod, role string, cr *v1alpha1.CubestoreRouter, lease leadership.LeaseRecord) error {
 	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
 		return err
@@ -433,8 +471,18 @@ func (r *CubestoreRouterReconciler) updateRouterStatusWithFence(ctx context.Cont
 	if err := r.validateLeaseBeforeWrite(ctx, fresh, lease); err != nil {
 		return err
 	}
-	fresh.Status = status
-	return r.Status().Update(ctx, fresh)
+	patch := []leaseJSONPatchOperation{
+		{Op: "test", Path: "/metadata/resourceVersion", Value: fresh.GetResourceVersion()},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseClusterAnnotation), Value: lease.ClusterID},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseEpochAnnotation), Value: strconv.FormatInt(lease.Epoch, 10)},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseTokenAnnotation), Value: lease.Token},
+		{Op: "replace", Path: "/status", Value: status},
+	}
+	patchData, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	return r.Status().Patch(ctx, fresh, client.RawPatch(types.JSONPatchType, patchData))
 }
 
 func resolveRoleConfigMapName(cr *v1alpha1.CubestoreRouter) string {
@@ -475,10 +523,13 @@ type candidate struct {
 }
 
 type routerLeaderState struct {
-	LeaderEpoch  int64                     `json:"leaderEpoch"`
-	ActiveLeader string                    `json:"activeLeader"`
-	UpdatedAt    string                    `json:"updatedAt"`
-	Candidates   map[string]map[string]any `json:"candidates"`
+	LeaderEpoch    int64                     `json:"leaderEpoch"`
+	ActiveLeader   string                    `json:"activeLeader"`
+	UpdatedAt      string                    `json:"updatedAt"`
+	Candidates     map[string]map[string]any `json:"candidates"`
+	LeaseClusterID string                    `json:"leaseClusterID"`
+	LeaseEpoch     int64                     `json:"leaseEpoch"`
+	LeaseToken     string                    `json:"leaseToken"`
 }
 
 const (
@@ -788,6 +839,9 @@ func (r *CubestoreRouterReconciler) syncRoleState(
 	lease leadership.LeaseRecord,
 ) error {
 	state := r.buildLeaderState(candidates, leader, leaderEpoch)
+	state.LeaseClusterID = lease.ClusterID
+	state.LeaseEpoch = lease.Epoch
+	state.LeaseToken = lease.Token
 	roleData, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -880,8 +934,9 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      roleStateConfigMap,
-				Namespace: namespace,
+				Name:        roleStateConfigMap,
+				Namespace:   namespace,
+				Annotations: leaseFenceValues(lease),
 				OwnerReferences: []metav1.OwnerReference{{
 					APIVersion: "cubestore.io/v1alpha1",
 					Kind:       "CubestoreRouter",
@@ -901,21 +956,30 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 		return r.Create(ctx, cm)
 	}
 
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
 	}
-
-	if cm.Data[defaultRoleDataKey] == string(roleState) {
+	if err := r.ensureObjectFence(ctx, cm, lease); err != nil {
+		return err
+	}
+	fresh := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, fresh); err != nil {
+		return err
+	}
+	if fresh.Data[defaultRoleDataKey] == string(roleState) {
 		return nil
 	}
-
-	cm.Data = map[string]string{
+	fresh.Data = map[string]string{
 		defaultRoleDataKey: string(roleState),
 	}
 	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
 		return err
 	}
-	return r.Update(ctx, cm)
+	patch, err := fencedConfigMapPatch(fresh, fresh.Data, lease)
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, fresh, client.RawPatch(types.JSONPatchType, patch))
 }
 
 func (r *CubestoreRouterReconciler) syncRoleStateRemote(
@@ -1104,6 +1168,13 @@ func (r *CubestoreRouterReconciler) readLeaderStateFromRedis(ctx context.Context
 	return state, nil
 }
 
+func validatePersistedLeaseState(state routerLeaderState) error {
+	if strings.TrimSpace(state.LeaseClusterID) == "" || state.LeaseEpoch <= 0 || strings.TrimSpace(state.LeaseToken) == "" {
+		return leadership.ErrStaleLease
+	}
+	return nil
+}
+
 func (r *CubestoreRouterReconciler) writeLeaderStateToPostgres(
 	ctx context.Context,
 	namespace string,
@@ -1142,10 +1213,23 @@ func (r *CubestoreRouterReconciler) writeLeaderStateToPostgres(
 	if err != nil {
 		return err
 	}
+	if err := validatePersistedLeaseState(state); err != nil {
+		return err
+	}
 
-	query := fmt.Sprintf(`INSERT INTO %s (id, state) VALUES ($1, $2::jsonb) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`, table)
-	_, err = pool.Exec(backendCtx, query, recordID, string(stateJSON))
-	return err
+	query := fmt.Sprintf(`INSERT INTO %s (id, state) VALUES ($1, $2::jsonb)
+		ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = clock_timestamp()
+		WHERE CASE WHEN (state->>'leaseEpoch') ~ '^[0-9]+$' THEN (state->>'leaseEpoch')::bigint ELSE 0 END < $3
+		   OR (CASE WHEN (state->>'leaseEpoch') ~ '^[0-9]+$' THEN (state->>'leaseEpoch')::bigint ELSE 0 END = $3
+		       AND state->>'leaseClusterID' = $4 AND state->>'leaseToken' = $5)`, table)
+	tag, err := pool.Exec(backendCtx, query, recordID, string(stateJSON), state.LeaseEpoch, state.LeaseClusterID, state.LeaseToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return leadership.ErrStaleLease
+	}
+	return nil
 }
 
 func (r *CubestoreRouterReconciler) writeLeaderStateToRedis(
@@ -1177,9 +1261,27 @@ func (r *CubestoreRouterReconciler) writeLeaderStateToRedis(
 	if err != nil {
 		return err
 	}
+	if err := validatePersistedLeaseState(state); err != nil {
+		return err
+	}
 
 	key := resolveRedisLeaderStateKey(cr.Spec.LeaderStateStore.RedisKey, cr.Namespace, cr.Name)
-	return rdb.Set(backendCtx, key, stateJSON, 0).Err()
+	result, err := redisStateFenceScript.Run(backendCtx, rdb, []string{key}, string(stateJSON), state.LeaseEpoch, state.LeaseClusterID, state.LeaseToken).Result()
+	if err != nil {
+		return err
+	}
+	code, err := strconv.ParseInt(fmt.Sprint(result), 10, 64)
+	if err != nil {
+		return err
+	}
+	switch code {
+	case 1:
+		return nil
+	case 2:
+		return leadership.ErrLeaseUnknown
+	default:
+		return leadership.ErrStaleLease
+	}
 }
 
 func (r *CubestoreRouterReconciler) ensurePostgresLeaderStateTable(ctx context.Context, pool *pgxpool.Pool, table string) error {

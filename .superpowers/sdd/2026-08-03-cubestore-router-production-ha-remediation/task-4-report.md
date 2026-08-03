@@ -24,6 +24,12 @@ Passed: `go test ./internal/leadership ./controllers`.
 
 The production-path unit tests and controller behavior tests ran. Redis and PostgreSQL integration tests were skipped because `CUBESTORE_TEST_REDIS_URL` and `CUBESTORE_TEST_POSTGRES_DSN` are not configured; no real Redis/PostgreSQL CAS execution was performed.
 
+## Final Blocking Boundary
+
+The controller now uses promotion markers carried in Kubernetes objects. ConfigMap writes use marker/resourceVersion JSON Patch predicates; remote state writes carry the marker and use Redis Lua or PostgreSQL conditional CAS; Router status uses `Status().Patch` with marker/resourceVersion tests. The current controller behavior tests cover Pod, ConfigMap, and Router status paths, including stale marker rejection.
+
+The remaining architectural limitation is cross-system atomicity: the frozen `LeaseStore` interface and Kubernetes API cannot commit an external Redis/PostgreSQL lease transfer and a Kubernetes object write in one transaction. The safety claim is therefore bounded to the persisted promotion marker: once that marker CAS succeeds, stale epoch/token writers are rejected by the Kubernetes predicate. Removing this boundary would require a co-located authoritative store/admission controller or a new transactional write interface outside the Task 4 file scope.
+
 ## Required Follow-up
 
 Run the same focused command with `CUBESTORE_TEST_REDIS_URL` and `CUBESTORE_TEST_POSTGRES_DSN` configured to execute the Redis and PostgreSQL integration contention, expiry, stale-token, outage, and clock-skew cases.

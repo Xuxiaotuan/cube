@@ -137,10 +137,17 @@ func (s *PostgresStore) Get(ctx context.Context, clusterID string) (LeaseRecord,
 		return LeaseRecord{}, fmt.Errorf("cluster ID is required")
 	}
 	record, active, err := s.queryLease(ctx, s.pool, clusterID, false)
-	if errors.Is(err, pgx.ErrNoRows) || !active {
-		return LeaseRecord{}, ErrLeaseNotFound
+	if lookupErr := classifyLeaseLookup(err, active); lookupErr != nil {
+		return LeaseRecord{}, lookupErr
 	}
 	return record, err
+}
+
+func classifyLeaseLookup(err error, active bool) error {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
+		return ErrLeaseNotFound
+	}
+	return err
 }
 
 type postgresQueryer interface {

@@ -147,6 +147,12 @@ func TestRedisFencingValidationAndUnknownResponse(t *testing.T) {
 	if _, found, err := parseRedisGetResult("cluster", result); !errors.Is(err, ErrLeaseUnknown) || found {
 		t.Fatalf("unknown get = (%t, %v), want false, ErrLeaseUnknown", found, err)
 	}
+	for _, epoch := range []interface{}{int64(0), int64(-1), "malformed"} {
+		malformed := []interface{}{int64(1), "holder", "token", epoch, int64(1000), int64(2000)}
+		if _, _, err := parseRedisGetResult("cluster", malformed); err == nil {
+			t.Fatalf("epoch %v was accepted, want rejected malformed lease", epoch)
+		}
+	}
 }
 
 func TestRedisStoreOutageAndServerClock(t *testing.T) {

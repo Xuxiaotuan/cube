@@ -23,6 +23,10 @@ local function now_ms()
 end
 local current = redis.call('HGETALL', KEYS[1])
 if #current == 0 then
+  local durable = redis.call('GET', KEYS[2])
+  if durable and (not tonumber(durable) or tonumber(durable) <= 0) then
+    return {2}
+  end
   local epoch = redis.call('INCR', KEYS[2])
   local issued = now_ms()
   local expires = issued + tonumber(ARGV[4])
@@ -37,6 +41,11 @@ end
 if redis.call('HGET', KEYS[1], 'cluster') ~= ARGV[1] then
   return {2, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), redis.call('HGET', KEYS[1], 'issued'), 0}
 end
+local current_epoch = tonumber(redis.call('HGET', KEYS[1], 'epoch'))
+local durable_epoch = tonumber(redis.call('GET', KEYS[2]))
+if not current_epoch or current_epoch <= 0 or not durable_epoch or durable_epoch < current_epoch then
+  return {2, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), redis.call('HGET', KEYS[1], 'issued'), 0}
+end
 local issued = redis.call('HGET', KEYS[1], 'issued')
 return {0, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), issued, now_ms() + ttl}
 `)
@@ -45,6 +54,10 @@ var redisRenewScript = redis.NewScript(`
 local function now_ms()
   local now = redis.call('TIME')
   return now[1] * 1000 + math.floor(now[2] / 1000)
+end
+local current_epoch = tonumber(redis.call('HGET', KEYS[1], 'epoch'))
+if not current_epoch or current_epoch <= 0 then
+  return {2}
 end
 if redis.call('HGET', KEYS[1], 'cluster') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'holder') ~= ARGV[2] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[3] or redis.call('HGET', KEYS[1], 'epoch') ~= ARGV[4] then
   return {0}
@@ -64,6 +77,10 @@ return {1, ARGV[2], ARGV[3], epoch, issued, now + tonumber(ARGV[5])}
 `)
 
 var redisReleaseScript = redis.NewScript(`
+local current_epoch = tonumber(redis.call('HGET', KEYS[1], 'epoch'))
+if not current_epoch or current_epoch <= 0 then
+  return 2
+end
 if redis.call('HGET', KEYS[1], 'cluster') == ARGV[1] and redis.call('HGET', KEYS[1], 'holder') == ARGV[2] and redis.call('HGET', KEYS[1], 'token') == ARGV[3] and redis.call('HGET', KEYS[1], 'epoch') == ARGV[4] then
   local ttl = redis.call('PTTL', KEYS[1])
   if ttl == -1 or ttl == 0 then
@@ -186,11 +203,7 @@ func parseRedisAcquireResult(clusterID string, result interface{}) (LeaseRecord,
 		return LeaseRecord{}, false, err
 	}
 	if state == 2 {
-		record, recordErr := parseRedisLeaseValues(clusterID, values)
-		if recordErr != nil {
-			return LeaseRecord{}, false, recordErr
-		}
-		return record, false, ErrLeaseUnknown
+		return LeaseRecord{}, false, ErrLeaseUnknown
 	}
 	if state != 0 && state != 1 {
 		return LeaseRecord{}, false, fmt.Errorf("unexpected Redis acquire state %d", state)
@@ -262,6 +275,9 @@ func parseRedisLeaseValues(clusterID string, values []interface{}) (LeaseRecord,
 	expires, err := redisInt(values[5])
 	if err != nil {
 		return LeaseRecord{}, err
+	}
+	if epoch <= 0 || strings.TrimSpace(fmt.Sprint(values[1])) == "" || strings.TrimSpace(fmt.Sprint(values[2])) == "" || expires <= issued {
+		return LeaseRecord{}, ErrLeaseUnknown
 	}
 	return LeaseRecord{ClusterID: clusterID, HolderID: fmt.Sprint(values[1]), Token: fmt.Sprint(values[2]), Epoch: epoch, IssuedAt: time.UnixMilli(issued), ExpiresAt: time.UnixMilli(expires)}, nil
 }

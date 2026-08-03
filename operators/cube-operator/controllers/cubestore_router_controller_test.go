@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cube-js/cube-operator/api/v1alpha1"
 	"github.com/cube-js/cube-operator/internal/leadership"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +43,149 @@ func (s *controllerLeaseStore) Get(context.Context, string) (leadership.LeaseRec
 type roleWriteClient struct {
 	client.Client
 	pod *corev1.Pod
+}
+
+type stateWriteClient struct {
+	client.Client
+	configMap *corev1.ConfigMap
+}
+
+func (c *stateWriteClient) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	if key.Name != c.configMap.Name || key.Namespace != c.configMap.Namespace {
+		return errors.New("configmap not found")
+	}
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		return errors.New("expected configmap object")
+	}
+	*cm = *c.configMap.DeepCopy()
+	return nil
+}
+
+func (c *stateWriteClient) Patch(_ context.Context, obj client.Object, patch client.Patch, _ ...client.PatchOption) error {
+	data, err := patch.Data(obj)
+	if err != nil {
+		return err
+	}
+	var operations []struct {
+		Op    string      `json:"op"`
+		Path  string      `json:"path"`
+		Value interface{} `json:"value"`
+	}
+	if err := json.Unmarshal(data, &operations); err != nil {
+		return err
+	}
+	for _, operation := range operations {
+		if operation.Op != "test" {
+			continue
+		}
+		value, ok := operation.Value.(string)
+		if !ok {
+			return errors.New("test value must be a string")
+		}
+		if operation.Path == "/metadata/resourceVersion" && value != c.configMap.ResourceVersion {
+			return leadership.ErrStaleLease
+		}
+		if strings.HasPrefix(operation.Path, "/metadata/annotations/") {
+			key := strings.TrimPrefix(operation.Path, "/metadata/annotations/")
+			key = strings.ReplaceAll(strings.ReplaceAll(key, "~1", "/"), "~0", "~")
+			if c.configMap.Annotations[key] != value {
+				return leadership.ErrStaleLease
+			}
+		}
+	}
+	for _, operation := range operations {
+		if operation.Op != "replace" && operation.Op != "add" || operation.Path != "/data" {
+			continue
+		}
+		values, ok := operation.Value.(map[string]interface{})
+		if !ok {
+			return errors.New("configmap data must be an object")
+		}
+		c.configMap.Data = map[string]string{}
+		for key, item := range values {
+			value, ok := item.(string)
+			if !ok {
+				return errors.New("configmap value must be a string")
+			}
+			c.configMap.Data[key] = value
+		}
+	}
+	version, _ := strconv.Atoi(c.configMap.ResourceVersion)
+	c.configMap.ResourceVersion = strconv.Itoa(version + 1)
+	return nil
+}
+
+type statusWriteClient struct {
+	client.Client
+	router           *v1alpha1.CubestoreRouter
+	statusPatchCount int
+}
+
+func (c *statusWriteClient) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	if key.Name != c.router.Name || key.Namespace != c.router.Namespace {
+		return errors.New("router not found")
+	}
+	router, ok := obj.(*v1alpha1.CubestoreRouter)
+	if !ok {
+		return errors.New("expected router object")
+	}
+	*router = *c.router.DeepCopy()
+	return nil
+}
+
+func (c *statusWriteClient) Patch(_ context.Context, obj client.Object, patch client.Patch, _ ...client.PatchOption) error {
+	return errors.New("metadata patch should use the main client")
+}
+
+func (c *statusWriteClient) Status() client.SubResourceWriter {
+	return &statusPatchWriter{owner: c}
+}
+
+type statusPatchWriter struct{ owner *statusWriteClient }
+
+func (w *statusPatchWriter) Create(context.Context, client.Object, client.Object, ...client.SubResourceCreateOption) error {
+	return errors.New("not used")
+}
+
+func (w *statusPatchWriter) Update(context.Context, client.Object, ...client.SubResourceUpdateOption) error {
+	return errors.New("status update must use patch")
+}
+
+func (w *statusPatchWriter) Patch(_ context.Context, obj client.Object, patch client.Patch, _ ...client.SubResourcePatchOption) error {
+	data, err := patch.Data(obj)
+	if err != nil {
+		return err
+	}
+	var operations []struct {
+		Op    string      `json:"op"`
+		Path  string      `json:"path"`
+		Value interface{} `json:"value"`
+	}
+	if err := json.Unmarshal(data, &operations); err != nil {
+		return err
+	}
+	for _, operation := range operations {
+		if operation.Op == "test" && operation.Path == "/metadata/resourceVersion" && operation.Value != w.owner.router.ResourceVersion {
+			return leadership.ErrStaleLease
+		}
+	}
+	for _, operation := range operations {
+		if operation.Path != "/status" || operation.Op != "replace" {
+			continue
+		}
+		statusData, err := json.Marshal(operation.Value)
+		if err != nil {
+			return err
+		}
+		var status v1alpha1.CubestoreRouterStatus
+		if err := json.Unmarshal(statusData, &status); err != nil {
+			return err
+		}
+		w.owner.router.Status = status
+		w.owner.statusPatchCount++
+	}
+	return nil
 }
 
 func (c *roleWriteClient) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
@@ -227,5 +371,48 @@ func TestSyncRolesAcceptsCurrentLeaseForPodWrite(t *testing.T) {
 	pod := reconciler.Client.(*roleWriteClient).pod
 	if pod.Labels[labelNamespace] != labelLeader {
 		t.Fatalf("current lease role = %q, want %q", pod.Labels[labelNamespace], labelLeader)
+	}
+}
+
+func TestSyncRoleStateConfigMapUsesFencePredicate(t *testing.T) {
+	lease := roleWriteLease(2, "current-token")
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Name: "role-state", Namespace: "router-ns", ResourceVersion: "1", Annotations: leaseFenceValues(lease),
+	}, Data: map[string]string{defaultRoleDataKey: "old"}}
+	stateClient := &stateWriteClient{configMap: cm}
+	reconciler := &CubestoreRouterReconciler{Client: stateClient, leaseStore: &controllerLeaseStore{current: lease}}
+	cr := &v1alpha1.CubestoreRouter{ObjectMeta: metav1.ObjectMeta{Name: "router", Namespace: "router-ns"}}
+
+	if err := reconciler.syncRoleStateConfigMap(context.Background(), "router-ns", cr, "role-state", []byte("new"), lease); err != nil {
+		t.Fatal(err)
+	}
+	if stateClient.configMap.Data[defaultRoleDataKey] != "new" {
+		t.Fatal("current lease did not persist ConfigMap state")
+	}
+
+	stateClient.configMap.Annotations = leaseFenceValues(roleWriteLease(3, "promoted-token"))
+	stateClient.configMap.Data[defaultRoleDataKey] = "promoted"
+	if err := reconciler.syncRoleStateConfigMap(context.Background(), "router-ns", cr, "role-state", []byte("stale"), lease); !errors.Is(err, leadership.ErrStaleLease) {
+		t.Fatalf("stale ConfigMap write error = %v, want ErrStaleLease", err)
+	}
+	if stateClient.configMap.Data[defaultRoleDataKey] != "promoted" {
+		t.Fatal("stale lease changed ConfigMap state")
+	}
+}
+
+func TestRouterStatusUsesFencedStatusPatch(t *testing.T) {
+	lease := roleWriteLease(2, "current-token")
+	router := &v1alpha1.CubestoreRouter{ObjectMeta: metav1.ObjectMeta{
+		Name: "router", Namespace: "router-ns", ResourceVersion: "1", Annotations: leaseFenceValues(lease),
+	}}
+	statusClient := &statusWriteClient{router: router}
+	reconciler := &CubestoreRouterReconciler{Client: statusClient, leaseStore: &controllerLeaseStore{current: lease}}
+	wanted := v1alpha1.CubestoreRouterStatus{Leader: "router-0", LeaderEpoch: lease.Epoch}
+
+	if err := reconciler.updateRouterStatusWithFence(context.Background(), router, wanted, lease); err != nil {
+		t.Fatal(err)
+	}
+	if statusClient.statusPatchCount != 1 || statusClient.router.Status.Leader != "router-0" {
+		t.Fatalf("status patch count/status = (%d, %#v), want one fenced patch", statusClient.statusPatchCount, statusClient.router.Status)
 	}
 }

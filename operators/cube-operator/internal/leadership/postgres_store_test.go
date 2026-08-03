@@ -135,3 +135,13 @@ func TestPostgresStoreOutageAndServerClock(t *testing.T) {
 		t.Fatalf("missing Renew = (%t, %v), want false, ErrLeaseNotFound", renewed, err)
 	}
 }
+
+func TestPostgresLeaseLookupDistinguishesTransportErrors(t *testing.T) {
+	transportErr := errors.New("database connection reset")
+	if got := classifyLeaseLookup(transportErr, false); !errors.Is(got, transportErr) || errors.Is(got, ErrLeaseNotFound) {
+		t.Fatalf("transport classification = %v, want original transport error", got)
+	}
+	if got := classifyLeaseLookup(nil, false); !errors.Is(got, ErrLeaseNotFound) {
+		t.Fatalf("inactive classification = %v, want ErrLeaseNotFound", got)
+	}
+}
