@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cubestore-metastore
+  labels:
+    app.kubernetes.io/name: cubestore-metastore
+    app.kubernetes.io/component: metastore
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cubestore-metastore
+  labels:
+    app.kubernetes.io/name: cubestore-metastore
+    app.kubernetes.io/component: metastore
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cubestore-metastore
+  labels:
+    app.kubernetes.io/name: cubestore-metastore
+    app.kubernetes.io/component: metastore
+subjects:
+  - kind: ServiceAccount
+    name: cubestore-metastore
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cubestore-metastore
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cubestore-metastore
+  labels:
+    app.kubernetes.io/name: cubestore-metastore
+    app.kubernetes.io/component: metastore
+spec:
+  serviceName: cubestore-metastore
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cubestore-metastore
+      app.kubernetes.io/component: metastore
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cubestore-metastore
+        app.kubernetes.io/component: metastore
+      annotations:
+        backup.velero.io/backup-volumes: metastore-data
+    spec:
+      serviceAccountName: cubestore-metastore
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: cubestore-metastore
+          image: cube-studio-router:ha-local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CUBESTORE_SERVER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CUBESTORE_DATA_DIR
+              value: /cube/.cubestore/data
+            - name: CUBESTORE_META_BIND_ADDR
+              value: 0.0.0.0:9999
+            # CUBESTORE_META_ADDR is intentionally absent: this is the sole
+            # process allowed to open the authoritative RocksMetaStore.
+            - name: CUBESTORE_BIND_ADDR
+              value: 127.0.0.1:3306
+            - name: CUBESTORE_HTTP_BIND_ADDR
+              value: 127.0.0.1:3030
+          ports:
+            - name: metastore
+              containerPort: 9999
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: metastore
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: metastore
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 30"]
+          volumeMounts:
+            - name: metastore-data
+              mountPath: /cube/.cubestore/data
+      volumes: []
+  volumeClaimTemplates:
+    - metadata:
+        name: metastore-data
+        labels:
+          app.kubernetes.io/name: cubestore-metastore
+          app.kubernetes.io/component: metastore
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 20Gi

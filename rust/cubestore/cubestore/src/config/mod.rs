@@ -127,16 +127,18 @@ impl CubeServices {
         }
 
         if !self.cluster.is_select_worker() {
-            let rocks_meta_store = self.rocks_meta_store.clone().unwrap();
-            futures.push(cube_ext::spawn(async move {
-                rocks_meta_store.wait_upload_loop().await;
-                Ok(())
-            }));
+            if let Some(rocks_meta_store) = self.rocks_meta_store.clone() {
+                futures.push(cube_ext::spawn(async move {
+                    rocks_meta_store.wait_upload_loop().await;
+                    Ok(())
+                }));
+            }
 
-            let rocks_cache_store = self.rocks_cache_store.clone().unwrap();
-            futures.push(cube_ext::spawn(async move {
-                rocks_cache_store.run_processing_loops().await
-            }));
+            if let Some(rocks_cache_store) = self.rocks_cache_store.clone() {
+                futures.push(cube_ext::spawn(async move {
+                    rocks_cache_store.run_processing_loops().await
+                }));
+            }
 
             let cluster = self.cluster.clone();
             let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -285,12 +287,7 @@ impl ValidationMessages {
 /// `Config::default()`.
 pub fn validate_config(c: &dyn ConfigObj) -> ValidationMessages {
     let mut warnings = Vec::new();
-    let mut errors = Vec::new();
-    if is_router(c) && c.metastore_remote_address().is_some() {
-        errors.push(
-            "Router node cannot use remote metastore. Try removing CUBESTORE_META_ADDR".to_string(),
-        );
-    }
+    let errors = Vec::new();
     if !is_router(c) && !c.select_workers().contains(c.server_name()) {
         warnings.push(format!("Current worker '{}' is missing in CUBESTORE_WORKERS. Please check CUBESTORE_SERVER_NAME and CUBESTORE_WORKERS variables", c.server_name()));
     }
@@ -2972,8 +2969,8 @@ impl Config {
 
     pub async fn configure_injector(&self) {
         self.configure_remote_fs().await;
-        self.configure_cache_store().await;
         self.configure_meta_store().await;
+        self.configure_cache_store().await;
         self.configure_common().await;
     }
 
@@ -3041,5 +3038,27 @@ mod tests {
             RepartitionStrategy::Range
         );
         assert!("nonsense".parse::<RepartitionStrategy>().is_err());
+    }
+
+    #[tokio::test]
+    async fn router_remote_metastore_skips_local_rocks_store() {
+        let mut config_obj = Config::test_config_obj("router_remote_metastore");
+        config_obj.metastore_remote_address =
+            Some("cubestore-metastore.cube-operator-demo.svc:9999".to_string());
+        let config = Config::make_test_config(config_obj);
+
+        let validation = validate_config(config.config_obj().as_ref());
+        assert!(validation.errors.is_empty(), "{:?}", validation.errors);
+
+        config.configure_injector().await;
+
+        assert!(uses_remote_metastore(&config.injector).await);
+        assert!(!config.injector.has_service_typed::<RocksMetaStore>().await);
+        assert!(
+            !config
+                .injector
+                .has_service_typed::<LazyRocksCacheStore>()
+                .await
+        );
     }
 }
