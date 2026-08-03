@@ -832,6 +832,7 @@ impl HttpServer {
             && lease.holder_id == node
             && marker.leader_epoch == lease.epoch
             && marker.lease_epoch == lease.epoch
+            && marker.meta_store_ready
             && !marker.lease_cluster_id.trim().is_empty()
             && !marker.lease_token.trim().is_empty()
             && Self::hash_lease_token(&marker.lease_token) == lease.token_hash
@@ -1368,6 +1369,7 @@ mod tests {
     use crate::table::{Row, TableValue};
     use crate::CubeError;
     use async_trait::async_trait;
+    use bytes::Bytes;
     use cubeshared::codegen::{
         HttpMessageArgs, HttpQuery, HttpQueryArgs, HttpTable, HttpTableArgs,
     };
@@ -1821,6 +1823,17 @@ mod tests {
                     }
                 },
             ),
+            (
+                "metastore not ready",
+                PromotionMarker {
+                    active_leader: marker.active_leader.clone(),
+                    leader_epoch: marker.leader_epoch,
+                    lease_cluster_id: marker.lease_cluster_id.clone(),
+                    lease_epoch: marker.lease_epoch,
+                    lease_token: marker.lease_token.clone(),
+                    meta_store_ready: false,
+                },
+            ),
         ];
         for (name, stale) in cases {
             assert!(
@@ -1849,6 +1862,33 @@ mod tests {
         .await?;
         assert!(matches!(response, HttpCommand::ResultSet { .. }));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn upload_temp_file_is_fenced_when_lease_agent_is_unreachable() {
+        let body = futures::stream::iter(vec![Ok::<Bytes, warp::Error>(Bytes::from_static(
+            b"payload",
+        ))]);
+        let result = HttpServer::handle_upload(
+            Arc::new(StubService(Arc::new(DataFrame::new(vec![], vec![])))),
+            SqlQueryContext::default(),
+            UploadQuery {
+                name: "upload.csv".to_string(),
+            },
+            "/missing/lease-agent".to_string(),
+            "/missing/promotion".to_string(),
+            body,
+        )
+        .await;
+
+        let rejection = match result {
+            Ok(_) => panic!("upload must be fenced without a lease agent"),
+            Err(rejection) => rejection,
+        };
+        assert!(matches!(
+            rejection.find::<CubeRejection>(),
+            Some(CubeRejection::LeaseFenced(error)) if error.contains("lease-agent unavailable")
+        ));
     }
 
     pub struct SqlServiceMock {
@@ -1919,9 +1959,14 @@ mod tests {
         auth.expect_authenticate().return_const(Ok(None));
 
         let config = Config::test("ws_test").config_obj();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let bind_address = listener.local_addr().unwrap();
+        drop(listener);
+        let websocket_url: &'static str =
+            Box::leak(format!("ws://{bind_address}/ws").into_boxed_str());
 
         let http_server = Arc::new(HttpServer::new(
-            "127.0.0.1:53031".to_string(),
+            bind_address.to_string(),
             "/unavailable/lease-agent".to_string(),
             "/unavailable/promotion".to_string(),
             Arc::new(auth),
@@ -1939,8 +1984,8 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        async fn connect() -> WebSocketStream<MaybeTlsStream<TcpStream>> {
-            let (socket, _) = connect_async(Url::parse("ws://127.0.0.1:53031/ws").unwrap())
+        async fn connect(url: &str) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
+            let (socket, _) = connect_async(Url::parse(url).unwrap())
                 .await
                 .unwrap();
             socket
@@ -1972,20 +2017,22 @@ mod tests {
         }
 
         async fn connect_and_send_query(
+            url: &str,
             message_id: u32,
             connection_id: Option<String>,
             query: &str,
         ) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
-            let mut socket = connect().await;
+            let mut socket = connect(url).await;
             send_query(&mut socket, message_id, connection_id, query).await;
             socket
         }
 
         async fn connect_and_send(
+            url: &str,
             message_id: u32,
             connection_id: Option<String>,
         ) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
-            connect_and_send_query(message_id, connection_id, "SELECT 1").await
+            connect_and_send_query(url, message_id, connection_id, "SELECT 1").await
         }
 
         async fn assert_message(
@@ -2017,16 +2064,30 @@ mod tests {
             }
         }
 
+        async fn assert_error(socket: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) {
+            let msg = socket.next().await.unwrap().unwrap();
+            let data = msg.into_data();
+            let message = root_as_http_message(&data).unwrap();
+            let error = message
+                .command_as_http_error()
+                .and_then(|error| error.error())
+                .expect("WebSocket mutation must return an HttpError");
+            assert!(
+                error.contains("lease-agent unavailable"),
+                "unexpected error: {error}"
+            );
+        }
+
         tokio::join!(
             // Two sockets for the same message
             async move {
-                let mut socket = connect_and_send(1, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 1, Some("foo".to_string())).await;
                 assert_message(&mut socket, "0").await;
                 socket.close(None).await.unwrap();
             },
             async move {
                 tokio::time::sleep(Duration::from_millis(200)).await;
-                let mut socket = connect_and_send(1, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 1, Some("foo".to_string())).await;
                 assert_message(&mut socket, "0").await;
                 socket.close(None).await.unwrap();
             },
@@ -2034,12 +2095,12 @@ mod tests {
             async move {
                 // takes message 1
                 tokio::time::sleep(Duration::from_millis(300)).await;
-                let mut socket = connect_and_send(1, Some("bar".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 1, Some("bar".to_string())).await;
                 socket.close(None).await.unwrap();
             },
             async move {
                 tokio::time::sleep(Duration::from_millis(4000)).await;
-                let mut socket = connect_and_send(1, Some("bar".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 1, Some("bar".to_string())).await;
                 assert_message(&mut socket, "5").await;
                 socket.close(None).await.unwrap();
             },
@@ -2047,35 +2108,35 @@ mod tests {
             async move {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 // takes message 2
-                let mut socket = connect_and_send(2, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 2, Some("foo".to_string())).await;
                 socket.close(None).await.unwrap();
             },
             async move {
                 tokio::time::sleep(Duration::from_millis(3000)).await;
-                let mut socket = connect_and_send(2, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 2, Some("foo".to_string())).await;
                 assert_message(&mut socket, "2").await;
                 socket.close(None).await.unwrap();
             },
             async move {
                 tokio::time::sleep(Duration::from_millis(3500)).await;
-                let mut socket = connect_and_send(2, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 2, Some("foo".to_string())).await;
                 assert_message(&mut socket, "4").await;
                 socket.close(None).await.unwrap();
             },
             // First message but after resolved
             async move {
                 tokio::time::sleep(Duration::from_millis(2500)).await;
-                let mut socket = connect_and_send(1, Some("foo".to_string())).await;
+                let mut socket = connect_and_send(websocket_url, 1, Some("foo".to_string())).await;
                 assert_message(&mut socket, "3").await;
                 socket.close(None).await.unwrap();
             },
         );
 
         tokio::time::sleep(Duration::from_millis(2500)).await;
-        let mut socket = connect_and_send(3, Some("foo".to_string())).await;
+        let mut socket = connect_and_send(websocket_url, 3, Some("foo".to_string())).await;
         assert_message(&mut socket, "6").await;
 
-        let mut socket2 = connect_and_send(3, Some("foo2".to_string())).await;
+        let mut socket2 = connect_and_send(websocket_url, 3, Some("foo2".to_string())).await;
         assert_message(&mut socket2, "7").await;
 
         send_query(
@@ -2093,7 +2154,16 @@ mod tests {
         send_query(&mut socket, 3, Some("foo".to_string()), "SELECT 1").await;
         assert!(socket.next().await.unwrap().is_err());
 
-        let mut socket2 = connect_and_send(3, Some("foo2".to_string())).await;
+        send_query(
+            &mut socket2,
+            4,
+            Some("foo2".to_string()),
+            "INSERT INTO foo VALUES (1)",
+        )
+        .await;
+        assert_error(&mut socket2).await;
+
+        let mut socket2 = connect_and_send(websocket_url, 3, Some("foo2".to_string())).await;
         assert_message(&mut socket2, "10").await;
 
         http_server.stop_processing().await;
