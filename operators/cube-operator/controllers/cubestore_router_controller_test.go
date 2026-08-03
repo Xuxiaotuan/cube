@@ -13,7 +13,9 @@ import (
 	"github.com/cube-js/cube-operator/internal/leadership"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 type controllerLeaseStore struct {
@@ -414,5 +416,66 @@ func TestRouterStatusUsesFencedStatusPatch(t *testing.T) {
 	}
 	if statusClient.statusPatchCount != 1 || statusClient.router.Status.Leader != "router-0" {
 		t.Fatalf("status patch count/status = (%d, %#v), want one fenced patch", statusClient.statusPatchCount, statusClient.router.Status)
+	}
+}
+
+func newExternalLeaseTestReconciler(t *testing.T, data map[string][]byte) *CubestoreRouterReconciler {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "lease-store", Namespace: "router-ns"},
+		Data:       data,
+	}
+	return &CubestoreRouterReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build(),
+	}
+}
+
+func externalLeaseTestRouter() *v1alpha1.CubestoreRouter {
+	return &v1alpha1.CubestoreRouter{
+		ObjectMeta: metav1.ObjectMeta{Name: "router", Namespace: "router-ns"},
+		Spec: v1alpha1.CubestoreRouterSpec{
+			StateStore: &v1alpha1.StateStore{
+				Type: "redis",
+				SecretRef: corev1.SecretReference{Name: "lease-store", Namespace: "router-ns"},
+			},
+		},
+	}
+}
+
+func TestExternalLeaseConfigAddsSecretPasswordToRedisDSN(t *testing.T) {
+	reconciler := newExternalLeaseTestReconciler(t, map[string][]byte{
+		"dsn":      []byte("redis://127.0.0.1:6379/0"),
+		"password": []byte("secret"),
+	})
+
+	_, dsn, _, _, err := reconciler.externalLeaseConfig(context.Background(), externalLeaseTestRouter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dsn != "redis://:secret@127.0.0.1:6379/0" {
+		t.Fatalf("Redis DSN did not include Secret password")
+	}
+}
+
+func TestExternalLeaseConfigPreservesRedisDSNAuthentication(t *testing.T) {
+	const dsn = "rediss://user:embedded@redis.example:6380/0"
+	reconciler := newExternalLeaseTestReconciler(t, map[string][]byte{
+		"dsn":      []byte(dsn),
+		"password": []byte("ignored"),
+	})
+
+	_, got, _, _, err := reconciler.externalLeaseConfig(context.Background(), externalLeaseTestRouter())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != dsn {
+		t.Fatalf("Redis DSN with built-in authentication was changed")
 	}
 }

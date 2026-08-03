@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -116,29 +117,39 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nextStatus := cr.Status
 	nextStatus.Candidates = r.candidatesToStatus(candidates)
 	nextStatus.Conditions = nil
-	promotionLeader := leader
-	promotionReady := leader != nil && promotionAcknowledged(*leader, lease)
-	if !promotionReady {
-		promotionLeader = nil
+	promotionLeader := (*candidate)(nil)
+	promotionPhase := promotionPhaseFrom(&cr)
+	promotionErr := leaseErr
+	if promotionErr == nil && lease.Epoch <= 0 {
+		promotionErr = errors.New("no valid router lease; refusing role and promotion marker writes")
 	}
+	if promotionErr == nil {
+		promotionLeader, promotionPhase, promotionErr = r.reconcilePromotion(ctx, &cr, targetNS, candidates, leader, lease)
+	}
+	promotionReady := promotionLeader != nil && promotionPhase == promotionPhaseServing
 	nextStatus.Conditions = r.withLeaderCondition(candidates, promotionLeader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
 	nextStatus = withRecoveryStatus(nextStatus, promotionReady)
 
-	syncStateErr := leaseErr
-	if syncStateErr == nil && lease.Epoch <= 0 {
-		syncStateErr = errors.New("no valid router lease; refusing role and promotion marker writes")
-	}
+	syncStateErr := promotionErr
 	if syncStateErr == nil {
-		syncStateErr = r.syncRoles(ctx, targetNS, &cr, candidates, promotionLeader, lease)
-	}
-	if syncStateErr == nil {
-		syncStateErr = r.syncRoleState(ctx, targetNS, &cr, candidates, promotionLeader, lease.Epoch, resolveRoleConfigMapName(&cr), lease)
+		stateLeader := promotionLeader
+		if promotionPhase != promotionPhaseServing {
+			stateLeader = nil
+		}
+		syncStateErr = r.syncRoleState(ctx, targetNS, &cr, candidates, stateLeader, lease.Epoch, resolveRoleConfigMapName(&cr), lease)
+		if syncStateErr != nil && promotionLeader != nil {
+			// A serving label is never retained when the authoritative state
+			// publication failed. Keep the Service in the no-leader state.
+			_ = r.fenceRouterEndpoints(ctx, targetNS, &cr, candidates, lease)
+			promotionLeader = nil
+			promotionPhase = promotionPhaseFenced
+		}
 	}
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
 	nextStatus.Conditions = r.withRecoveryConditions(nextStatus.Conditions, nextStatus.Recovery, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
 
-	if promotionLeader != nil {
+	if promotionLeader != nil && promotionPhase == promotionPhaseServing {
 		nextStatus.Leader = promotionLeader.Name
 		nextStatus.LeaderIP = promotionLeader.PodIP
 		nextStatus.LeaderRole = labelLeader
@@ -155,7 +166,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		nextStatus.LastSwitchedAt = cr.Status.LastSwitchedAt
 	}
 
-	if !statusEqual(cr.Status, nextStatus) {
+	if !statusEqual(cr.Status, nextStatus) && lease.Epoch > 0 {
 		if err := r.updateRouterStatusWithFence(ctx, &cr, nextStatus, lease); err != nil {
 			log.Error(err, "update status failed")
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -292,7 +303,39 @@ func (r *CubestoreRouterReconciler) externalLeaseConfig(ctx context.Context, cr 
 	if dsn == "" {
 		return "", "", "", "", fmt.Errorf("stateStore secret %s/%s must contain a non-empty dsn key", secretRef.Namespace, secretRef.Name)
 	}
+	if backend == leaderStateStoreTypeRedis {
+		var err error
+		dsn, err = redisDSNWithSecretPassword(dsn, secret.Data["password"])
+		if err != nil {
+			return "", "", "", "", err
+		}
+	}
 	return backend, dsn, redisKey, pgTable, nil
+}
+
+func redisDSNWithSecretPassword(dsn string, password []byte) (string, error) {
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse Redis DSN: %w", err)
+	}
+	if parsed.Scheme != "redis" && parsed.Scheme != "rediss" {
+		return dsn, nil
+	}
+	if parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return dsn, nil
+		}
+	}
+	if len(password) == 0 {
+		return dsn, nil
+	}
+
+	username := ""
+	if parsed.User != nil {
+		username = parsed.User.Username()
+	}
+	parsed.User = url.UserPassword(username, string(password))
+	return parsed.String(), nil
 }
 
 func (r *CubestoreRouterReconciler) stateStoreDSN(ctx context.Context, cr *v1alpha1.CubestoreRouter) (string, error) {
@@ -527,17 +570,17 @@ func maxInt64(a, b int64) int64 {
 }
 
 type candidate struct {
-	Name      string
-	Namespace string
-	PodIP     string
-	Role      string
-	Ready     bool
-	LastProbe metav1.Time
-	CreatedAt time.Time
+	Name           string
+	Namespace      string
+	PodIP          string
+	Role           string
+	Ready          bool
+	LastProbe      metav1.Time
+	CreatedAt      time.Time
 	StatusContract bool
-	IsLeader bool
-	LeaderEpoch int64
-	LeaseEpoch int64
+	IsLeader       bool
+	LeaderEpoch    int64
+	LeaseEpoch     int64
 	LeaseTokenHash string
 	MetaStoreReady bool
 }
@@ -665,6 +708,39 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 				}
 			}
 			_ = resp.Body.Close()
+		}
+
+		leaseReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/router/lease", net.JoinHostPort(cand.PodIP, fmt.Sprintf("%d", port))), nil)
+		if err == nil {
+			leaseResp, leaseErr := httpClient.Do(leaseReq)
+			if leaseErr == nil {
+				if leaseResp.StatusCode == http.StatusOK {
+					var leaseBody struct {
+						Epoch     int64  `json:"epoch"`
+						TokenHash string `json:"tokenHash"`
+						WriteReady bool  `json:"writeReady"`
+						PromotionMarker *struct {
+							LeaseEpoch     int64  `json:"leaseEpoch"`
+							LeaseTokenHash string `json:"leaseTokenHash"`
+						} `json:"promotionMarker"`
+					}
+					if err := json.NewDecoder(leaseResp.Body).Decode(&leaseBody); err == nil {
+						cand.LeaseEpoch = leaseBody.Epoch
+						cand.LeaseTokenHash = strings.TrimSpace(leaseBody.TokenHash)
+						cand.MetaStoreReady = leaseBody.WriteReady
+						if leaseBody.PromotionMarker != nil {
+							if leaseBody.PromotionMarker.LeaseEpoch > 0 {
+								cand.LeaseEpoch = leaseBody.PromotionMarker.LeaseEpoch
+							}
+							if strings.TrimSpace(leaseBody.PromotionMarker.LeaseTokenHash) != "" {
+								cand.LeaseTokenHash = strings.TrimSpace(leaseBody.PromotionMarker.LeaseTokenHash)
+							}
+						}
+						cand.StatusContract = cand.IsLeader && cand.LeaderEpoch > 0 && cand.LeaseEpoch > 0 && cand.LeaseTokenHash != "" && cand.MetaStoreReady
+					}
+				}
+				_ = leaseResp.Body.Close()
+			}
 		}
 
 		out = append(out, cand)
@@ -1412,7 +1488,7 @@ func (r *CubestoreRouterReconciler) withSyncCondition(
 
 func (r *CubestoreRouterReconciler) withRecoveryConditions(conditions []metav1.Condition, status v1alpha1.RouterRecoveryStatus, observedGeneration int64) []metav1.Condition {
 	gates := []struct {
-		typ string
+		typ  string
 		gate v1alpha1.RecoveryGateStatus
 	}{
 		{v1alpha1.CubestoreRouterConditionPromotionReady, status.Promotion},
