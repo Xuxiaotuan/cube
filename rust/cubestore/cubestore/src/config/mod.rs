@@ -440,6 +440,8 @@ pub trait ConfigObj: DIService {
 
     fn router_leadership_file(&self) -> &String;
 
+    fn router_promotion_file(&self) -> &String;
+
     fn query_timeout(&self) -> u64;
 
     fn not_used_timeout(&self) -> u64;
@@ -705,6 +707,7 @@ pub struct ConfigObjImpl {
     pub status_bind_address: Option<String>,
     pub http_bind_address: Option<String>,
     pub router_leadership_file: String,
+    pub router_promotion_file: String,
     pub query_timeout: u64,
     /// Must be set to 2*query_timeout in prod, only for overrides in tests.
     pub not_used_timeout: u64,
@@ -910,6 +913,10 @@ impl ConfigObj for ConfigObjImpl {
 
     fn router_leadership_file(&self) -> &String {
         &self.router_leadership_file
+    }
+
+    fn router_promotion_file(&self) -> &String {
+        &self.router_promotion_file
     }
 
     fn query_timeout(&self) -> u64 {
@@ -1729,6 +1736,8 @@ impl Config {
                 )),
                 router_leadership_file: env::var("CUBESTORE_ROUTER_LEADERSHIP_FILE")
                     .unwrap_or_else(|_| "/var/run/cubestore-ha/leadership.json".to_string()),
+                router_promotion_file: env::var("CUBESTORE_ROUTER_PROMOTION_FILE")
+                    .unwrap_or_else(|_| "/var/run/cubestore-ha/promotion.json".to_string()),
                 query_timeout,
                 not_used_timeout: 2 * query_timeout,
                 in_memory_not_used_timeout: 30,
@@ -2105,6 +2114,7 @@ impl Config {
                 status_bind_address: None,
                 http_bind_address: None,
                 router_leadership_file: "/var/run/cubestore-ha/leadership.json".to_string(),
+                router_promotion_file: "/var/run/cubestore-ha/promotion.json".to_string(),
                 query_timeout,
                 not_used_timeout: 2 * query_timeout,
                 in_memory_not_used_timeout: 30,
@@ -2956,6 +2966,7 @@ impl Config {
                     HttpServer::new(
                         config.http_bind_address().as_ref().unwrap().to_string(),
                         config.router_leadership_file().clone(),
+                        config.router_promotion_file().clone(),
                         i.get_service_typed().await,
                         i.get_service_typed().await,
                         Duration::from_secs(config.check_ws_orphaned_messages_interval_secs()),

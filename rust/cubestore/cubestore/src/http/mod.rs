@@ -51,6 +51,7 @@ use warp::reject::Reject;
 pub struct HttpServer {
     bind_address: String,
     leadership_file: String,
+    promotion_file: String,
     sql_service: Arc<dyn SqlService>,
     auth: Arc<dyn SqlAuthService>,
     check_orphaned_messages_interval: Duration,
@@ -115,6 +116,12 @@ struct PromotionMarker {
     lease_epoch: i64,
     #[serde(rename = "leaseToken", default)]
     lease_token: String,
+    #[serde(rename = "metaStoreReady", default = "default_meta_store_ready")]
+    meta_store_ready: bool,
+}
+
+fn default_meta_store_ready() -> bool {
+    true
 }
 
 impl Reject for CubeRejection {}
@@ -123,6 +130,7 @@ impl HttpServer {
     pub fn new(
         bind_address: String,
         leadership_file: String,
+        promotion_file: String,
         auth: Arc<dyn SqlAuthService>,
         sql_service: Arc<dyn SqlService>,
         check_orphaned_messages_interval: Duration,
@@ -134,6 +142,7 @@ impl HttpServer {
         Arc::new(Self {
             bind_address,
             leadership_file,
+            promotion_file,
             auth,
             sql_service,
             check_orphaned_messages_interval,
@@ -281,6 +290,7 @@ impl HttpServer {
         let auth_filter_to_move = auth_filter.clone();
         let sql_service = self.sql_service.clone();
         let leadership_file = self.leadership_file.clone();
+        let promotion_file = self.promotion_file.clone();
 
         let upload_route = warp::path!("upload-temp-file")
             .and(auth_filter_to_move)
@@ -292,43 +302,25 @@ impl HttpServer {
                     sql_query_context,
                     upload_query,
                     leadership_file.clone(),
+                    promotion_file.clone(),
                     body,
                 )
             });
 
-        let router_status_route = warp::path!("router" / "status").map(|| {
-            let is_leader = Self::is_router_leader();
-            let role = if is_leader { "leader" } else { "follower" };
-            let mode = if is_leader { "primary" } else { "follower" };
-            let node_name = env::var("CUBESTORE_NODE_NAME")
-                .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
-                .or_else(|_| env::var("HOSTNAME"))
-                .unwrap_or_else(|_| "unknown".to_string());
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let role_state = Self::router_role_state_payload();
-            let active_leader = role_state.get("activeLeader").and_then(Value::as_str);
-            let leader_epoch = role_state.get("leaderEpoch").cloned().unwrap_or(Value::Null);
-
-            warp::reply::json(&json!({
-                "node_name": node_name,
-                "is_leader": is_leader,
-                "role": role,
-                "mode": mode,
-                "leaderStateSource": Self::router_role_source(),
-                "activeLeader": active_leader,
-                "leaderEpoch": leader_epoch,
-                "timestamp_unix_secs": timestamp,
-                "leaderState": role_state,
-            }))
+        let router_status_leadership_file = self.leadership_file.clone();
+        let router_status_promotion_file = self.promotion_file.clone();
+        let router_status_route = warp::path!("router" / "status").map(move || {
+            warp::reply::json(&Self::router_status_payload(
+                &router_status_leadership_file,
+                &router_status_promotion_file,
+            ))
         });
 
         let leadership_file = self.leadership_file.clone();
+        let promotion_file = self.promotion_file.clone();
         let router_lease_route = warp::path!("router" / "lease")
             .and(warp::get())
-            .map(move || match Self::local_lease_payload(&leadership_file) {
+            .map(move || match Self::local_lease_payload(&leadership_file, &promotion_file) {
                 Ok(payload) => warp::reply::with_status(
                     warp::reply::json(&payload),
                     StatusCode::OK,
@@ -362,6 +354,7 @@ impl HttpServer {
                 sql_service,
                 messages_state.clone(),
                 self.leadership_file.clone(),
+                self.promotion_file.clone(),
             )),
             &mut rx,
             async move |service,
@@ -374,11 +367,12 @@ impl HttpServer {
                     command,
                 },
             )| {
-                let (sql_service, messages_state, leadership_file) = service.as_ref();
+                let (sql_service, messages_state, leadership_file, promotion_file) = service.as_ref();
                 let sql_service = sql_service.clone();
                 let messages_state = messages_state.clone();
                 if connection_id.is_some() {
                     let leadership_file = leadership_file.clone();
+                    let promotion_file = promotion_file.clone();
                     cube_ext::spawn(async move {
                         let key = (connection_id.clone(), message_id);
                         {
@@ -406,6 +400,7 @@ impl HttpServer {
                             sql_service.clone(),
                             sql_query_context,
                             &leadership_file,
+                            &promotion_file,
                             command.clone(),
                         )
                             .await;
@@ -504,6 +499,7 @@ impl HttpServer {
                     });
                 } else {
                     let leadership_file = leadership_file.clone();
+                    let promotion_file = promotion_file.clone();
                     cube_ext::spawn(async move {
                         let command_text = match &command {
                             HttpCommand::Query { query, .. } => format!("HttpCommand::Query {{ query: {:?} }}", query),
@@ -517,6 +513,7 @@ impl HttpServer {
                             sql_service.clone(),
                             sql_query_context,
                             &leadership_file,
+                            &promotion_file,
                             command,
                         )
                             .await;
@@ -668,9 +665,10 @@ impl HttpServer {
         sql_query_context: SqlQueryContext,
         upload_query: UploadQuery,
         leadership_file: String,
+        promotion_file: String,
         mut body: impl Stream<Item = Result<impl warp::Buf, warp::Error>> + Unpin,
     ) -> Result<impl Reply, Rejection> {
-        if let Err(error) = Self::ensure_write_fence(&leadership_file) {
+        if let Err(error) = Self::ensure_write_fence(&leadership_file, &promotion_file) {
             return Err(warp::reject::custom(CubeRejection::LeaseFenced(error)));
         }
 
@@ -711,6 +709,7 @@ impl HttpServer {
         sql_service: Arc<dyn SqlService>,
         sql_query_context: SqlQueryContext,
         leadership_file: &str,
+        promotion_file: &str,
         command: HttpCommand,
     ) -> Result<HttpCommand, CubeError> {
         match command {
@@ -722,7 +721,7 @@ impl HttpServer {
                 response_format,
             } => {
                 if !Self::is_read_query(&query) {
-                    Self::ensure_write_fence(leadership_file)
+                    Self::ensure_write_fence(leadership_file, promotion_file)
                         .map_err(CubeError::wrong_connection)?;
                 }
                 let query_result = sql_service
@@ -767,10 +766,9 @@ impl HttpServer {
         )
     }
 
-    fn ensure_write_fence(leadership_file: &str) -> Result<(), String> {
+    fn ensure_write_fence(leadership_file: &str, promotion_file: &str) -> Result<(), String> {
         let lease = Self::read_local_lease(leadership_file)?;
-        let marker = Self::read_promotion_marker()
-            .ok_or_else(|| "promotion marker unavailable".to_string())?;
+        let marker = Self::read_promotion_marker(promotion_file)?;
         let node = Self::current_node_name()
             .ok_or_else(|| "Router node identity unavailable".to_string())?;
         if !Self::promotion_matches(&lease, &marker, &node) {
@@ -804,9 +802,20 @@ impl HttpServer {
         Ok(lease)
     }
 
-    fn read_promotion_marker() -> Option<PromotionMarker> {
-        let state = Self::read_router_role_state()?;
-        serde_json::from_value(state).ok()
+    fn read_promotion_marker(path: &str) -> Result<PromotionMarker, String> {
+        let raw = fs::read_to_string(path)
+            .map_err(|e| format!("promotion marker unavailable: {e}"))?;
+        let marker: PromotionMarker = serde_json::from_str(raw.trim())
+            .map_err(|e| format!("invalid promotion marker: {e}"))?;
+        if marker.active_leader.trim().is_empty()
+            || marker.leader_epoch <= 0
+            || marker.lease_cluster_id.trim().is_empty()
+            || marker.lease_epoch <= 0
+            || marker.lease_token.trim().is_empty()
+        {
+            return Err("invalid promotion marker: missing promotion identity".to_string());
+        }
+        Ok(marker)
     }
 
     fn current_node_name() -> Option<String> {
@@ -828,9 +837,9 @@ impl HttpServer {
             && Self::hash_lease_token(&marker.lease_token) == lease.token_hash
     }
 
-    fn local_lease_payload(path: &str) -> Result<Value, String> {
-        let lease = Self::read_local_lease(path)?;
-        let marker = Self::read_promotion_marker();
+    fn local_lease_payload(leadership_file: &str, promotion_file: &str) -> Result<Value, String> {
+        let lease = Self::read_local_lease(leadership_file)?;
+        let marker = Self::read_promotion_marker(promotion_file).ok();
         let node = Self::current_node_name().unwrap_or_default();
         let write_ready = marker
             .as_ref()
@@ -859,100 +868,55 @@ impl HttpServer {
         }))
     }
 
+    fn router_status_payload(leadership_file: &str, promotion_file: &str) -> Value {
+        let node_name = Self::current_node_name().unwrap_or_else(|| "unknown".to_string());
+        let lease = Self::read_local_lease(leadership_file).ok();
+        let marker = Self::read_promotion_marker(promotion_file).ok();
+        let is_leader = match (&lease, &marker) {
+            (Some(lease), Some(marker)) => Self::promotion_matches(lease, marker, &node_name),
+            _ => false,
+        };
+        let leader_epoch = marker
+            .as_ref()
+            .map(|marker| Value::from(marker.leader_epoch))
+            .unwrap_or(Value::Null);
+        let lease_epoch = marker
+            .as_ref()
+            .map(|marker| Value::from(marker.lease_epoch))
+            .unwrap_or(Value::Null);
+        let lease_token_hash = marker
+            .as_ref()
+            .map(|marker| Value::from(Self::hash_lease_token(&marker.lease_token)))
+            .unwrap_or(Value::Null);
+        let active_leader = marker
+            .as_ref()
+            .map(|marker| Value::from(marker.active_leader.clone()))
+            .unwrap_or(Value::Null);
+        let role = if is_leader { "leader" } else { "follower" };
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        json!({
+            "nodeName": node_name,
+            "isLeader": is_leader,
+            "role": role,
+            "mode": if is_leader { "primary" } else { "follower" },
+            "leaderStateSource": "promotion",
+            "activeLeader": active_leader,
+            "leaderEpoch": leader_epoch,
+            "leaseEpoch": lease_epoch,
+            "leaseTokenHash": lease_token_hash,
+            "metaStoreReady": marker.as_ref().map(|marker| marker.meta_store_ready).unwrap_or(false),
+            "timestampUnixSecs": timestamp,
+        })
+    }
+
     fn hash_lease_token(token: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(token.as_bytes());
         format!("sha256:{}", hex::encode(hasher.finalize()))
-    }
-
-    fn is_router_leader() -> bool {
-        let strict_mode = env::var("CUBESTORE_ROUTER_ROLE_STRICT")
-            .ok()
-            .map(|v| {
-                v.eq_ignore_ascii_case("1") || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
-            })
-            .unwrap_or(false);
-
-        match Self::parse_router_role_from_file().or_else(|| Self::parse_router_role(env::var("CUBESTORE_ROUTER_ROLE").ok())) {
-            Some(is_leader) => is_leader,
-            None => !strict_mode,
-        }
-    }
-
-    fn router_role_source() -> &'static str {
-        if Self::parse_router_role_from_file().is_some() {
-            "file"
-        } else {
-            "env"
-        }
-    }
-
-    fn parse_router_role_from_file() -> Option<bool> {
-        let state = Self::read_router_role_state()?;
-        let active_leader = state.get("activeLeader").and_then(Value::as_str);
-
-        if active_leader.is_none() && state.as_str().is_none() {
-            return None;
-        }
-        if let Some(active_leader) = active_leader {
-            let active_leader = active_leader.trim();
-            if !active_leader.is_empty() {
-                let current_node = env::var("CUBESTORE_NODE_NAME")
-                    .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
-                    .or_else(|_| env::var("HOSTNAME"))
-                    .ok()?;
-
-                return Some(current_node == active_leader);
-            }
-        }
-        if let Some(role) = state.get("role").and_then(Value::as_str) {
-            return Self::parse_router_role(Some(role.to_string()));
-        }
-        if let Some(role) = state.as_str() {
-            return Self::parse_router_role(Some(role.to_string()));
-        }
-        None
-    }
-
-    fn parse_router_role(raw_role: Option<String>) -> Option<bool> {
-        let role = raw_role?.trim().to_ascii_lowercase();
-        if role.is_empty() {
-            return None;
-        }
-
-        match role.as_str() {
-            "leader" | "primary" => Some(true),
-            "follower" | "secondary" => Some(false),
-            _ => None,
-        }
-    }
-
-    fn router_role_state_payload() -> Value {
-        if let Some(state) = Self::read_router_role_state() {
-            if let Some(active_leader) = state.get("activeLeader").and_then(Value::as_str) {
-                return json!({
-                    "activeLeader": active_leader,
-                    "updatedAt": state.get("updatedAt").cloned().unwrap_or(Value::Null),
-                    "leaderEpoch": state.get("leaderEpoch").cloned().unwrap_or(Value::Null),
-                });
-            }
-
-            return state;
-        }
-
-        Value::Null
-    }
-
-    fn read_router_role_state() -> Option<Value> {
-        let role_file_path = env::var("CUBESTORE_ROUTER_ROLE_FILE").ok()?;
-        let raw_role = fs::read_to_string(role_file_path).ok()?;
-        let trimmed = raw_role.trim();
-
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        serde_json::from_str::<Value>(trimmed).ok()
     }
 
     pub async fn authorize(
@@ -1655,6 +1619,7 @@ mod tests {
             svc,
             SqlQueryContext::default(),
             "/unavailable/lease-agent",
+            "/missing/promotion",
             HttpCommand::Query {
                 query: "select 1".to_string(),
                 inline_tables: vec![],
@@ -1720,6 +1685,7 @@ mod tests {
             svc,
             SqlQueryContext::default(),
             "/unavailable/lease-agent",
+            "/missing/promotion",
             HttpCommand::Query {
                 query: "SELECT 1".to_string(),
                 inline_tables: vec![],
@@ -1794,6 +1760,7 @@ mod tests {
             lease_cluster_id: "cube-router".to_string(),
             lease_epoch: 7,
             lease_token: "current-token".to_string(),
+            meta_store_ready: true,
         };
         assert!(HttpServer::promotion_matches(&lease, &marker, "router-a"));
 
@@ -1808,6 +1775,7 @@ mod tests {
                         lease_cluster_id: marker.lease_cluster_id.clone(),
                         lease_epoch: marker.lease_epoch,
                         lease_token: marker.lease_token.clone(),
+                        meta_store_ready: marker.meta_store_ready,
                     }
                 },
             ),
@@ -1821,6 +1789,7 @@ mod tests {
                         lease_cluster_id: marker.lease_cluster_id.clone(),
                         lease_epoch: marker.lease_epoch,
                         lease_token: marker.lease_token.clone(),
+                        meta_store_ready: marker.meta_store_ready,
                     }
                 },
             ),
@@ -1834,6 +1803,7 @@ mod tests {
                         lease_cluster_id: marker.lease_cluster_id.clone(),
                         lease_epoch: marker.lease_epoch,
                         lease_token: marker.lease_token.clone(),
+                        meta_store_ready: marker.meta_store_ready,
                     }
                 },
             ),
@@ -1847,6 +1817,7 @@ mod tests {
                         lease_cluster_id: marker.lease_cluster_id.clone(),
                         lease_epoch: marker.lease_epoch,
                         lease_token: marker.lease_token.clone(),
+                        meta_store_ready: marker.meta_store_ready,
                     }
                 },
             ),
@@ -1866,6 +1837,7 @@ mod tests {
             service,
             SqlQueryContext::default(),
             "/missing/lease-agent",
+            "/missing/promotion",
             HttpCommand::Query {
                 query: "SELECT 1".to_string(),
                 inline_tables: vec![],
@@ -1951,6 +1923,7 @@ mod tests {
         let http_server = Arc::new(HttpServer::new(
             "127.0.0.1:53031".to_string(),
             "/unavailable/lease-agent".to_string(),
+            "/unavailable/promotion".to_string(),
             Arc::new(auth),
             Arc::new(sql_service),
             Duration::from_millis(100),
