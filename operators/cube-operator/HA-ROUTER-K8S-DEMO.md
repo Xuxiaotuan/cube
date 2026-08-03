@@ -447,3 +447,61 @@ PASS: Cube API -> CubeStoreDriver -> Leader Service -> Router failover response 
 本次已经验证了 **Cube API 请求链路下的 Router 主备切换**：删除 leader 后，Operator 更新 CR 状态、`leaderEpoch`、Pod role label 和 `cube-router-leader` EndpointSlice；CubeStoreDriver 能重新建立 Service WebSocket，切换后查询成功且业务结果一致。
 
 本次演示仍不是“所有生产写入场景已证明无损”：非幂等写请求的进行中事务、上传临时态、预聚合队列和 Redis mutationId 幂等写入需要单独的写入/并发/超时/重复提交测试。生产部署必须使用不可变 API 镜像 tag，并继续保留业务侧 mutationId、事务提交和重试边界。
+
+## 环境要求
+
+### 本地工具链
+
+- Docker Desktop 或 OrbStack，支持本地构建和 Kubernetes
+- Kubernetes 集群，建议 Kubernetes 1.28+
+- `kubectl`
+- Node.js 24.x，Cube API 镜像使用 `node:24.18.0-trixie-slim`
+- Go 1.25，用于构建 `cube-operator`
+- Rust nightly `nightly-2025-08-01`，仅在本地重建 Rust 原生模块或 Rust Builder 时使用
+
+### 必需镜像
+
+Cube API/Node：
+
+```text
+node:24.18.0-trixie-slim
+```
+
+CubeStore/Rust 编译：
+
+```text
+cubejs/rust-builder:trixie-llvm-22
+```
+
+CubeStore 运行时：
+
+```text
+debian:trixie-slim
+```
+
+Cube Operator：
+
+```text
+golang:1.25
+gcr.io/distroless/static:nonroot
+```
+
+### 内网镜像准备
+
+只构建 Cube API 和 CubeStore 时，至少准备：
+
+```bash
+docker pull node:24.18.0-trixie-slim
+docker pull cubejs/rust-builder:trixie-llvm-22
+docker pull debian:trixie-slim
+```
+
+如果需要在内网重新构建 `cubejs/rust-builder:trixie-llvm-22`，还需要：
+
+```text
+rust:1-slim-trixie
+```
+
+它是 Rust Builder 的底层镜像，不是 CubeStore Dockerfile 直接使用的编译镜像。Rust Builder 还需要 LLVM 22、Clang 22、LLD 22、CMake、OpenSSL 和 `nightly-2025-08-01` 工具链。
+
+生产环境应将上述镜像同步到内网镜像仓库，并使用不可变 tag 或 digest，不建议直接依赖 `latest`。
