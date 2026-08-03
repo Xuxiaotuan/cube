@@ -22,9 +22,15 @@ spec:
           properties:
             spec:
               type: object
+              required:
+                - selector
+                - namespace
+                - metaStore
+                - storage
               properties:
                 selector:
                   type: object
+                  minProperties: 1
                   additionalProperties:
                     type: string
                 namespace:
@@ -36,20 +42,111 @@ spec:
                   type: string
                 electionStrategy:
                   type: string
+                  default: lease
+                  enum:
+                    - lease
                 roleConfigMapName:
                   type: string
-                leaderStateStore:
+                leaseDurationSeconds:
+                  type: integer
+                  format: int32
+                  default: 30
+                  minimum: 1
+                renewDeadlineSeconds:
+                  type: integer
+                  format: int32
+                  default: 20
+                  minimum: 1
+                retryPeriodSeconds:
+                  type: integer
+                  format: int32
+                  default: 5
+                  minimum: 1
+                stateStore:
                   type: object
+                  required:
+                    - type
+                    - secretRef
                   properties:
                     type:
                       type: string
-                    dsn:
+                      enum:
+                        - redis
+                        - postgres
+                    secretRef:
+                      type: object
+                      required:
+                        - name
+                        - namespace
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        namespace:
+                          type: string
+                          minLength: 1
+                metaStore:
+                  type: object
+                  required:
+                    - address
+                  properties:
+                    address:
                       type: string
+                      minLength: 1
+                storage:
+                  type: object
+                  required:
+                    - dataPVC
+                  properties:
+                    dataPVC:
+                      type: string
+                      minLength: 1
+                    objectStoreSecretRef:
+                      type: object
+                      required:
+                        - name
+                        - namespace
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        namespace:
+                          type: string
+                          minLength: 1
+                leaderStateStore:
+                  type: object
+                  description: Deprecated v1alpha1 migration-only field. Migrate to stateStore; plaintext DSNs are unsupported.
+                  required:
+                    - type
+                    - secretRef
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - redis
+                        - postgres
+                    secretRef:
+                      type: object
+                      required:
+                        - name
+                        - namespace
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        namespace:
+                          type: string
+                          minLength: 1
                     redisKey:
                       type: string
                     pgTable:
                       type: string
                   description: Optional external HA state backend for leader election state.
+              x-kubernetes-validations:
+                - rule: has(self.stateStore) != has(self.leaderStateStore)
+                  message: exactly one of stateStore or the deprecated leaderStateStore migration field must be configured
+                - rule: self.renewDeadlineSeconds < self.leaseDurationSeconds
+                  message: renewDeadlineSeconds must be less than leaseDurationSeconds
             status:
               type: object
               properties:
@@ -94,6 +191,12 @@ spec:
                         type: string
                       type:
                         type: string
+                        enum:
+                          - LeaseAcquired
+                          - LeaderReady
+                          - MetaStoreReady
+                          - DataPlaneReady
+                          - Degraded
                 candidates:
                   type: array
                   items:
