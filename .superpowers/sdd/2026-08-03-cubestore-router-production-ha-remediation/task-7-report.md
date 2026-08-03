@@ -38,4 +38,10 @@ Commit message: `feat: add authoritative cubestore metastore service`
 - Added `demo/k8s/mock-workers.yaml` as a stable two-replica StatefulSet. Each Worker gets a stable StatefulSet DNS server name, the same `CUBESTORE_WORKERS` list, and the same `CUBESTORE_META_ADDR` from `cubestore-metastore-client`.
 - Added `CUBESTORE_WORKERS` consumption to both Router replicas.
 - Added `run.sh --dry-run`. It renders the same image substitutions as the normal path, runs client-side validation for namespace, RBAC, MetaStore, Workers, and Routers, and fails unless the deterministic order is MetaStore -> Workers -> Routers. It also asserts that Workers and Routers consume `CUBESTORE_META_ADDR` and MetaStore remains single-replica.
-- The demo Worker data directories are per-Pod `emptyDir` examples only; they are not the authoritative MetaStore and must be replaced by the production object/local data strategy outside Task 7.
+
+## Continued hardening
+
+- Replaced both demo Worker `emptyDir` volumes with per-Pod RWO PVC templates and `Retain` retention policy. The demo now makes persistence explicit without claiming that it is the production object-store design.
+- Added a Worker ServiceAccount, empty Role, and RoleBinding. The current CubeStore MetaStore RPC has no authentication or credential input, so no Secret reference was invented; image pull credentials remain a cluster-specific ServiceAccount/image-pull configuration.
+- Added `WORKER_IMAGE`, defaulting to the existing Router image for the demo while allowing the run script to render a distinct Worker image deterministically.
+- Extended `run.sh --dry-run` to require Worker PVC templates, Worker identity/RBAC, and consistent `CUBESTORE_META_ADDR`/`CUBESTORE_WORKERS` consumers in both Workers and Routers.

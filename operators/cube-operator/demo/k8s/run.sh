@@ -6,6 +6,7 @@ cd "$ROOT"
 
 IMAGE="${IMAGE:-cube-operator:dev}"
 ROUTER_IMAGE="${ROUTER_IMAGE:-cube-studio-router:ha-local}"
+WORKER_IMAGE="${WORKER_IMAGE:-$ROUTER_IMAGE}"
 API_IMAGE="${API_IMAGE:-cube-studio-api:ha-local}"
 BUILD_API_IMAGE="${BUILD_API_IMAGE:-true}"
 KUBECTL="${KUBECTL:-kubectl}"
@@ -46,7 +47,7 @@ run_dry_run() {
   worker_manifest="$tmp_dir/workers.yaml"
   router_manifest="$tmp_dir/routers.yaml"
   sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$metastore_manifest"
-  sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$worker_manifest"
+  sed "s|image: .*|image: ${WORKER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$worker_manifest"
   sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-routers.yaml > "$router_manifest"
 
   for manifest in \
@@ -72,6 +73,19 @@ run_dry_run() {
   if ! rg -q 'name: CUBESTORE_META_ADDR' "$worker_manifest" || \
      ! rg -q 'name: CUBESTORE_META_ADDR' "$router_manifest"; then
     echo "dry-run configuration failure: workers and routers must consume CUBESTORE_META_ADDR" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if ! rg -q 'name: CUBESTORE_WORKERS' "$worker_manifest" || \
+     ! rg -q 'name: CUBESTORE_WORKERS' "$router_manifest"; then
+    echo "dry-run configuration failure: workers and routers must consume CUBESTORE_WORKERS" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if ! rg -q 'volumeClaimTemplates:' "$worker_manifest" || \
+     ! rg -q 'serviceAccountName: cube-worker' "$worker_manifest" || \
+     ! rg -q 'kind: RoleBinding' "$worker_manifest"; then
+    echo "dry-run configuration failure: workers require PVC templates and scoped identity" >&2
     rm -rf "$tmp_dir"
     return 1
   fi
@@ -138,7 +152,7 @@ cat <<'MSG'
 [1.75/7] 部署 Cubestore Workers（统一连接 authoritative MetaStore）
 MSG
 TMP_WORKER_MANIFEST="$(mktemp)"
-sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$TMP_WORKER_MANIFEST"
+sed "s|image: .*|image: ${WORKER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$TMP_WORKER_MANIFEST"
 apply_manifest "$TMP_WORKER_MANIFEST"
 rm -f "$TMP_WORKER_MANIFEST"
 $KUBECTL -n "$ROUTER_NAMESPACE" rollout status statefulset/cube-worker-demo --timeout=180s

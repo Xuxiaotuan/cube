@@ -1,4 +1,40 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cube-worker
+  namespace: cube-operator-demo
+  labels:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cube-worker
+  namespace: cube-operator-demo
+  labels:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cube-worker
+  namespace: cube-operator-demo
+  labels:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+subjects:
+  - kind: ServiceAccount
+    name: cube-worker
+    namespace: cube-operator-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cube-worker
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: cube-worker
@@ -30,6 +66,9 @@ spec:
   serviceName: cube-worker
   replicas: 2
   podManagementPolicy: Parallel
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app: cube-worker
@@ -40,6 +79,7 @@ spec:
         app: cube-worker
         app.kubernetes.io/name: cube-worker-demo
     spec:
+      serviceAccountName: cube-worker
       terminationGracePeriodSeconds: 60
       containers:
         - name: cubestore-worker
@@ -91,8 +131,28 @@ spec:
               mountPath: /cube/data
             - name: worker-local-data
               mountPath: /cube/.cubestore/data
-      volumes:
-        - name: worker-data
-          emptyDir: {}
-        - name: worker-local-data
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: worker-data
+        labels:
+          app: cube-worker
+          app.kubernetes.io/name: cube-worker-demo
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 2Gi
+    - metadata:
+        name: worker-local-data
+        labels:
+          app: cube-worker
+          app.kubernetes.io/name: cube-worker-demo
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 2Gi
