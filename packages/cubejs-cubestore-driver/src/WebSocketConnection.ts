@@ -29,6 +29,14 @@ interface SentMessage {
   replaySafe: boolean;
 }
 
+export class MutationUnknownError extends ConnectionError {
+  public constructor(message: string, cause?: Error) {
+    super(message, cause);
+    this.name = 'MutationUnknownError';
+    (this as any).code = 'MUTATION_UNKNOWN';
+  }
+}
+
 export type QueryParameter = null | boolean | number | string | Buffer;
 
 export type WebSocketQueryOptions = {
@@ -160,8 +168,8 @@ export class WebSocketConnection {
                 for (const key of pendingMessageKeys) {
                   const pending = webSocket.sentMessages[key];
                   if (pending && !pending.replaySafe) {
-                    pending.reject(new ConnectionError(
-                      'CubeStore connection closed during non-idempotent request',
+                    pending.reject(new MutationUnknownError(
+                      'CubeStore connection closed after sending a non-idempotent request; mutation outcome is unknown',
                     ));
                   }
                 }
@@ -263,6 +271,12 @@ export class WebSocketConnection {
   private async sendMessage(messageId: number, buffer: Uint8Array, replaySafe = false): Promise<any> {
     const socket = await this.initWebSocket();
     return new Promise((resolve, reject) => {
+      socket.sentMessages[messageId] = {
+        resolve,
+        reject,
+        buffer,
+        replaySafe,
+      };
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(buffer, (err) => {
           if (err) {
@@ -273,14 +287,10 @@ export class WebSocketConnection {
             ));
           }
         });
+      } else {
+        delete socket.sentMessages[messageId];
+        reject(new ConnectionError('CubeStore connection closed before request could be sent'));
       }
-
-      socket.sentMessages[messageId] = {
-        resolve,
-        reject,
-        buffer,
-        replaySafe,
-      };
     });
   }
 

@@ -27,7 +27,14 @@ import fetch from 'node-fetch';
 
 import { ConnectionConfig } from './types';
 import { ConnectionError } from './errors';
-import { WebSocketConnection } from './WebSocketConnection';
+import { WebSocketConnection, MutationUnknownError } from './WebSocketConnection';
+import {
+  ExistingResult,
+  IdempotencyOwnershipLostError,
+  MutationLease,
+  RedisIdempotencyStore,
+  SerializedError,
+} from './IdempotencyStore';
 import { QueryResultFormat } from '../codegen';
 
 const CubeStoreCapabilityMinVersion = {
@@ -74,25 +81,6 @@ type CubeStoreQueryOptions = QueryOptions & {
   responseFormat?: QueryResultFormat,
   retryable?: boolean,
   mutationId?: string,
-};
-
-type IdempotencyRecordStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
-
-type IdempotencyErrorRecord = {
-  name: string;
-  message: string;
-  code?: string;
-  stack?: string;
-};
-
-type IdempotencyRecord = {
-  status: IdempotencyRecordStatus;
-  fingerprint: string;
-  startedAt?: number;
-  finishedAt?: number;
-  result?: any[];
-  error?: IdempotencyErrorRecord;
-  node?: string;
 };
 
 type RouterStatusPayload = {
@@ -185,6 +173,8 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   protected idempotencyRedisConnecting: Promise<void> | null = null;
 
+  protected idempotencyStore: RedisIdempotencyStore | null = null;
+
   protected closeAllConnections(): void {
     this.connections.forEach((connection) => connection.close());
   }
@@ -266,29 +256,13 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     }
   }
 
-  protected getIdempotencyKey(mutationId: string): string {
-    return `${this.idempotencyRedisKeyPrefix}:${mutationId}`;
-  }
-
-  protected parseIdempotencyRecord(raw: string): IdempotencyRecord | null {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && (parsed.status === 'PENDING' || parsed.status === 'COMPLETED' || parsed.status === 'FAILED')) {
-        return parsed as IdempotencyRecord;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  protected serializeError(error: any): IdempotencyErrorRecord {
+  protected serializeError(error: any): SerializedError {
     if (error instanceof Error) {
       return {
         name: error.name || 'Error',
         message: error.message || String(error),
         code: (error as any).code ? `${(error as any).code}` : undefined,
-        stack: error.stack,
+        stack: error.stack?.slice(0, 4096),
       };
     }
 
@@ -298,7 +272,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     };
   }
 
-  protected buildIdempotencyError(record: IdempotencyErrorRecord): Error {
+  protected buildIdempotencyError(record: SerializedError): Error {
     const error = new Error(record.message || 'idempotent mutation previously failed');
     error.name = record.name || 'Error';
     (error as any).code = record.code;
@@ -339,6 +313,22 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   protected createIdempotencyFingerprintWithCanonicalQuery(sql: string, values: any[]): string {
     return createHash('sha256').update(this.stableStringify([sql, values])).digest('hex');
+  }
+
+  protected async getIdempotencyStore(): Promise<RedisIdempotencyStore> {
+    const redis = await this.getIdempotencyRedisClient();
+    if (!redis) {
+      throw new Error('CubeStore mutation idempotency Redis is required but unavailable');
+    }
+    if (!this.idempotencyStore || this.idempotencyStore.client !== redis) {
+      this.idempotencyStore = new RedisIdempotencyStore(redis, {
+        keyPrefix: this.idempotencyRedisKeyPrefix,
+        pendingTtlSeconds: this.idempotencyPendingTtlSeconds,
+        completedTtlSeconds: this.idempotencyCompletedTtlSeconds,
+        failedTtlSeconds: this.idempotencyFailedTtlSeconds,
+      });
+    }
+    return this.idempotencyStore;
   }
 
   public constructor(config?: Partial<ConnectionConfig>) {
@@ -454,128 +444,120 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     values: any[],
     action: () => Promise<R[]>,
   ): Promise<R[]> {
-    const redis = await this.getIdempotencyRedisClient();
-    if (!redis) {
-      return action();
-    }
-
-    const key = this.getIdempotencyKey(mutationId);
+    const store = await this.getIdempotencyStore();
     const fingerprint = this.createIdempotencyFingerprintWithCanonicalQuery(query, values);
-
-    const currentRaw = await redis.get(key);
-    if (currentRaw) {
-      const currentRecord = this.parseIdempotencyRecord(currentRaw);
-      if (!currentRecord) {
-        return this.executeAndPersistMutationIdempotency(redis, key, fingerprint, mutationId, action);
-      }
-
-      if (currentRecord.fingerprint !== fingerprint) {
-        throw new Error(`mutationId conflict: same mutationId=${mutationId} but different fingerprint`);
-      }
-
-      if (currentRecord.status === 'COMPLETED') {
-        return (currentRecord.result || []) as R[];
-      }
-
-      if (currentRecord.status === 'FAILED') {
-        throw this.buildIdempotencyError(currentRecord.error || {
-          name: 'Error',
-          message: `mutation ${mutationId} previously failed`,
-        });
-      }
-
-      return this.waitForMutationCompletion(redis, key, fingerprint, mutationId, 0);
+    const acquired = await store.acquire(mutationId, fingerprint);
+    if ('ownerToken' in acquired) {
+      return this.executeOwnedMutation(store, acquired, action);
     }
-
-    return this.executeAndPersistMutationIdempotency(redis, key, fingerprint, mutationId, action);
+    return this.waitForMutationCompletion(store, fingerprint, mutationId, acquired);
   }
 
-  protected async executeAndPersistMutationIdempotency<R>(
-    redis: any,
-    key: string,
-    fingerprint: string,
-    mutationId: string,
+  protected resultRef(result: unknown): string {
+    const serialized = JSON.stringify(result);
+    if (serialized.length <= 8192) {
+      return `inline:${serialized}`;
+    }
+    return `omitted:${createHash('sha256').update(serialized).digest('hex')}`;
+  }
+
+  protected resultFromRef<R>(resultRef?: string): R[] {
+    if (resultRef?.startsWith('inline:')) {
+      try {
+        return JSON.parse(resultRef.slice('inline:'.length)) as R[];
+      } catch {
+        throw new Error('mutation idempotency result reference is invalid');
+      }
+    }
+    return [] as R[];
+  }
+
+  protected async executeOwnedMutation<R>(
+    store: RedisIdempotencyStore,
+    initialLease: MutationLease,
     action: () => Promise<R[]>,
   ): Promise<R[]> {
-    const startedAt = Date.now();
-    const pending = await redis.set(key, JSON.stringify({
-      status: 'PENDING',
-      fingerprint,
-      startedAt,
-      node: getEnv('instanceId'),
-    }), {
-      NX: true,
-      EX: this.idempotencyPendingTtlSeconds,
-    });
+    let lease = initialLease;
+    let renewalFailure: Error | null = null;
+    let renewalPromise: Promise<void> = Promise.resolve();
+    let stopped = false;
+    let renewalTimer: ReturnType<typeof setTimeout> | null = null;
+    const renewalDelayMs = Math.max(1, Math.floor(this.idempotencyPendingTtlSeconds * 1000 / 3) - 10);
 
-    if (pending !== 'OK') {
-      return this.waitForMutationCompletion(redis, key, fingerprint, mutationId, 0);
-    }
+    const scheduleRenewal = () => {
+      renewalTimer = setTimeout(() => {
+        renewalPromise = (async () => {
+          try {
+            lease = await store.renew(lease);
+            if (!stopped) {
+              scheduleRenewal();
+            }
+          } catch (error: any) {
+            renewalFailure = error instanceof Error ? error : new Error(String(error));
+          }
+        })();
+      }, renewalDelayMs);
+    };
+    scheduleRenewal();
 
     try {
       const result = await action();
-      await redis.set(key, JSON.stringify({
-        status: 'COMPLETED',
-        fingerprint,
-        node: getEnv('instanceId'),
-        startedAt,
-        finishedAt: Date.now(),
-        result,
-      }), { XX: true, EX: this.idempotencyCompletedTtlSeconds });
+      stopped = true;
+      if (renewalTimer) clearTimeout(renewalTimer);
+      await renewalPromise;
+      if (renewalFailure) {
+        throw renewalFailure;
+      }
+      await store.complete(lease, this.resultRef(result));
       return result;
     } catch (error: any) {
-      if (!(error instanceof ConnectionError)) {
-        await redis.set(key, JSON.stringify({
-          status: 'FAILED',
-          fingerprint,
-          node: getEnv('instanceId'),
-          startedAt,
-          finishedAt: Date.now(),
-          error: this.serializeError(error),
-        }), { XX: true, EX: this.idempotencyFailedTtlSeconds });
+      stopped = true;
+      if (renewalTimer) clearTimeout(renewalTimer);
+      await renewalPromise;
+
+      if (renewalFailure || error instanceof IdempotencyOwnershipLostError) {
+        throw error;
+      }
+
+      if (error instanceof MutationUnknownError || error?.code === 'MUTATION_UNKNOWN') {
+        await store.fail(lease, {
+          ...this.serializeError(error),
+          code: 'MUTATION_UNKNOWN',
+        });
+      } else {
+        await store.fail(lease, this.serializeError(error));
       }
       throw error;
     }
   }
 
   protected async waitForMutationCompletion<R>(
-    redis: any,
-    key: string,
+    store: RedisIdempotencyStore,
     fingerprint: string,
     mutationId: string,
-    attempt: number,
+    initial: ExistingResult,
   ): Promise<R[]> {
-    if (attempt >= this.idempotencyPollMaxAttempts) {
-      throw new Error(`mutationId ${mutationId} is waiting for completion for too long`);
+    let record: ExistingResult | null = initial;
+    for (let attempt = 0; attempt < this.idempotencyPollMaxAttempts; attempt++) {
+      if (!record) {
+        throw new MutationUnknownError(`mutationId ${mutationId} lost its idempotency state; reconcile against authoritative metadata before retrying`);
+      }
+      if (record.fingerprint !== fingerprint) {
+        throw new Error(`mutationId ${mutationId} conflict: fingerprint changed during in-flight replay`);
+      }
+      if (record.status === 'COMPLETED') {
+        return this.resultFromRef<R>(record.resultRef);
+      }
+      if (record.status === 'FAILED') {
+        throw this.buildIdempotencyError(record.error || { name: 'Error', message: `mutation ${mutationId} previously failed` });
+      }
+      if (record.status === 'UNKNOWN') {
+        throw new MutationUnknownError(`mutationId ${mutationId} has an unknown outcome; reconcile against authoritative metadata before retrying`);
+      }
+      await this.sleep(this.idempotencyPollIntervalMs);
+      record = await store.read(mutationId);
     }
-
-    await this.sleep(this.idempotencyPollIntervalMs);
-    const raw = await redis.get(key);
-    if (!raw) {
-      throw new Error(`mutationId ${mutationId} completed processing but idempotency state has been removed`);
-    }
-
-    const record = this.parseIdempotencyRecord(raw);
-    if (!record) {
-      throw new Error(`mutationId ${mutationId} idempotency state is invalid`);
-    }
-
-    if (record.fingerprint !== fingerprint) {
-      throw new Error(`mutationId ${mutationId} conflict: fingerprint changed during in-flight replay`);
-    }
-
-    if (record.status === 'COMPLETED') {
-      return (record.result || []) as R[];
-    }
-
-    if (record.status === 'FAILED') {
-      throw this.buildIdempotencyError(record.error || {
-        name: 'Error',
-        message: `mutation ${mutationId} previously failed`,
-      });
-    }
-
-    return this.waitForMutationCompletion<R>(redis, key, fingerprint, mutationId, attempt + 1);
+    throw new Error(`mutationId ${mutationId} is waiting for completion for too long`);
   }
 
   protected normalizeMutationId(rawMutationId: unknown): string | undefined {
@@ -590,6 +572,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   public async release() {
     await this.idempotencyRedisClient?.quit();
     this.idempotencyRedisClient = null;
+    this.idempotencyStore = null;
     await Promise.all(this.connections.map(async connection => connection.close()));
   }
 
