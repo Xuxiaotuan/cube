@@ -10,22 +10,52 @@ MYSQL_PORT="${MYSQL_PORT:-3306}"
 SERVICE="${LEADER_SERVICE_NAME:-cube-router-leader}"
 WAIT="${WAIT_SECONDS:-120}"
 INTERVAL="${CHECK_INTERVAL_SECONDS:-2}"
+MYSQL_HEALTHCHECK_RETRIES="${MYSQL_HEALTHCHECK_RETRIES:-30}"
+MYSQL_HEALTHCHECK_DELAY="${MYSQL_HEALTHCHECK_DELAY:-2}"
+MYSQL_BATCH_ROWS="${MYSQL_BATCH_ROWS:-100}"
 RUN_ID="${RUN_ID:-$(date +%s)-$$}"
 RUN_ID="$(printf '%s' "$RUN_ID" | tr -cd '[:alnum:]_')"
-SCHEMA="${ROUTER_HA_SCHEMA:-router_ha_$RUN_ID}"
-TABLE="${ROUTER_HA_TABLE:-data_$RUN_ID}"
+SCHEMA="${ROUTER_HA_SCHEMA:-router_ha_probe}"
+TABLE="${ROUTER_HA_TABLE:-router_ha_data}"
 FIXTURE="${FIXTURE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixtures/router-ha-data.sql}"
+MYSQL_CLIENT_SEQUENCE=0
 
 for c in "$KUBECTL" jq sha256sum; do
   command -v "$c" >/dev/null || { echo "error: missing $c" >&2; exit 1; }
 done
-q() { "$KUBECTL" run -n "$NAMESPACE" cubemysql --rm -i --quiet --restart=Never --image="$MYSQL_IMAGE" --command -- mysql -h "$1" -P "$MYSQL_PORT" -u "$MYSQL_USER" -N -B -e "$2"; }
+q() {
+  MYSQL_CLIENT_SEQUENCE=$((MYSQL_CLIENT_SEQUENCE + 1))
+  local client_pod="cubemysql-${RUN_ID}-${MYSQL_CLIENT_SEQUENCE}"
+  "$KUBECTL" run -n "$NAMESPACE" "$client_pod" --rm -i --quiet --restart=Never --image="$MYSQL_IMAGE" --command -- mysql -h "$1" -P "$MYSQL_PORT" -u "$MYSQL_USER" -N -B -e "$2"
+}
 sq() { q "$SERVICE.$NAMESPACE.svc.cluster.local" "$1"; }
 leader() { "$KUBECTL" -n "$NAMESPACE" get cubestorerouter "$CR_NAME" -o jsonpath='{.status.leader}'; }
 epoch() { "$KUBECTL" -n "$NAMESPACE" get cubestorerouter "$CR_NAME" -o jsonpath='{.status.leaderEpoch}'; }
 pod_q() { local ip="$( "$KUBECTL" -n "$NAMESPACE" get pod "$1" -o jsonpath='{.status.podIP}')"; [ -n "$ip" ] && q "$ip" "$2"; }
 
+log() { printf '[%s] %s\n' "$(date +'%F %T')" "$*"; }
+mysql_healthcheck() {
+  local attempt=1
+  while [ "$attempt" -le "$MYSQL_HEALTHCHECK_RETRIES" ]; do
+    if sq 'SELECT 1 AS mysql_healthcheck' >/dev/null 2>/tmp/router-ha-mysql-health.err; then
+      log "MySQL health check passed on attempt ${attempt}"
+      return 0
+    fi
+    sleep "$MYSQL_HEALTHCHECK_DELAY"
+    attempt=$((attempt + 1))
+  done
+  echo "fatal: MySQL health check failed after ${MYSQL_HEALTHCHECK_RETRIES} attempts" >&2
+  cat /tmp/router-ha-mysql-health.err >&2 || true
+  echo "fatal: start the demo reproducibly with: bash operators/cube-operator/demo/k8s/run.sh" >&2
+  return 1
+}
+
+mysql_healthcheck
 sql="$(sed -e "s/__SCHEMA__/$SCHEMA/g" -e "s/__TABLE__/$TABLE/g" "$FIXTURE")"
+existing_table="$(sq "SELECT id FROM system.tables WHERE table_schema = '$SCHEMA' AND table_name = '$TABLE'")"
+if [ -n "$existing_table" ]; then
+  sq "DROP TABLE $SCHEMA.$TABLE"
+fi
 header="$(printf '%s\n' "$sql" | sed -n '2,3p')"
 sq "$header"
 batch="INSERT INTO $SCHEMA.$TABLE (id, amount, payload) VALUES"
@@ -36,7 +66,7 @@ while IFS= read -r row; do
     *,) ;;
     *) sq "$batch;"; batch="INSERT INTO $SCHEMA.$TABLE (id, amount, payload) VALUES" ;;
   esac
-done < <(sed -n '5,$p' "$FIXTURE" | awk 'NR % 250 == 0 { sub(/,$/, ";"); print; next } { print }')
+done < <(sed -n '5,$p' "$FIXTURE" | awk -v batch="$MYSQL_BATCH_ROWS" 'NR % batch == 0 { sub(/,$/, ";"); print; next } { print }')
 filter="table_schema = '$SCHEMA' AND table_name = '$TABLE'"
 tables() { sq "SELECT id, table_schema, table_name, has_data, is_ready FROM system.tables WHERE $filter ORDER BY id"; }
 parts() { sq "SELECT id, index_id, active, main_table_row_count FROM system.partitions WHERE index_id = (SELECT id FROM system.tables WHERE $filter) ORDER BY id"; }
