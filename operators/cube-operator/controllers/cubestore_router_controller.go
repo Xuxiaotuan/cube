@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,9 @@ const (
 	syncConditionType                 = "RoleStateSync"
 	leaderStateRecordID               = "leader-state"
 	leaderStateRecordIDPrefix         = "route-state"
+	leaseClusterAnnotation            = "cubestore.io/lease-cluster"
+	leaseEpochAnnotation              = "cubestore.io/lease-epoch"
+	leaseTokenAnnotation              = "cubestore.io/lease-token"
 )
 
 const leaderStateOpTimeout = 4 * time.Second
@@ -116,12 +120,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if !statusEqual(cr.Status, nextStatus) {
-		if err := r.validateLeaseBeforeWrite(ctx, &cr, lease); err != nil {
-			log.Error(err, "refusing router status write without current lease")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
-		}
-		cr.Status = nextStatus
-		if err := r.Status().Update(ctx, &cr); err != nil {
+		if err := r.updateRouterStatusWithFence(ctx, &cr, nextStatus, lease); err != nil {
 			log.Error(err, "update status failed")
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 		}
@@ -321,6 +320,121 @@ func (r *CubestoreRouterReconciler) validateLeaseBeforeWrite(ctx context.Context
 		return err
 	}
 	return leadership.ValidateLeaseFence(current, presented)
+}
+
+type leaseJSONPatchOperation struct {
+	Op    string      `json:"op"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+func hasLeaseFence(annotations map[string]string, lease leadership.LeaseRecord) bool {
+	return annotations[leaseClusterAnnotation] == lease.ClusterID &&
+		annotations[leaseEpochAnnotation] == strconv.FormatInt(lease.Epoch, 10) &&
+		annotations[leaseTokenAnnotation] == lease.Token
+}
+
+func leaseFenceValues(lease leadership.LeaseRecord) map[string]string {
+	return map[string]string{
+		leaseClusterAnnotation: lease.ClusterID,
+		leaseEpochAnnotation:   strconv.FormatInt(lease.Epoch, 10),
+		leaseTokenAnnotation:   lease.Token,
+	}
+}
+
+func jsonPointerEscape(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "~", "~0"), "/", "~1")
+}
+
+func (r *CubestoreRouterReconciler) ensureObjectFence(ctx context.Context, obj client.Object, lease leadership.LeaseRecord) error {
+	if hasLeaseFence(obj.GetAnnotations(), lease) {
+		return nil
+	}
+	operations := []leaseJSONPatchOperation{{Op: "test", Path: "/metadata/resourceVersion", Value: obj.GetResourceVersion()}}
+	annotations := obj.GetAnnotations()
+	if currentCluster, clusterOK := annotations[leaseClusterAnnotation]; clusterOK {
+		currentEpoch, epochErr := strconv.ParseInt(annotations[leaseEpochAnnotation], 10, 64)
+		currentToken, tokenOK := annotations[leaseTokenAnnotation]
+		if epochErr != nil || !tokenOK || currentCluster != lease.ClusterID || currentEpoch > lease.Epoch || (currentEpoch == lease.Epoch && currentToken != lease.Token) {
+			return leadership.ErrStaleLease
+		}
+	}
+	if annotations == nil {
+		operations = append(operations, leaseJSONPatchOperation{Op: "add", Path: "/metadata/annotations", Value: leaseFenceValues(lease)})
+	} else {
+		for key, value := range leaseFenceValues(lease) {
+			path := "/metadata/annotations/" + jsonPointerEscape(key)
+			if current, ok := annotations[key]; ok {
+				operations = append(operations, leaseJSONPatchOperation{Op: "test", Path: path, Value: current})
+				operations = append(operations, leaseJSONPatchOperation{Op: "replace", Path: path, Value: value})
+			} else {
+				operations = append(operations, leaseJSONPatchOperation{Op: "add", Path: path, Value: value})
+			}
+		}
+	}
+	patch, err := json.Marshal(operations)
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, obj, client.RawPatch(types.JSONPatchType, patch))
+}
+
+func fencedRolePatch(obj client.Object, role string, lease leadership.LeaseRecord) ([]byte, error) {
+	operations := []leaseJSONPatchOperation{
+		{Op: "test", Path: "/metadata/resourceVersion", Value: obj.GetResourceVersion()},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseClusterAnnotation), Value: lease.ClusterID},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseEpochAnnotation), Value: strconv.FormatInt(lease.Epoch, 10)},
+		{Op: "test", Path: "/metadata/annotations/" + jsonPointerEscape(leaseTokenAnnotation), Value: lease.Token},
+	}
+	labels := obj.GetLabels()
+	rolePath := "/metadata/labels/" + jsonPointerEscape(labelNamespace)
+	if labels == nil {
+		operations = append(operations, leaseJSONPatchOperation{Op: "add", Path: "/metadata/labels", Value: map[string]string{labelNamespace: role}})
+	} else if _, ok := labels[labelNamespace]; ok {
+		operations = append(operations, leaseJSONPatchOperation{Op: "replace", Path: rolePath, Value: role})
+	} else {
+		operations = append(operations, leaseJSONPatchOperation{Op: "add", Path: rolePath, Value: role})
+	}
+	return json.Marshal(operations)
+}
+
+func (r *CubestoreRouterReconciler) updatePodRoleWithFence(ctx context.Context, pod *corev1.Pod, role string, cr *v1alpha1.CubestoreRouter, lease leadership.LeaseRecord) error {
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
+	}
+	if err := r.ensureObjectFence(ctx, pod, lease); err != nil {
+		return err
+	}
+	current := &corev1.Pod{}
+	if err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, current); err != nil {
+		return err
+	}
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
+	}
+	patch, err := fencedRolePatch(current, role, lease)
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, current, client.RawPatch(types.JSONPatchType, patch))
+}
+
+func (r *CubestoreRouterReconciler) updateRouterStatusWithFence(ctx context.Context, cr *v1alpha1.CubestoreRouter, status v1alpha1.CubestoreRouterStatus, lease leadership.LeaseRecord) error {
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
+	}
+	if err := r.ensureObjectFence(ctx, cr, lease); err != nil {
+		return err
+	}
+	fresh := &v1alpha1.CubestoreRouter{}
+	if err := r.Get(ctx, types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, fresh); err != nil {
+		return err
+	}
+	if err := r.validateLeaseBeforeWrite(ctx, fresh, lease); err != nil {
+		return err
+	}
+	fresh.Status = status
+	return r.Status().Update(ctx, fresh)
 }
 
 func resolveRoleConfigMapName(cr *v1alpha1.CubestoreRouter) string {
@@ -654,12 +768,8 @@ func (r *CubestoreRouterReconciler) syncRoles(ctx context.Context, namespace str
 			pod.Labels = map[string]string{}
 		}
 
-		if pod.Labels[labelNamespace] != role {
-			if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
-				return err
-			}
-			pod.Labels[labelNamespace] = role
-			if err := r.Update(ctx, &pod); err != nil {
+		if pod.Labels[labelNamespace] != role || !hasLeaseFence(pod.GetAnnotations(), lease) {
+			if err := r.updatePodRoleWithFence(ctx, &pod, role, cr, lease); err != nil {
 				return err
 			}
 		}

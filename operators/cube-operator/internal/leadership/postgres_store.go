@@ -59,7 +59,7 @@ func (s *PostgresStore) Acquire(ctx context.Context, clusterID, holderID string,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s (cluster_id, holder_id, token, epoch, issued_at, expires_at)
-		VALUES ($1, '', '', 0, now(), now()) ON CONFLICT (cluster_id) DO NOTHING`, s.table), clusterID); err != nil {
+		VALUES ($1, '', '', 0, clock_timestamp(), clock_timestamp()) ON CONFLICT (cluster_id) DO NOTHING`, s.table), clusterID); err != nil {
 		return LeaseRecord{}, false, err
 	}
 	current, active, err := s.lockedLease(ctx, tx, clusterID)
@@ -95,11 +95,8 @@ func (s *PostgresStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.D
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	current, active, err := s.lockedLease(ctx, tx, lease.ClusterID)
-	if errors.Is(err, ErrLeaseNotFound) {
-		if err := tx.Commit(ctx); err != nil {
-			return LeaseRecord{}, false, err
-		}
-		return LeaseRecord{}, false, nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		return LeaseRecord{}, false, ErrLeaseNotFound
 	}
 	if err != nil {
 		return LeaseRecord{}, false, err
@@ -124,8 +121,8 @@ func (s *PostgresStore) Release(ctx context.Context, lease LeaseRecord) error {
 	if err := validateLeaseIdentity(lease); err != nil {
 		return err
 	}
-	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`UPDATE %s SET holder_id = '', token = '', expires_at = now()
-		WHERE cluster_id = $1 AND holder_id = $2 AND token = $3 AND epoch = $4 AND expires_at > now()`, s.table), lease.ClusterID, lease.HolderID, lease.Token, lease.Epoch)
+	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`UPDATE %s SET holder_id = '', token = '', expires_at = clock_timestamp()
+		WHERE cluster_id = $1 AND holder_id = $2 AND token = $3 AND epoch = $4 AND expires_at > clock_timestamp()`, s.table), lease.ClusterID, lease.HolderID, lease.Token, lease.Epoch)
 	if err != nil {
 		return err
 	}
@@ -155,7 +152,7 @@ func (s *PostgresStore) lockedLease(ctx context.Context, tx pgx.Tx, clusterID st
 }
 
 func (s *PostgresStore) queryLease(ctx context.Context, queryer postgresQueryer, clusterID string, lock bool) (LeaseRecord, bool, error) {
-	query := fmt.Sprintf(`SELECT cluster_id, holder_id, token, epoch, issued_at, expires_at, expires_at > now() FROM %s WHERE cluster_id = $1`, s.table)
+	query := fmt.Sprintf(`SELECT cluster_id, holder_id, token, epoch, issued_at, expires_at, expires_at > clock_timestamp() FROM %s WHERE cluster_id = $1`, s.table)
 	if lock {
 		query += " FOR UPDATE"
 	}
@@ -170,8 +167,8 @@ func (s *PostgresStore) writeLease(ctx context.Context, tx pgx.Tx, clusterID, ho
 	if incrementEpoch {
 		epoch = "epoch + 1"
 	}
-	query := fmt.Sprintf(`UPDATE %s SET holder_id = $2, token = $3, epoch = %s, issued_at = CASE WHEN $5 THEN now() ELSE issued_at END,
-		expires_at = now() + $4::interval WHERE cluster_id = $1
+	query := fmt.Sprintf(`UPDATE %s SET holder_id = $2, token = $3, epoch = %s, issued_at = CASE WHEN $5 THEN clock_timestamp() ELSE issued_at END,
+		expires_at = clock_timestamp() + $4::interval WHERE cluster_id = $1
 		RETURNING cluster_id, holder_id, token, epoch, issued_at, expires_at`, s.table, epoch)
 	var record LeaseRecord
 	err := tx.QueryRow(ctx, query, clusterID, holderID, token, postgresInterval(ttl), incrementEpoch).Scan(

@@ -131,4 +131,7 @@ func TestPostgresStoreOutageAndServerClock(t *testing.T) {
 	if _, err := valid.Get(context.Background(), "missing"); !errors.Is(err, ErrLeaseNotFound) {
 		t.Fatalf("missing Get error = %v", err)
 	}
+	if _, renewed, err := valid.Renew(context.Background(), LeaseRecord{ClusterID: "missing", HolderID: "holder", Epoch: 1, Token: "token"}, time.Second); !errors.Is(err, ErrLeaseNotFound) || renewed {
+		t.Fatalf("missing Renew = (%t, %v), want false, ErrLeaseNotFound", renewed, err)
+	}
 }

@@ -14,7 +14,9 @@ Added atomic Redis and PostgreSQL lease stores. Redis uses Lua scripts with dura
 
 The review fixes preserve PostgreSQL fencing epochs across release, require cluster/holder/epoch/token matches for renew and release, reject Redis hashes with missing or non-positive TTL as `ErrLeaseUnknown`, and keep Redis epoch counters durable across lease-key deletion. Tests exercise production Redis response/CAS parsing and fencing validation without fakes, plus integration coverage for stale release, stale renew, missing TTL, epoch monotonicity, and contention when the real backends are configured.
 
-The final controller fencing fix binds all downstream role/state writes to a fresh backend `Get` followed by `ValidateLeaseFence`: Pod role label updates, Router status updates, ConfigMap state writes, and remote state writes fail closed for missing, expired, stale-token, or stale-epoch leases. Controller behavior tests prove an old lease cannot update a Pod while the current lease can.
+The final controller fencing fix does not rely on a pre-check alone. Pod role updates and Router status updates first persist the current cluster/epoch/token as object annotations through a resourceVersion JSON Patch CAS, then perform the downstream write with JSON Patch `test` predicates for resourceVersion and all fencing annotations. A marker with a higher epoch or conflicting same-epoch token cannot be downgraded. Controller behavior tests prove an old lease cannot update a Pod after the promotion marker is persisted while the current lease can. The external lease `Get` plus `ValidateLeaseFence` remains fail-closed validation before marker/write operations.
+
+PostgreSQL expiry checks and writes use server `clock_timestamp()` rather than transaction-stable `now()`, and renewal of a missing row returns `ErrLeaseNotFound` without treating it as a successful renewal.
 
 ## Tests
 
