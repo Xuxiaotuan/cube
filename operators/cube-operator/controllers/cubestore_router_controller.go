@@ -10,9 +10,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cube-js/cube-operator/api/v1alpha1"
+	"github.com/cube-js/cube-operator/internal/leadership"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -48,6 +50,8 @@ const leaderStateOpTimeout = 4 * time.Second
 type CubestoreRouterReconciler struct {
 	client.Client
 	*runtime.Scheme
+	leaseMu      sync.Mutex
+	routerLeases map[string]leadership.LeaseRecord
 }
 
 func (r *CubestoreRouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -69,31 +73,16 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if targetNS == "" {
 		targetNS = req.Namespace
 	}
-	roleStateConfigMap := resolveRoleConfigMapName(&cr)
-
 	podList, err := r.listRouters(ctx, targetNS, cr.Spec.Selector)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 	}
 
 	candidates := r.probeCandidates(ctx, podList, cr)
-	leader, leaderCandidates := r.chooseLeader(candidates, cr.Spec.ElectionStrategy, cr.Status.Leader)
-
-	observedStateEpoch, observedErr := r.readLeaderEpochFromState(ctx, targetNS, &cr, roleStateConfigMap)
-	if observedErr != nil {
-		log.Info("read role state config map failed, using in-memory status epoch as fallback", "error", observedErr.Error())
-	}
-
-	nextLeaderEpoch := resolveLeaderEpoch(cr.Status.LeaderEpoch, observedStateEpoch, cr.Status.Leader)
-	if leader != nil && cr.Status.Leader != leader.Name {
-		if cr.Status.Leader == "" && cr.Status.LeaderEpoch == 0 && observedStateEpoch == 0 {
-			nextLeaderEpoch = 1
-		} else {
-			nextLeaderEpoch += 1
-		}
-	}
-	if leader != nil && nextLeaderEpoch == 0 {
-		nextLeaderEpoch = 1
+	leader, lease, leaseErr := r.resolveRouterLease(ctx, &cr, candidates)
+	leaderCandidates := 0
+	if leader != nil {
+		leaderCandidates = 1
 	}
 
 	nextStatus := cr.Status
@@ -101,9 +90,9 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nextStatus.Conditions = nil
 	nextStatus.Conditions = r.withLeaderCondition(candidates, leader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
 
-	syncStateErr := r.syncRoles(ctx, targetNS, candidates, leader)
+	syncStateErr := leaseErr
 	if syncStateErr == nil {
-		syncStateErr = r.syncRoleState(ctx, targetNS, &cr, candidates, leader, nextLeaderEpoch, roleStateConfigMap)
+		syncStateErr = r.syncRoles(ctx, targetNS, candidates, leader)
 	}
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
@@ -112,7 +101,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		nextStatus.Leader = leader.Name
 		nextStatus.LeaderIP = leader.PodIP
 		nextStatus.LeaderRole = labelLeader
-		nextStatus.LeaderEpoch = nextLeaderEpoch
+		nextStatus.LeaderEpoch = lease.Epoch
 		if cr.Status.Leader != leader.Name {
 			now := metav1.Now()
 			nextStatus.LastSwitchedAt = &now
@@ -121,10 +110,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		nextStatus.Leader = ""
 		nextStatus.LeaderIP = ""
 		nextStatus.LeaderRole = ""
-		nextStatus.LeaderEpoch = nextLeaderEpoch
-		if nextStatus.LeaderEpoch == 0 {
-			nextStatus.LeaderEpoch = 1
-		}
+		nextStatus.LeaderEpoch = lease.Epoch
 		nextStatus.LastSwitchedAt = cr.Status.LastSwitchedAt
 	}
 
@@ -141,6 +127,174 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+}
+
+func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *v1alpha1.CubestoreRouter, candidates []candidate) (*candidate, leadership.LeaseRecord, error) {
+	store, closeStore, err := r.routerLeaseStore(ctx, cr)
+	if err != nil {
+		return nil, leadership.LeaseRecord{}, err
+	}
+	defer closeStore()
+
+	clusterID := resolveLeaderStateRecordID(cr.Namespace, cr.Name)
+	current, err := store.Get(ctx, clusterID)
+	if err == nil {
+		if local, ok := r.localRouterLease(clusterID); ok && local.HolderID == current.HolderID && local.Token == current.Token {
+			renewed, renewedOK, renewErr := store.Renew(ctx, local, routerLeaseTTL(cr))
+			if renewErr != nil {
+				return nil, current, renewErr
+			}
+			if !renewedOK {
+				r.clearLocalRouterLease(clusterID, local.Token)
+				return nil, current, nil
+			}
+			r.setLocalRouterLease(clusterID, renewed)
+			current = renewed
+		}
+		return readyCandidateByName(candidates, current.HolderID), current, nil
+	}
+	if !errors.Is(err, leadership.ErrLeaseNotFound) {
+		return nil, leadership.LeaseRecord{}, err
+	}
+
+	preferred, _ := r.chooseLeader(candidates, cr.Spec.ElectionStrategy, "")
+	if preferred == nil {
+		return nil, leadership.LeaseRecord{}, nil
+	}
+
+	lease, acquired, err := store.Acquire(ctx, clusterID, preferred.Name, routerLeaseTTL(cr))
+	if err != nil {
+		return nil, leadership.LeaseRecord{}, err
+	}
+	if acquired {
+		r.setLocalRouterLease(clusterID, lease)
+		return readyCandidateByName(candidates, lease.HolderID), lease, nil
+	}
+
+	return readyCandidateByName(candidates, lease.HolderID), lease, nil
+}
+
+func (r *CubestoreRouterReconciler) routerLeaseStore(ctx context.Context, cr *v1alpha1.CubestoreRouter) (leadership.LeaseStore, func(), error) {
+	backend, dsn, redisKey, pgTable, err := r.externalLeaseConfig(ctx, cr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch backend {
+	case leaderStateStoreTypeRedis:
+		options, err := redis.ParseURL(dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		client := redis.NewClient(options)
+		prefix := strings.TrimSpace(redisKey)
+		if prefix == "" {
+			prefix = defaultRedisKey
+		}
+		return leadership.NewRedisStore(client, prefix), func() { _ = client.Close() }, nil
+	case leaderStateStoreTypePostgres:
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		store, err := leadership.NewPostgresStore(pool, pgTable)
+		if err != nil {
+			pool.Close()
+			return nil, nil, err
+		}
+		if err := store.Ensure(ctx); err != nil {
+			pool.Close()
+			return nil, nil, err
+		}
+		return store, pool.Close, nil
+	default:
+		return nil, nil, fmt.Errorf("leaderStateStore.type %q is not an external lease backend", backend)
+	}
+}
+
+func (r *CubestoreRouterReconciler) externalLeaseConfig(ctx context.Context, cr *v1alpha1.CubestoreRouter) (leaderStateBackendType, string, string, string, error) {
+	if cr == nil {
+		return "", "", "", "", fmt.Errorf("router resource is required")
+	}
+
+	var backend leaderStateBackendType
+	var secretRef corev1.SecretReference
+	var redisKey, pgTable string
+	if cr.Spec.StateStore != nil {
+		backend = leaderStateBackendType(strings.TrimSpace(strings.ToLower(cr.Spec.StateStore.Type)))
+		secretRef = cr.Spec.StateStore.SecretRef
+	} else if cr.Spec.LeaderStateStore != nil {
+		backend = leaderStateBackendType(strings.TrimSpace(strings.ToLower(cr.Spec.LeaderStateStore.Type)))
+		secretRef = cr.Spec.LeaderStateStore.SecretRef
+		redisKey = cr.Spec.LeaderStateStore.RedisKey
+		pgTable = cr.Spec.LeaderStateStore.PGTable
+	} else {
+		return "", "", "", "", fmt.Errorf("an external stateStore is required for router leadership")
+	}
+
+	if backend != leaderStateStoreTypeRedis && backend != leaderStateStoreTypePostgres {
+		return "", "", "", "", fmt.Errorf("stateStore.type %q is not an external lease backend", backend)
+	}
+	if strings.TrimSpace(secretRef.Name) == "" || strings.TrimSpace(secretRef.Namespace) == "" {
+		return "", "", "", "", fmt.Errorf("stateStore.secretRef must include name and namespace")
+	}
+
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace}, secret); err != nil {
+		return "", "", "", "", fmt.Errorf("read stateStore secret: %w", err)
+	}
+	dsn := strings.TrimSpace(string(secret.Data["dsn"]))
+	if dsn == "" {
+		return "", "", "", "", fmt.Errorf("stateStore secret %s/%s must contain a non-empty dsn key", secretRef.Namespace, secretRef.Name)
+	}
+	return backend, dsn, redisKey, pgTable, nil
+}
+
+func (r *CubestoreRouterReconciler) stateStoreDSN(ctx context.Context, cr *v1alpha1.CubestoreRouter) (string, error) {
+	_, dsn, _, _, err := r.externalLeaseConfig(ctx, cr)
+	return dsn, err
+}
+
+func routerLeaseTTL(cr *v1alpha1.CubestoreRouter) time.Duration {
+	seconds := int32(v1alpha1.DefaultLeaseDurationSeconds)
+	if cr != nil && cr.Spec.LeaseDurationSeconds > 0 {
+		seconds = cr.Spec.LeaseDurationSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func readyCandidateByName(candidates []candidate, name string) *candidate {
+	for i := range candidates {
+		if candidates[i].Name == name && candidates[i].Ready && candidates[i].PodIP != "" {
+			candidate := candidates[i]
+			return &candidate
+		}
+	}
+	return nil
+}
+
+func (r *CubestoreRouterReconciler) localRouterLease(clusterID string) (leadership.LeaseRecord, bool) {
+	r.leaseMu.Lock()
+	defer r.leaseMu.Unlock()
+	lease, ok := r.routerLeases[clusterID]
+	return lease, ok
+}
+
+func (r *CubestoreRouterReconciler) setLocalRouterLease(clusterID string, lease leadership.LeaseRecord) {
+	r.leaseMu.Lock()
+	defer r.leaseMu.Unlock()
+	if r.routerLeases == nil {
+		r.routerLeases = make(map[string]leadership.LeaseRecord)
+	}
+	r.routerLeases[clusterID] = lease
+}
+
+func (r *CubestoreRouterReconciler) clearLocalRouterLease(clusterID, token string) {
+	r.leaseMu.Lock()
+	defer r.leaseMu.Unlock()
+	if current, ok := r.routerLeases[clusterID]; ok && current.Token == token {
+		delete(r.routerLeases, clusterID)
+	}
 }
 
 func resolveRoleConfigMapName(cr *v1alpha1.CubestoreRouter) string {
@@ -260,13 +414,13 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 
 		resp, err := httpClient.Do(req)
 		if err == nil {
-		if resp.StatusCode == http.StatusOK {
+			if resp.StatusCode == http.StatusOK {
 				var body struct {
-					NodeName    string `json:"node_name"`
-					Role        string `json:"role"`
-					Mode        string `json:"mode"`
+					NodeName     string `json:"node_name"`
+					Role         string `json:"role"`
+					Mode         string `json:"mode"`
 					ActiveLeader string `json:"activeLeader"`
-					LeaderState struct {
+					LeaderState  struct {
 						ActiveLeader string `json:"activeLeader"`
 					} `json:"leaderState"`
 				}
@@ -700,13 +854,13 @@ func (r *CubestoreRouterReconciler) readLeaderStateFromConfigMap(
 }
 
 func (r *CubestoreRouterReconciler) readLeaderStateFromPostgres(ctx context.Context, cr *v1alpha1.CubestoreRouter) (routerLeaderState, error) {
-	if cr == nil || cr.Spec.LeaderStateStore == nil {
+	if cr == nil || (cr.Spec.StateStore == nil && cr.Spec.LeaderStateStore == nil) {
 		return routerLeaderState{}, nil
 	}
 
-	dsn := strings.TrimSpace(cr.Spec.LeaderStateStore.DSN)
-	if dsn == "" {
-		return routerLeaderState{}, fmt.Errorf("leaderStateStore.dsn is required for postgres backend")
+	dsn, err := r.stateStoreDSN(ctx, cr)
+	if err != nil {
+		return routerLeaderState{}, err
 	}
 
 	backendCtx, cancel := context.WithTimeout(ctx, leaderStateOpTimeout)
@@ -754,13 +908,13 @@ func (r *CubestoreRouterReconciler) readLeaderStateFromPostgres(ctx context.Cont
 }
 
 func (r *CubestoreRouterReconciler) readLeaderStateFromRedis(ctx context.Context, cr *v1alpha1.CubestoreRouter) (routerLeaderState, error) {
-	if cr == nil || cr.Spec.LeaderStateStore == nil {
+	if cr == nil || (cr.Spec.StateStore == nil && cr.Spec.LeaderStateStore == nil) {
 		return routerLeaderState{}, nil
 	}
 
-	dsn := strings.TrimSpace(cr.Spec.LeaderStateStore.DSN)
-	if dsn == "" {
-		return routerLeaderState{}, fmt.Errorf("leaderStateStore.dsn is required for redis backend")
+	dsn, err := r.stateStoreDSN(ctx, cr)
+	if err != nil {
+		return routerLeaderState{}, err
 	}
 
 	opt, err := redis.ParseURL(dsn)
@@ -805,13 +959,13 @@ func (r *CubestoreRouterReconciler) writeLeaderStateToPostgres(
 	cr *v1alpha1.CubestoreRouter,
 	state routerLeaderState,
 ) error {
-	if cr == nil || cr.Spec.LeaderStateStore == nil {
+	if cr == nil || (cr.Spec.StateStore == nil && cr.Spec.LeaderStateStore == nil) {
 		return nil
 	}
 
-	dsn := strings.TrimSpace(cr.Spec.LeaderStateStore.DSN)
-	if dsn == "" {
-		return fmt.Errorf("leaderStateStore.dsn is required for postgres backend")
+	dsn, err := r.stateStoreDSN(ctx, cr)
+	if err != nil {
+		return err
 	}
 
 	backendCtx, cancel := context.WithTimeout(ctx, leaderStateOpTimeout)
@@ -848,13 +1002,13 @@ func (r *CubestoreRouterReconciler) writeLeaderStateToRedis(
 	cr *v1alpha1.CubestoreRouter,
 	state routerLeaderState,
 ) error {
-	if cr == nil || cr.Spec.LeaderStateStore == nil {
+	if cr == nil || (cr.Spec.StateStore == nil && cr.Spec.LeaderStateStore == nil) {
 		return nil
 	}
 
-	dsn := strings.TrimSpace(cr.Spec.LeaderStateStore.DSN)
-	if dsn == "" {
-		return fmt.Errorf("leaderStateStore.dsn is required for redis backend")
+	dsn, err := r.stateStoreDSN(ctx, cr)
+	if err != nil {
+		return err
 	}
 
 	opt, err := redis.ParseURL(dsn)
