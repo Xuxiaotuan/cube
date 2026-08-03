@@ -11,8 +11,8 @@ MYSQL_IMAGE="${MYSQL_IMAGE:-mysql:8.4}"
 MYSQL_USER="${MYSQL_USER:-root}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
-MYSQL_CONNECT_TIMEOUT_SECONDS="${MYSQL_CONNECT_TIMEOUT_SECONDS:-5}"
-MYSQL_POD_RUNNING_TIMEOUT_SECONDS="${MYSQL_POD_RUNNING_TIMEOUT_SECONDS:-30}"
+MYSQL_CLIENT_STARTUP_TIMEOUT_SECONDS="${MYSQL_CLIENT_STARTUP_TIMEOUT_SECONDS:-30}"
+MYSQL_QUERY_TIMEOUT_SECONDS="${MYSQL_QUERY_TIMEOUT_SECONDS:-5}"
 IMPORT_WAIT_SECONDS="${IMPORT_WAIT_SECONDS:-120}"
 IMPORT_CHECK_INTERVAL_SECONDS="${IMPORT_CHECK_INTERVAL_SECONDS:-2}"
 EXPECTED_ROW_COUNT="${EXPECTED_ROW_COUNT:-12}"
@@ -32,7 +32,7 @@ SCHEMA="${ROUTER_HA_SCHEMA:-router_ha_probe}"
 TABLE="${ROUTER_HA_TABLE:-router_ha_data}"
 RUN_ID="${RUN_ID:-$(date +%s)-$$}"
 RUN_ID="$(printf '%s' "$RUN_ID" | tr -cd '[:alnum:]_')"
-MYSQL_CLIENT_SEQUENCE=0
+MYSQL_CLIENT_POD="cube-api-e2e-mysql-${RUN_ID}"
 
 for command_name in "$KUBECTL" jq sed tr awk sleep; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "error: required command '$command_name' not found" >&2; exit 1; }
@@ -56,7 +56,7 @@ require_positive_integer() {
 }
 
 for timeout_name in \
-  MYSQL_CONNECT_TIMEOUT_SECONDS MYSQL_POD_RUNNING_TIMEOUT_SECONDS IMPORT_WAIT_SECONDS IMPORT_CHECK_INTERVAL_SECONDS \
+  MYSQL_CLIENT_STARTUP_TIMEOUT_SECONDS MYSQL_QUERY_TIMEOUT_SECONDS IMPORT_WAIT_SECONDS IMPORT_CHECK_INTERVAL_SECONDS \
   FAILOVER_WAIT_SECONDS FAILOVER_CHECK_INTERVAL_SECONDS API_ROLLOUT_TIMEOUT_SECONDS \
   API_READY_WAIT_SECONDS API_READY_CHECK_INTERVAL_SECONDS API_REQUEST_TIMEOUT_SECONDS; do
   require_positive_integer "$timeout_name" "${!timeout_name}"
@@ -68,13 +68,21 @@ get_service_endpoint_pod() {
   "$KUBECTL" -n "$NAMESPACE" get endpointslice -l "kubernetes.io/service-name=$LEADER_SERVICE_NAME" -o json |
     jq -r '[.items[].endpoints[]?.targetRef.name] | map(select(. != null)) | unique | .[0] // empty'
 }
+cleanup_mysql_client() {
+  local exit_code=$?
+  "$KUBECTL" -n "$NAMESPACE" delete pod "$MYSQL_CLIENT_POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  return "$exit_code"
+}
+start_mysql_client() {
+  "$KUBECTL" run -n "$NAMESPACE" "$MYSQL_CLIENT_POD" --restart=Never \
+    --env="MYSQL_PWD=$MYSQL_PASSWORD" --image="$MYSQL_IMAGE" --command -- \
+    tail -f /dev/null >/dev/null
+  "$KUBECTL" -n "$NAMESPACE" wait --for=condition=Ready "pod/$MYSQL_CLIENT_POD" \
+    --timeout="${MYSQL_CLIENT_STARTUP_TIMEOUT_SECONDS}s" >/dev/null
+}
 mysql_query() {
-  MYSQL_CLIENT_SEQUENCE=$((MYSQL_CLIENT_SEQUENCE + 1))
-  local client_pod="cube-api-e2e-mysql-${RUN_ID}-${MYSQL_CLIENT_SEQUENCE}"
-  "$KUBECTL" run -n "$NAMESPACE" "$client_pod" --rm -i --quiet --restart=Never \
-    --env="MYSQL_PWD=$MYSQL_PASSWORD" \
-    --pod-running-timeout="${MYSQL_POD_RUNNING_TIMEOUT_SECONDS}s" --image="$MYSQL_IMAGE" --command -- \
-    mysql --protocol=TCP --connect-timeout="$MYSQL_CONNECT_TIMEOUT_SECONDS" \
+  "$KUBECTL" --request-timeout="${MYSQL_QUERY_TIMEOUT_SECONDS}s" -n "$NAMESPACE" exec "$MYSQL_CLIENT_POD" -- \
+    mysql --protocol TCP --connect-timeout "$MYSQL_QUERY_TIMEOUT_SECONDS" \
       -h "$LEADER_SERVICE_NAME.$NAMESPACE.svc.cluster.local" -P "$MYSQL_PORT" -u "$MYSQL_USER" -N -B -e "$1"
 }
 query_cube_api() {
@@ -160,7 +168,9 @@ wait_for_cube_api_data() {
   return 1
 }
 
+trap cleanup_mysql_client EXIT
 "$KUBECTL" -n "$NAMESPACE" rollout status "deploy/$API_DEPLOYMENT" --timeout="${API_ROLLOUT_TIMEOUT_SECONDS}s" >/dev/null
+start_mysql_client
 old_leader="$(get_leader)"; old_epoch="$(get_epoch)"
 [ -n "$old_leader" ] || { echo "error: no active Router leader" >&2; exit 1; }
 [ -n "$old_epoch" ] && [ "$old_epoch" != 0 ] || { echo "error: leaderEpoch is missing or zero" >&2; exit 1; }
