@@ -13,10 +13,82 @@ ROUTER_NAMESPACE="cube-operator-demo"
 ROUTER_DEPLOYMENT="cube-router-demo"
 KUBECTL_VALIDATE="${KUBECTL_VALIDATE:-auto}"
 KUBECTL_VALIDATE_FALLBACK="${KUBECTL_VALIDATE_FALLBACK:-true}"
+DRY_RUN="false"
+
+case "${1:-}" in
+  "") ;;
+  --dry-run)
+    DRY_RUN="true"
+    shift
+    ;;
+  *)
+    echo "usage: $0 [--dry-run]" >&2
+    exit 2
+    ;;
+esac
 
 log() {
   printf '[%s] %s\n' "$(date +'%F %T')" "$*"
 }
+
+run_dry_run() {
+  local tmp_dir
+  local metastore_manifest
+  local worker_manifest
+  local router_manifest
+  local index=0
+  local metastore_index=-1
+  local worker_index=-1
+  local router_index=-1
+  tmp_dir="$(mktemp -d)"
+
+  metastore_manifest="$tmp_dir/metastore.yaml"
+  worker_manifest="$tmp_dir/workers.yaml"
+  router_manifest="$tmp_dir/routers.yaml"
+  sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$metastore_manifest"
+  sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$worker_manifest"
+  sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-routers.yaml > "$router_manifest"
+
+  for manifest in \
+    demo/k8s/namespace.yaml \
+    demo/k8s/operator-rbac.yaml \
+    "$metastore_manifest" \
+    "$worker_manifest" \
+    "$router_manifest"; do
+    "$KUBECTL" create --dry-run=client -f "$manifest" >/dev/null
+    index=$((index + 1))
+    case "$manifest" in
+      "$metastore_manifest") metastore_index=$index ;;
+      "$worker_manifest") worker_index=$index ;;
+      "$router_manifest") router_index=$index ;;
+    esac
+  done
+
+  if (( metastore_index >= worker_index || worker_index >= router_index )); then
+    echo "dry-run ordering failure: expected metastore -> workers -> routers" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if ! rg -q 'name: CUBESTORE_META_ADDR' "$worker_manifest" || \
+     ! rg -q 'name: CUBESTORE_META_ADDR' "$router_manifest"; then
+    echo "dry-run configuration failure: workers and routers must consume CUBESTORE_META_ADDR" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if ! rg -q 'replicas: 1' "$metastore_manifest"; then
+    echo "dry-run configuration failure: MetaStore must remain single-writer" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  printf 'dry-run: manifests valid; upgrade order verified: metastore -> workers -> routers\n'
+  rm -rf "$tmp_dir"
+}
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  run_dry_run
+  exit $?
+fi
 
 apply_manifest() {
   local manifest_file="$1"
@@ -61,6 +133,15 @@ sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$TMP_METAS
 apply_manifest "$TMP_METASTORE_MANIFEST"
 rm -f "$TMP_METASTORE_MANIFEST"
 $KUBECTL -n "$ROUTER_NAMESPACE" rollout status statefulset/cubestore-metastore --timeout=180s
+
+cat <<'MSG'
+[1.75/7] 部署 Cubestore Workers（统一连接 authoritative MetaStore）
+MSG
+TMP_WORKER_MANIFEST="$(mktemp)"
+sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$TMP_WORKER_MANIFEST"
+apply_manifest "$TMP_WORKER_MANIFEST"
+rm -f "$TMP_WORKER_MANIFEST"
+$KUBECTL -n "$ROUTER_NAMESPACE" rollout status statefulset/cube-worker-demo --timeout=180s
 
 cat <<'MSG'
 [2/7] 构建 Operator 镜像

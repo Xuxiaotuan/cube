@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cube-worker
+  namespace: cube-operator-demo
+  labels:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+  ports:
+    - name: worker
+      port: 10001
+      targetPort: worker
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cube-worker-demo
+  namespace: cube-operator-demo
+  labels:
+    app: cube-worker
+    app.kubernetes.io/name: cube-worker-demo
+spec:
+  serviceName: cube-worker
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: cube-worker
+      app.kubernetes.io/name: cube-worker-demo
+  template:
+    metadata:
+      labels:
+        app: cube-worker
+        app.kubernetes.io/name: cube-worker-demo
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: cubestore-worker
+          image: cube-studio-router:ha-local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CUBESTORE_SERVER_NAME
+              value: "$(POD_NAME).cube-worker.cube-operator-demo.svc:10001"
+            - name: CUBESTORE_WORKER_PORT
+              value: "10001"
+            - name: CUBESTORE_META_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: cubestore-metastore-client
+                  key: CUBESTORE_META_ADDR
+            - name: CUBESTORE_WORKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cubestore-metastore-client
+                  key: CUBESTORE_WORKERS
+            - name: CUBESTORE_REMOTE_DIR
+              value: /cube/data
+            - name: CUBESTORE_DATA_DIR
+              value: /cube/.cubestore/data
+          ports:
+            - name: worker
+              containerPort: 10001
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: worker
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: worker
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          volumeMounts:
+            - name: worker-data
+              mountPath: /cube/data
+            - name: worker-local-data
+              mountPath: /cube/.cubestore/data
+      volumes:
+        - name: worker-data
+          emptyDir: {}
+        - name: worker-local-data
+          emptyDir: {}

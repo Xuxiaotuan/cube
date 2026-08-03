@@ -31,3 +31,11 @@ Commit message: `feat: add authoritative cubestore metastore service`
 - Added an explicit `CUBESTORE_META_ADDR` ConfigMap reference to the Router container; both replicas now resolve the same `cubestore-metastore.cube-operator-demo.svc:9999` endpoint.
 - Changed the singleton PDB from `maxUnavailable: 1` to `minAvailable: 1`. This blocks voluntary eviction of the only writer and does not claim that the PDB provides HA.
 - Re-ran manifest client-side dry-run checks after the changes.
+
+## Worker blocking fix
+
+- The actual Rust Worker interface is `CUBESTORE_WORKER_PORT`, `CUBESTORE_WORKERS`, and `CUBESTORE_META_ADDR`; `Config::default` parses the latter and `MetaStoreTransport` connects it to the RPC service. The Operator demo previously had no Worker Deployment, so the prior ConfigMap was not consumed by any Worker.
+- Added `demo/k8s/mock-workers.yaml` as a stable two-replica StatefulSet. Each Worker gets a stable StatefulSet DNS server name, the same `CUBESTORE_WORKERS` list, and the same `CUBESTORE_META_ADDR` from `cubestore-metastore-client`.
+- Added `CUBESTORE_WORKERS` consumption to both Router replicas.
+- Added `run.sh --dry-run`. It renders the same image substitutions as the normal path, runs client-side validation for namespace, RBAC, MetaStore, Workers, and Routers, and fails unless the deterministic order is MetaStore -> Workers -> Routers. It also asserts that Workers and Routers consume `CUBESTORE_META_ADDR` and MetaStore remains single-replica.
+- The demo Worker data directories are per-Pod `emptyDir` examples only; they are not the authoritative MetaStore and must be replaced by the production object/local data strategy outside Task 7.

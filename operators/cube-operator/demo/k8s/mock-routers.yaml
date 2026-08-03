@@ -64,6 +64,11 @@ spec:
                 configMapKeyRef:
                   name: cubestore-metastore-client
                   key: CUBESTORE_META_ADDR
+            - name: CUBESTORE_WORKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cubestore-metastore-client
+                  key: CUBESTORE_WORKERS
             - name: CUBESTORE_HTTP_PORT
               value: "3030"
             - name: CUBESTORE_NODE_NAME

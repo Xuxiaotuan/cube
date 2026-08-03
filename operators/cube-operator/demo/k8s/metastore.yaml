@@ -5,6 +5,7 @@ metadata:
   namespace: cube-operator-demo
 data:
   CUBESTORE_META_ADDR: cubestore-metastore.cube-operator-demo.svc:9999
+  CUBESTORE_WORKERS: cube-worker-demo-0.cube-worker.cube-operator-demo.svc:10001,cube-worker-demo-1.cube-worker.cube-operator-demo.svc:10001
 ---
 apiVersion: v1
 kind: ServiceAccount
