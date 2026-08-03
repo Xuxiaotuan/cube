@@ -3,6 +3,21 @@
 ## 验证时间
 - 2026-07-31（本地环境）
 
+## 真实 Redis Lua CAS 集成验证（本轮）
+
+- 范围：仅验证 `operators/cube-operator/internal/leadership` 的真实 Redis 后端；PG 不是必需后端。
+- 凭据处理：`REDIS_URL` 和 `REDIS_PASSWORD` 只通过进程环境传入；报告不记录密码，Redis URL 中的凭据也不写入文件。
+- 默认地址：当 `REDIS_URL` 未注入时，测试/脚本使用现有配置地址 `100.82.226.63:30078`，仅以无凭据地址形式存在。
+- 验证命令：
+  - `cd /Users/xujiawei/magic/workbench/cube/operators/cube-operator`
+  - `REDIS_URL=... REDIS_PASSWORD=... ./ha-validate.sh --leadership-cas`
+  - 或已在 shell 环境注入变量时直接执行 `./ha-validate.sh --leadership-cas`
+- 退出码约定：`0` = 真实 Redis CAS 全部通过；`1` = Redis 可达但至少一个测试失败，或 Redis 操作未按失败关闭处理；`2` = 命令参数错误。
+- 覆盖场景：Lua 并发 acquire（20 个竞争者仅一个成功）、renew、release、epoch 单调递增、旧 token/旧 epoch 拒绝、missing TTL 返回未知状态、Redis 不可达时 acquire/renew/release/get 全部失败关闭。
+- 本轮结果：`NEEDS_CONTEXT`。已执行真实入口，但当前进程未注入 `REDIS_PASSWORD`；Redis 地址可达并返回 `NOAUTH Authentication required`。入口在约 8 秒内结束，退出码为 `1`。
+- 需要补充的唯一上下文：在当前 shell 中注入真实密码后重跑上述命令；密码不要写入仓库、报告或脚本。
+- 未执行 PG：本验证不要求 `POSTGRES_URL`，脚本也不会因 PG 未配置而阻塞 Redis CAS 验证。
+
 ## 执行版本（工作区）
 - 分支：`codex/ha-router-experiment`
 - 路径：`/Users/xujiawei/magic/workbench/cube`
@@ -270,7 +285,7 @@
 ## 复测（七）——本次“立即运行”结果（2026-08-01）
 
 ### 1) 真实 Redis 幂等闭环验证（可用）
-- 目标：验证 `CubeStoreDriver` 的 `mutationId` 幂等状态在外部 Redis（`redis://:asd123456@100.82.226.63:30078/0`）上的行为。
+- 目标：验证 `CubeStoreDriver` 的 `mutationId` 幂等状态在外部 Redis（地址已配置，凭据仅通过进程环境注入）上的行为。
 - 命令（已执行）：
   - 使用 `node` 直接调用 `CubeStoreDriver` 私有幂等流程。
 - 关键断言与结果：

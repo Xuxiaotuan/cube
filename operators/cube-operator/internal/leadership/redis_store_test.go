@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,19 +13,27 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const configuredRedisURL = "redis://100.82.226.63:30078/0"
+
 func redisStoreForTest(t *testing.T) *RedisStore {
 	t.Helper()
-	dsn := os.Getenv("REDIS_URL")
+	dsn := strings.TrimSpace(os.Getenv("REDIS_URL"))
 	if dsn == "" {
-		t.Skip("SKIP: REDIS_URL is not set; Redis CAS integration tests were not run")
+		dsn = configuredRedisURL
+		t.Log("REDIS_URL is not set; using the configured Redis endpoint")
 	}
 	options, err := redis.ParseURL(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	options.Password = os.Getenv("REDIS_PASSWORD")
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		options.Password = password
+	}
 	client := redis.NewClient(options)
 	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		t.Fatalf("real Redis is not reachable: %v", err)
+	}
 	return NewRedisStore(client, "cubestore-test-lease-"+fmt.Sprint(time.Now().UnixNano()))
 }
 
@@ -190,11 +199,22 @@ func TestRedisFencingValidationAndUnknownResponse(t *testing.T) {
 func TestRedisStoreOutageAndServerClock(t *testing.T) {
 	store := NewRedisStore(redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 10 * time.Millisecond}), "outage")
 	t.Cleanup(func() { _ = store.client.Close() })
-	if _, _, err := store.Acquire(context.Background(), "cluster", "holder", time.Second); err == nil {
-		t.Fatal("Acquire succeeded during Redis outage")
+	ctx := context.Background()
+	if _, acquired, err := store.Acquire(ctx, "cluster", "holder", time.Second); err == nil || acquired {
+		t.Fatalf("Acquire during Redis outage = (acquired=%t, err=%v), want failed closed", acquired, err)
+	}
+	outageLease := LeaseRecord{ClusterID: "cluster", HolderID: "holder", Epoch: 1, Token: "token"}
+	if _, renewed, err := store.Renew(ctx, outageLease, time.Second); err == nil || renewed {
+		t.Fatalf("Renew during Redis outage = (renewed=%t, err=%v), want failed closed", renewed, err)
+	}
+	if err := store.Release(ctx, outageLease); err == nil {
+		t.Fatal("Release succeeded during Redis outage")
+	}
+	if _, err := store.Get(ctx, "cluster"); err == nil {
+		t.Fatal("Get succeeded during Redis outage")
 	}
 	valid := redisStoreForTest(t)
-	lease, acquired, err := valid.Acquire(context.Background(), "clock", "holder", time.Second)
+	lease, acquired, err := valid.Acquire(ctx, "clock", "holder", time.Second)
 	if err != nil || !acquired || !lease.ExpiresAt.After(lease.IssuedAt) {
 		t.Fatalf("server-clock lease = (%#v, %t, %v)", lease, acquired, err)
 	}
