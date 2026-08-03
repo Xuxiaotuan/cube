@@ -16,6 +16,37 @@ spec:
         app.kubernetes.io/name: cube-router-demo
     spec:
       containers:
+        - name: lease-agent
+          image: cube-operator:dev
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/local/bin/lease-agent
+          args:
+            - --cluster-id=cube-router-demo
+            - --holder-id=$(POD_NAME)
+            - --lease-store-url=$(CUBESTORE_LEASE_STORE_URL)
+            - --retry-period=2s
+            - --renew-deadline=10s
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CUBESTORE_LEASE_STORE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cube-router-demo-lease-store
+                  key: endpoint
+          volumeMounts:
+            - name: cubestore-ha-leadership
+              mountPath: /var/run/cubestore-ha
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
         - name: cube-studio-router
           image: ${ROUTER_IMAGE}
           imagePullPolicy: IfNotPresent
@@ -27,7 +58,7 @@ spec:
             - name: CUBESTORE_ROUTER_ROLE_STRICT
               value: "true"
             - name: CUBESTORE_ROUTER_ROLE_FILE
-              value: /etc/cubestore/router-role/route-role.json
+              value: /var/run/cubestore-ha/leadership.json
             - name: CUBESTORE_HTTP_PORT
               value: "3030"
             - name: CUBESTORE_NODE_NAME
@@ -52,8 +83,8 @@ spec:
             - containerPort: 3030
             - containerPort: 3306
           volumeMounts:
-            - name: router-role-state
-              mountPath: /etc/cubestore/router-role
+            - name: cubestore-ha-leadership
+              mountPath: /var/run/cubestore-ha
               readOnly: true
           resources:
             requests:
@@ -63,13 +94,11 @@ spec:
               cpu: 200m
               memory: 128Mi
       volumes:
-        - name: router-role-state
-          configMap:
-            name: cube-router-demo-router-role-state
-            optional: true
-            items:
-              - key: route-role.json
-                path: route-role.json
+        # This volume is private to the sidecar and Router in this Pod. It is
+        # intentionally not a ConfigMap projection or a Kubernetes lease.
+        - name: cubestore-ha-leadership
+          emptyDir:
+            medium: Memory
 ---
 apiVersion: v1
 kind: Service
@@ -88,12 +117,3 @@ spec:
     - name: mysql
       port: 3306
       targetPort: 3306
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cube-router-demo-router-role-state
-  namespace: cube-operator-demo
-data:
-  route-role.json: |
-    {}

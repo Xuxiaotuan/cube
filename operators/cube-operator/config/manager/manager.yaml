@@ -26,6 +26,10 @@ spec:
           env:
             - name: WATCH_NAMESPACE
               value: cube-operator-demo
+            # The controller injects this image as the Router's lease-agent
+            # sidecar; it is not Kubernetes manager leader election state.
+            - name: CUBESTORE_LEASE_AGENT_IMAGE
+              value: cube-operator:dev
           resources:
             requests:
               cpu: 100m
