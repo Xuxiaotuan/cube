@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cube-router-demo-lease-store
+  namespace: cube-operator-demo
+type: Opaque
+stringData:
+  # Keep these values in the deployment Secret. The lease agent reads url and
+  # password from the environment; the Operator reads dsn for the same Redis.
+  dsn: redis://redis.default.svc:6379/0
+  url: redis://redis.default.svc:6379/0
+  password: ""
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,28 +28,39 @@ spec:
         app: cube-router
         app.kubernetes.io/name: cube-router-demo
     spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: lease-agent
-          image: cube-operator:dev
+          image: ${LEASE_AGENT_IMAGE}
           imagePullPolicy: IfNotPresent
           command:
             - /usr/local/bin/lease-agent
           args:
-            - --cluster-id=cube-router-demo
+            - --cluster-id=cube-operator-demo/demo
             - --holder-id=$(POD_NAME)
-            - --lease-store-url=$(CUBESTORE_LEASE_STORE_URL)
+            - --redis-url=$(REDIS_URL)
+            - --redis-prefix=$(CUBESTORE_LEASE_REDIS_PREFIX)
             - --retry-period=2s
-            - --renew-deadline=10s
           env:
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: CUBESTORE_LEASE_STORE_URL
+            - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
                   name: cube-router-demo-lease-store
-                  key: endpoint
+                  key: url
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cube-router-demo-lease-store
+                  key: password
+            - name: CUBESTORE_LEASE_REDIS_PREFIX
+              value: cube-router/leader-state
           volumeMounts:
             - name: cubestore-ha-leadership
               mountPath: /var/run/cubestore-ha
@@ -47,6 +71,11 @@ spec:
             limits:
               cpu: 100m
               memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
         - name: cube-studio-router
           image: ${ROUTER_IMAGE}
           imagePullPolicy: IfNotPresent
@@ -57,8 +86,10 @@ spec:
                   fieldPath: metadata.name
             - name: CUBESTORE_ROUTER_ROLE_STRICT
               value: "true"
-            - name: CUBESTORE_ROUTER_ROLE_FILE
+            - name: CUBESTORE_ROUTER_LEADERSHIP_FILE
               value: /var/run/cubestore-ha/leadership.json
+            - name: CUBESTORE_ROUTER_ROLE_FILE
+              value: /var/run/cubestore-promotion/route-role.json
             - name: CUBESTORE_META_ADDR
               valueFrom:
                 configMapKeyRef:
@@ -96,6 +127,9 @@ spec:
             - name: cubestore-ha-leadership
               mountPath: /var/run/cubestore-ha
               readOnly: true
+            - name: cubestore-promotion
+              mountPath: /var/run/cubestore-promotion
+              readOnly: true
           resources:
             requests:
               cpu: 20m
@@ -103,12 +137,30 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
       volumes:
         # This volume is private to the sidecar and Router in this Pod. It is
         # intentionally not a ConfigMap projection or a Kubernetes lease.
         - name: cubestore-ha-leadership
           emptyDir:
             medium: Memory
+        # This marker is written by the Operator and is never written by the
+        # lease-agent. It is separate from the sidecar-owned leadership file.
+        - name: cubestore-promotion
+          configMap:
+            name: cube-router-demo-router-role-state
+            optional: true
+            items:
+              - key: route-role.json
+                path: route-role.json
 ---
 apiVersion: v1
 kind: Service

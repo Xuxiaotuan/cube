@@ -11,8 +11,8 @@ spec:
   healthPath: /router/status
   electionStrategy: strict
   roleConfigMapName: cube-router-demo-router-role-state
-  # 可选：使用外部持久化状态（pg/redis）替代仅 ConfigMap
-  # leaderStateStore:
-  #   type: redis
-  #   dsn: "redis://redis.default.svc:6379/0"
-  #   redisKey: "cube-router/leader-state"
+  stateStore:
+    type: redis
+    secretRef:
+      name: cube-router-demo-lease-store
+      namespace: cube-operator-demo

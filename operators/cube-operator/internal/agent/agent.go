@@ -22,7 +22,10 @@ const (
 	leadershipFileMode    = 0o640
 )
 
-var ErrInvalidLeaseRecord = errors.New("invalid authoritative lease record")
+var (
+	ErrInvalidLeaseRecord = errors.New("invalid authoritative lease record")
+	ErrNotHolder          = errors.New("authoritative lease belongs to another holder")
+)
 
 // LeaseStore is the read-only portion of leadership.LeaseStore required by a
 // per-pod agent. A leadership.LeaseStore satisfies this interface directly.
@@ -37,7 +40,6 @@ type Config struct {
 	HolderID      string
 	Path          string
 	RetryPeriod   time.Duration
-	RenewDeadline time.Duration
 	Now           func() time.Time
 }
 
@@ -58,12 +60,10 @@ type Agent struct {
 	holderID      string
 	path          string
 	retryPeriod   time.Duration
-	renewDeadline time.Duration
 	now           func() time.Time
 
-	lastSuccess time.Time
-	maxEpoch    int64
-	lastToken   string
+	maxEpoch  int64
+	lastToken string
 }
 
 // New validates configuration and constructs an Agent.
@@ -83,9 +83,6 @@ func New(config Config) (*Agent, error) {
 	if config.RetryPeriod <= 0 {
 		return nil, errors.New("retry period must be positive")
 	}
-	if config.RenewDeadline <= 0 {
-		return nil, errors.New("renew deadline must be positive")
-	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
@@ -96,7 +93,6 @@ func New(config Config) (*Agent, error) {
 		holderID:      config.HolderID,
 		path:          config.Path,
 		retryPeriod:   config.RetryPeriod,
-		renewDeadline: config.RenewDeadline,
 		now:           config.Now,
 	}, nil
 }
@@ -122,24 +118,32 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-// Sync reads the authoritative lease and writes it atomically. A malformed
-// response and an epoch regression fail closed immediately. Transport errors
-// preserve the last file only for RenewDeadline, then expire it.
+// Sync reads the authoritative lease and writes it atomically. Every read
+// error, malformed record, expired record, non-owner record, and fencing
+// regression fails closed by writing an expired follower file.
 func (a *Agent) Sync(ctx context.Context) error {
 	record, err := a.store.Get(ctx, a.clusterID)
 	if err != nil {
-		if a.lastSuccess.IsZero() || !a.now().Before(a.lastSuccess.Add(a.renewDeadline)) {
-			if writeErr := a.writeExpiredFollower(); writeErr != nil {
-				return fmt.Errorf("read lease: %w; expire leadership file: %v", err, writeErr)
-			}
+		if writeErr := a.writeExpiredFollower(); writeErr != nil {
+			return fmt.Errorf("read lease: %w; expire leadership file: %v", err, writeErr)
 		}
 		return fmt.Errorf("read lease: %w", err)
 	}
-	if err := validate(record, a.maxEpoch, a.lastToken); err != nil {
+	if err := validate(record, a.clusterID, a.maxEpoch, a.lastToken, a.now()); err != nil {
 		if writeErr := a.writeExpiredFollower(); writeErr != nil {
 			return fmt.Errorf("%w: %v; expire leadership file: %v", ErrInvalidLeaseRecord, err, writeErr)
 		}
 		return fmt.Errorf("%w: %v", ErrInvalidLeaseRecord, err)
+	}
+	if record.Epoch > a.maxEpoch {
+		a.maxEpoch = record.Epoch
+	}
+	a.lastToken = record.Token
+	if record.HolderID != a.holderID {
+		if err := a.writeExpiredFollower(); err != nil {
+			return fmt.Errorf("%w: expire leadership file: %v", ErrNotHolder, err)
+		}
+		return ErrNotHolder
 	}
 
 	file := LeadershipFile{
@@ -152,15 +156,13 @@ func (a *Agent) Sync(ctx context.Context) error {
 	if err := writeAtomic(a.path, file); err != nil {
 		return fmt.Errorf("write leadership file: %w", err)
 	}
-	a.lastSuccess = a.now()
-	if record.Epoch > a.maxEpoch {
-		a.maxEpoch = record.Epoch
-	}
-	a.lastToken = record.Token
 	return nil
 }
 
-func validate(record leadership.LeaseRecord, maxEpoch int64, lastToken string) error {
+func validate(record leadership.LeaseRecord, clusterID string, maxEpoch int64, lastToken string, now time.Time) error {
+	if record.ClusterID != clusterID {
+		return fmt.Errorf("cluster ID %q does not match %q", record.ClusterID, clusterID)
+	}
 	if record.HolderID == "" {
 		return errors.New("holder ID is empty")
 	}
@@ -181,6 +183,9 @@ func validate(record leadership.LeaseRecord, maxEpoch int64, lastToken string) e
 	}
 	if !record.ExpiresAt.After(record.IssuedAt) {
 		return errors.New("lease expiry must be after issuance")
+	}
+	if !record.ExpiresAt.After(now) {
+		return errors.New("lease is already expired")
 	}
 	return nil
 }

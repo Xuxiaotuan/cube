@@ -33,6 +33,13 @@ func TestSyncWritesLeadershipFileAtomically(t *testing.T) {
 	if file.HolderID != "router-a" || file.Epoch != 42 || file.TokenHash != tokenHash("secret") {
 		t.Fatalf("unexpected leadership file: %+v", file)
 	}
+	contents, err := os.ReadFile(agent.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(contents), "secret") {
+		t.Fatal("raw lease token was written to leadership file")
+	}
 	info, err := os.Stat(agent.path)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +73,7 @@ func TestSyncExpiresOnMalformedBackendData(t *testing.T) {
 	}
 }
 
-func TestSyncExpiresAfterBackendOutageDeadline(t *testing.T) {
+func TestSyncExpiresImmediatelyOnBackendOutage(t *testing.T) {
 	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
 	available := true
 	agent := newTestAgent(t, &now, fakeStore{get: func() (leadership.LeaseRecord, error) {
@@ -79,19 +86,49 @@ func TestSyncExpiresAfterBackendOutageDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	available = false
-	now = now.Add(9 * time.Second)
-	if err := agent.Sync(context.Background()); err == nil {
-		t.Fatal("expected backend error")
-	}
-	if file := readLeadershipFile(t, agent.path); file.HolderID != "router-a" {
-		t.Fatalf("file expired before deadline: %+v", file)
-	}
-	now = now.Add(2 * time.Second)
+	now = now.Add(time.Second)
 	if err := agent.Sync(context.Background()); err == nil {
 		t.Fatal("expected backend error")
 	}
 	if file := readLeadershipFile(t, agent.path); file.HolderID != "" || !file.ExpiresAt.Before(now) {
-		t.Fatalf("file did not expire after deadline: %+v", file)
+		t.Fatalf("file did not expire on backend outage: %+v", file)
+	}
+}
+
+func TestSyncExpiresForAnotherHolder(t *testing.T) {
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	agent := newTestAgent(t, &now, fakeStore{get: func() (leadership.LeaseRecord, error) {
+		return validRecord("router-b", 4, "secret", now), nil
+	}})
+
+	if err := agent.Sync(context.Background()); !errors.Is(err, ErrNotHolder) {
+		t.Fatalf("Sync error = %v, want ErrNotHolder", err)
+	}
+	file := readLeadershipFile(t, agent.path)
+	if file.HolderID != "" || file.Epoch != 4 || !file.ExpiresAt.Before(now) {
+		t.Fatalf("non-owner lease did not fail closed: %+v", file)
+	}
+}
+
+func TestSyncExpiresForAlreadyExpiredLease(t *testing.T) {
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	agent := newTestAgent(t, &now, fakeStore{get: func() (leadership.LeaseRecord, error) {
+		return leadership.LeaseRecord{
+			ClusterID: "cube-router-demo",
+			HolderID:  "router-a",
+			Epoch:     4,
+			Token:     "secret",
+			IssuedAt:  now.Add(-time.Minute),
+			ExpiresAt: now.Add(-time.Second),
+		}, nil
+	}})
+
+	if err := agent.Sync(context.Background()); !errors.Is(err, ErrInvalidLeaseRecord) {
+		t.Fatalf("Sync error = %v, want ErrInvalidLeaseRecord", err)
+	}
+	file := readLeadershipFile(t, agent.path)
+	if file.HolderID != "" || !file.ExpiresAt.Before(now) {
+		t.Fatalf("expired lease did not fail closed: %+v", file)
 	}
 }
 
@@ -155,7 +192,6 @@ func newTestAgent(t *testing.T, now *time.Time, store LeaseStore) *Agent {
 		HolderID:      "router-a",
 		Path:          filepath.Join(t.TempDir(), "leadership.json"),
 		RetryPeriod:   time.Second,
-		RenewDeadline: 10 * time.Second,
 		Now:           func() time.Time { return *now },
 	})
 	if err != nil {
