@@ -32,6 +32,7 @@ use log::info;
 use log::trace;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -49,6 +50,7 @@ use warp::reject::Reject;
 
 pub struct HttpServer {
     bind_address: String,
+    leadership_file: String,
     sql_service: Arc<dyn SqlService>,
     auth: Arc<dyn SqlAuthService>,
     check_orphaned_messages_interval: Duration,
@@ -68,6 +70,7 @@ pub enum CubeRejection {
     NotAuthorized,
     Internal(String),
     NotLeader,
+    LeaseFenced(String),
 }
 
 impl From<CubeError> for warp::reject::Rejection {
@@ -87,11 +90,39 @@ pub struct UploadQuery {
     name: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct LocalLeaseFile {
+    #[serde(rename = "holderId")]
+    holder_id: String,
+    epoch: i64,
+    #[serde(rename = "tokenHash")]
+    token_hash: String,
+    #[serde(rename = "issuedAt")]
+    issued_at: String,
+    #[serde(rename = "expiresAt")]
+    expires_at: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PromotionMarker {
+    #[serde(rename = "activeLeader", default)]
+    active_leader: String,
+    #[serde(rename = "leaderEpoch", default)]
+    leader_epoch: i64,
+    #[serde(rename = "leaseClusterID", default)]
+    lease_cluster_id: String,
+    #[serde(rename = "leaseEpoch", default)]
+    lease_epoch: i64,
+    #[serde(rename = "leaseToken", default)]
+    lease_token: String,
+}
+
 impl Reject for CubeRejection {}
 
 impl HttpServer {
     pub fn new(
         bind_address: String,
+        leadership_file: String,
         auth: Arc<dyn SqlAuthService>,
         sql_service: Arc<dyn SqlService>,
         check_orphaned_messages_interval: Duration,
@@ -102,6 +133,7 @@ impl HttpServer {
     ) -> Arc<Self> {
         Arc::new(Self {
             bind_address,
+            leadership_file,
             auth,
             sql_service,
             check_orphaned_messages_interval,
@@ -248,6 +280,7 @@ impl HttpServer {
 
         let auth_filter_to_move = auth_filter.clone();
         let sql_service = self.sql_service.clone();
+        let leadership_file = self.leadership_file.clone();
 
         let upload_route = warp::path!("upload-temp-file")
             .and(auth_filter_to_move)
@@ -258,6 +291,7 @@ impl HttpServer {
                     sql_service.clone(),
                     sql_query_context,
                     upload_query,
+                    leadership_file.clone(),
                     body,
                 )
             });
@@ -291,6 +325,20 @@ impl HttpServer {
             }))
         });
 
+        let leadership_file = self.leadership_file.clone();
+        let router_lease_route = warp::path!("router" / "lease")
+            .and(warp::get())
+            .map(move || match Self::local_lease_payload(&leadership_file) {
+                Ok(payload) => warp::reply::with_status(
+                    warp::reply::json(&payload),
+                    StatusCode::OK,
+                ),
+                Err(error) => warp::reply::with_status(
+                    warp::reply::json(&json!({ "error": error })),
+                    StatusCode::SERVICE_UNAVAILABLE,
+                ),
+            });
+
         let sql_service = self.sql_service.clone();
 
         let addr: SocketAddr = self.bind_address.parse().unwrap();
@@ -310,7 +358,11 @@ impl HttpServer {
             HashMap::<(Option<String>, u32), ProcessingState>::new(),
         ));
         let process_loop = self.worker_loop.process_channel(
-            Arc::new((sql_service, messages_state.clone())),
+            Arc::new((
+                sql_service,
+                messages_state.clone(),
+                self.leadership_file.clone(),
+            )),
             &mut rx,
             async move |service,
                         (
@@ -322,10 +374,11 @@ impl HttpServer {
                     command,
                 },
             )| {
-                let (sql_service, messages_state) = service.as_ref();
+                let (sql_service, messages_state, leadership_file) = service.as_ref();
                 let sql_service = sql_service.clone();
                 let messages_state = messages_state.clone();
                 if connection_id.is_some() {
+                    let leadership_file = leadership_file.clone();
                     cube_ext::spawn(async move {
                         let key = (connection_id.clone(), message_id);
                         {
@@ -352,6 +405,7 @@ impl HttpServer {
                         let res = HttpServer::process_command(
                             sql_service.clone(),
                             sql_query_context,
+                            &leadership_file,
                             command.clone(),
                         )
                             .await;
@@ -449,6 +503,7 @@ impl HttpServer {
                         }
                     });
                 } else {
+                    let leadership_file = leadership_file.clone();
                     cube_ext::spawn(async move {
                         let command_text = match &command {
                             HttpCommand::Query { query, .. } => format!("HttpCommand::Query {{ query: {:?} }}", query),
@@ -461,6 +516,7 @@ impl HttpServer {
                         let res = HttpServer::process_command(
                             sql_service.clone(),
                             sql_query_context,
+                            &leadership_file,
                             command,
                         )
                             .await;
@@ -556,7 +612,12 @@ impl HttpServer {
             },
         );
         let cancel_token = self.cancel_token.clone();
-        let (_, server_future) = warp::serve(query_route.or(upload_route).or(router_status_route).recover(
+        let (_, server_future) = warp::serve(
+            query_route
+                .or(upload_route)
+                .or(router_status_route)
+                .or(router_lease_route)
+                .recover(
             |err: Rejection| async move {
                 let mut obj = HashMap::new();
                 if let Some(ws_error) = err.find::<CubeRejection>() {
@@ -575,6 +636,13 @@ impl HttpServer {
                                 StatusCode::SERVICE_UNAVAILABLE,
                             ))
                         }
+                        CubeRejection::LeaseFenced(e) => {
+                            obj.insert("error".to_string(), e.to_string());
+                            Ok(warp::reply::with_status(
+                                warp::reply::json(&obj),
+                                StatusCode::SERVICE_UNAVAILABLE,
+                            ))
+                        }
                         CubeRejection::Internal(e) => {
                             obj.insert("error".to_string(), e.to_string());
                             Ok(warp::reply::with_status(
@@ -587,7 +655,8 @@ impl HttpServer {
                     Err(err)
                 }
             },
-        ))
+                ),
+        )
         .bind_with_graceful_shutdown(addr, async move { cancel_token.cancelled().await });
         let _ = tokio::join!(process_loop, server_future, drop_orphaned_messages_loop);
 
@@ -598,10 +667,11 @@ impl HttpServer {
         sql_service: Arc<dyn SqlService>,
         sql_query_context: SqlQueryContext,
         upload_query: UploadQuery,
+        leadership_file: String,
         mut body: impl Stream<Item = Result<impl warp::Buf, warp::Error>> + Unpin,
     ) -> Result<impl Reply, Rejection> {
-        if !Self::is_router_leader() {
-            return Err(warp::reject::custom(CubeRejection::NotLeader));
+        if let Err(error) = Self::ensure_write_fence(&leadership_file) {
+            return Err(warp::reject::custom(CubeRejection::LeaseFenced(error)));
         }
 
         let temp_file = NamedTempFile::new_in(
@@ -640,14 +710,9 @@ impl HttpServer {
     pub async fn process_command(
         sql_service: Arc<dyn SqlService>,
         sql_query_context: SqlQueryContext,
+        leadership_file: &str,
         command: HttpCommand,
     ) -> Result<HttpCommand, CubeError> {
-        if !Self::is_router_leader() {
-            return Err(CubeError::wrong_connection(
-                "This router instance is not active leader".to_string(),
-            ));
-        }
-
         match command {
             HttpCommand::Query {
                 query,
@@ -656,6 +721,10 @@ impl HttpServer {
                 parameters,
                 response_format,
             } => {
+                if !Self::is_read_query(&query) {
+                    Self::ensure_write_fence(leadership_file)
+                        .map_err(CubeError::wrong_connection)?;
+                }
                 let query_result = sql_service
                     .exec_query_with_context(
                         sql_query_context
@@ -689,6 +758,111 @@ impl HttpServer {
             }
             x => Err(CubeError::user(format!("Unexpected command: {:?}", x))),
         }
+    }
+
+    fn is_read_query(query: &str) -> bool {
+        matches!(
+            query.trim_start().split_whitespace().next().map(|keyword| keyword.to_ascii_uppercase()),
+            Some(keyword) if matches!(keyword.as_str(), "SELECT" | "SHOW" | "DESCRIBE" | "DESC" | "EXPLAIN")
+        )
+    }
+
+    fn ensure_write_fence(leadership_file: &str) -> Result<(), String> {
+        let lease = Self::read_local_lease(leadership_file)?;
+        let marker = Self::read_promotion_marker()
+            .ok_or_else(|| "promotion marker unavailable".to_string())?;
+        let node = Self::current_node_name()
+            .ok_or_else(|| "Router node identity unavailable".to_string())?;
+        if !Self::promotion_matches(&lease, &marker, &node) {
+            return Err("lease epoch, token, or promotion marker mismatch".to_string());
+        }
+        Ok(())
+    }
+
+    fn read_local_lease(path: &str) -> Result<LocalLeaseFile, String> {
+        let raw = fs::read_to_string(path)
+            .map_err(|e| format!("lease-agent unavailable: {e}"))?;
+        let lease: LocalLeaseFile = serde_json::from_str(&raw)
+            .map_err(|e| format!("invalid lease-agent contract: {e}"))?;
+        if lease.holder_id.trim().is_empty()
+            || lease.epoch <= 0
+            || lease.token_hash.trim().is_empty()
+            || lease.issued_at.trim().is_empty()
+            || lease.expires_at.trim().is_empty()
+        {
+            return Err("invalid lease-agent contract: missing lease identity".to_string());
+        }
+        let expires_at = chrono::DateTime::parse_from_rfc3339(&lease.expires_at)
+            .map_err(|e| format!("invalid lease expiry: {e}"))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("invalid local clock: {e}"))?
+            .as_secs() as i64;
+        if expires_at.timestamp() <= now {
+            return Err("lease-agent lease expired".to_string());
+        }
+        Ok(lease)
+    }
+
+    fn read_promotion_marker() -> Option<PromotionMarker> {
+        let state = Self::read_router_role_state()?;
+        serde_json::from_value(state).ok()
+    }
+
+    fn current_node_name() -> Option<String> {
+        env::var("CUBESTORE_NODE_NAME")
+            .or_else(|_| env::var("CUBESTORE_SERVER_NAME"))
+            .or_else(|_| env::var("HOSTNAME"))
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn promotion_matches(lease: &LocalLeaseFile, marker: &PromotionMarker, node: &str) -> bool {
+        marker.active_leader == node
+            && lease.holder_id == node
+            && marker.leader_epoch == lease.epoch
+            && marker.lease_epoch == lease.epoch
+            && !marker.lease_cluster_id.trim().is_empty()
+            && !marker.lease_token.trim().is_empty()
+            && Self::hash_lease_token(&marker.lease_token) == lease.token_hash
+    }
+
+    fn local_lease_payload(path: &str) -> Result<Value, String> {
+        let lease = Self::read_local_lease(path)?;
+        let marker = Self::read_promotion_marker();
+        let node = Self::current_node_name().unwrap_or_default();
+        let write_ready = marker
+            .as_ref()
+            .map(|marker| Self::promotion_matches(&lease, marker, &node))
+            .unwrap_or(false);
+        let promotion = marker.map(|marker| {
+            json!({
+                "activeLeader": marker.active_leader,
+                "leaderEpoch": marker.leader_epoch,
+                "leaseEpoch": marker.lease_epoch,
+                "leaseTokenHash": if marker.lease_token.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(Self::hash_lease_token(&marker.lease_token))
+                },
+            })
+        });
+        Ok(json!({
+            "holderId": lease.holder_id,
+            "epoch": lease.epoch,
+            "tokenHash": lease.token_hash,
+            "issuedAt": lease.issued_at,
+            "expiresAt": lease.expires_at,
+            "promotionMarker": promotion,
+            "writeReady": write_ready,
+        }))
+    }
+
+    fn hash_lease_token(token: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(token.as_bytes());
+        format!("sha256:{}", hex::encode(hasher.finalize()))
     }
 
     fn is_router_leader() -> bool {
@@ -1480,6 +1654,7 @@ mod tests {
         let resp = HttpServer::process_command(
             svc,
             SqlQueryContext::default(),
+            "/unavailable/lease-agent",
             HttpCommand::Query {
                 query: "select 1".to_string(),
                 inline_tables: vec![],
@@ -1544,8 +1719,9 @@ mod tests {
         let resp = HttpServer::process_command(
             svc,
             SqlQueryContext::default(),
+            "/unavailable/lease-agent",
             HttpCommand::Query {
-                query: "CREATE TABLE s.t (id int)".to_string(),
+                query: "SELECT 1".to_string(),
                 inline_tables: vec![],
                 trace_obj: None,
                 parameters: None,
@@ -1581,6 +1757,128 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn lease_contract_fails_closed_for_unavailable_or_expired_agent() {
+        assert!(HttpServer::read_local_lease("/missing/lease-agent").is_err());
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("leadership.json");
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "holderId": "router-a",
+                "epoch": 7,
+                "tokenHash": "sha256:stale",
+                "issuedAt": "2026-08-03T10:00:00Z",
+                "expiresAt": "2020-01-01T00:00:00Z"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let error = HttpServer::read_local_lease(path.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("expired"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn promotion_marker_requires_exact_holder_epoch_and_token_hash() {
+        let lease = LocalLeaseFile {
+            holder_id: "router-a".to_string(),
+            epoch: 7,
+            token_hash: HttpServer::hash_lease_token("current-token"),
+            issued_at: "2026-08-03T10:00:00Z".to_string(),
+            expires_at: "2099-01-01T00:00:00Z".to_string(),
+        };
+        let marker = PromotionMarker {
+            active_leader: "router-a".to_string(),
+            leader_epoch: 7,
+            lease_cluster_id: "cube-router".to_string(),
+            lease_epoch: 7,
+            lease_token: "current-token".to_string(),
+        };
+        assert!(HttpServer::promotion_matches(&lease, &marker, "router-a"));
+
+        let cases = vec![
+            (
+                "old holder",
+                PromotionMarker {
+                    active_leader: "router-b".to_string(),
+                    ..PromotionMarker {
+                        active_leader: marker.active_leader.clone(),
+                        leader_epoch: marker.leader_epoch,
+                        lease_cluster_id: marker.lease_cluster_id.clone(),
+                        lease_epoch: marker.lease_epoch,
+                        lease_token: marker.lease_token.clone(),
+                    }
+                },
+            ),
+            (
+                "old leader epoch",
+                PromotionMarker {
+                    leader_epoch: 6,
+                    ..PromotionMarker {
+                        active_leader: marker.active_leader.clone(),
+                        leader_epoch: marker.leader_epoch,
+                        lease_cluster_id: marker.lease_cluster_id.clone(),
+                        lease_epoch: marker.lease_epoch,
+                        lease_token: marker.lease_token.clone(),
+                    }
+                },
+            ),
+            (
+                "old lease epoch",
+                PromotionMarker {
+                    lease_epoch: 6,
+                    ..PromotionMarker {
+                        active_leader: marker.active_leader.clone(),
+                        leader_epoch: marker.leader_epoch,
+                        lease_cluster_id: marker.lease_cluster_id.clone(),
+                        lease_epoch: marker.lease_epoch,
+                        lease_token: marker.lease_token.clone(),
+                    }
+                },
+            ),
+            (
+                "old token",
+                PromotionMarker {
+                    lease_token: "old-token".to_string(),
+                    ..PromotionMarker {
+                        active_leader: marker.active_leader.clone(),
+                        leader_epoch: marker.leader_epoch,
+                        lease_cluster_id: marker.lease_cluster_id.clone(),
+                        lease_epoch: marker.lease_epoch,
+                        lease_token: marker.lease_token.clone(),
+                    }
+                },
+            ),
+        ];
+        for (name, stale) in cases {
+            assert!(
+                !HttpServer::promotion_matches(&lease, &stale, "router-a"),
+                "{name} promotion marker was accepted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn read_query_remains_available_without_lease_agent() -> Result<(), CubeError> {
+        let service = Arc::new(StubService(Arc::new(DataFrame::new(vec![], vec![]))));
+        let response = HttpServer::process_command(
+            service,
+            SqlQueryContext::default(),
+            "/missing/lease-agent",
+            HttpCommand::Query {
+                query: "SELECT 1".to_string(),
+                inline_tables: vec![],
+                trace_obj: None,
+                parameters: None,
+                response_format: QueryResultFormat::Legacy,
+            },
+        )
+        .await?;
+        assert!(matches!(response, HttpCommand::ResultSet { .. }));
+        Ok(())
+    }
+
     pub struct SqlServiceMock {
         message_counter: AtomicU64,
     }
@@ -1600,9 +1898,9 @@ mod tests {
         ) -> Result<QueryResult, CubeError> {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let counter = self.message_counter.fetch_add(1, Ordering::Relaxed);
-            if query == "close_connection" {
+            if query == "SELECT close_connection" {
                 Err(CubeError::wrong_connection("wrong connection".to_string()))
-            } else if query == "error" {
+            } else if query == "SELECT error" {
                 Err(CubeError::internal("error".to_string()))
             } else {
                 Ok(QueryResult::Frame(Arc::new(DataFrame::new(
@@ -1652,6 +1950,7 @@ mod tests {
 
         let http_server = Arc::new(HttpServer::new(
             "127.0.0.1:53031".to_string(),
+            "/unavailable/lease-agent".to_string(),
             Arc::new(auth),
             Arc::new(sql_service),
             Duration::from_millis(100),
@@ -1713,7 +2012,7 @@ mod tests {
             message_id: u32,
             connection_id: Option<String>,
         ) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
-            connect_and_send_query(message_id, connection_id, "foo").await
+            connect_and_send_query(message_id, connection_id, "SELECT 1").await
         }
 
         async fn assert_message(
@@ -1806,13 +2105,19 @@ mod tests {
         let mut socket2 = connect_and_send(3, Some("foo2".to_string())).await;
         assert_message(&mut socket2, "7").await;
 
-        send_query(&mut socket, 3, Some("foo".to_string()), "close_connection").await;
+        send_query(
+            &mut socket,
+            3,
+            Some("foo".to_string()),
+            "SELECT close_connection",
+        )
+        .await;
         socket.next().await.unwrap().unwrap();
 
-        send_query(&mut socket2, 3, Some("foo".to_string()), "error").await;
+        send_query(&mut socket2, 3, Some("foo".to_string()), "SELECT error").await;
         socket2.next().await.unwrap().unwrap();
 
-        send_query(&mut socket, 3, Some("foo".to_string()), "foo").await;
+        send_query(&mut socket, 3, Some("foo".to_string()), "SELECT 1").await;
         assert!(socket.next().await.unwrap().is_err());
 
         let mut socket2 = connect_and_send(3, Some("foo2".to_string())).await;

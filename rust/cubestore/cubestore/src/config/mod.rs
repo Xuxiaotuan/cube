@@ -438,6 +438,8 @@ pub trait ConfigObj: DIService {
 
     fn http_bind_address(&self) -> &Option<String>;
 
+    fn router_leadership_file(&self) -> &String;
+
     fn query_timeout(&self) -> u64;
 
     fn not_used_timeout(&self) -> u64;
@@ -702,6 +704,7 @@ pub struct ConfigObjImpl {
     pub bind_address: Option<String>,
     pub status_bind_address: Option<String>,
     pub http_bind_address: Option<String>,
+    pub router_leadership_file: String,
     pub query_timeout: u64,
     /// Must be set to 2*query_timeout in prod, only for overrides in tests.
     pub not_used_timeout: u64,
@@ -903,6 +906,10 @@ impl ConfigObj for ConfigObjImpl {
 
     fn http_bind_address(&self) -> &Option<String> {
         &self.http_bind_address
+    }
+
+    fn router_leadership_file(&self) -> &String {
+        &self.router_leadership_file
     }
 
     fn query_timeout(&self) -> u64 {
@@ -1720,6 +1727,8 @@ impl Config {
                 http_bind_address: Some(env::var("CUBESTORE_HTTP_BIND_ADDR").ok().unwrap_or(
                     format!("0.0.0.0:{}", env_parse("CUBESTORE_HTTP_PORT", 3030)),
                 )),
+                router_leadership_file: env::var("CUBESTORE_ROUTER_LEADERSHIP_FILE")
+                    .unwrap_or_else(|_| "/var/run/cubestore-ha/leadership.json".to_string()),
                 query_timeout,
                 not_used_timeout: 2 * query_timeout,
                 in_memory_not_used_timeout: 30,
@@ -2095,6 +2104,7 @@ impl Config {
                 bind_address: None,
                 status_bind_address: None,
                 http_bind_address: None,
+                router_leadership_file: "/var/run/cubestore-ha/leadership.json".to_string(),
                 query_timeout,
                 not_used_timeout: 2 * query_timeout,
                 in_memory_not_used_timeout: 30,
@@ -2945,6 +2955,7 @@ impl Config {
                     let config = i.get_service_typed::<dyn ConfigObj>().await;
                     HttpServer::new(
                         config.http_bind_address().as_ref().unwrap().to_string(),
+                        config.router_leadership_file().clone(),
                         i.get_service_typed().await,
                         i.get_service_typed().await,
                         Duration::from_secs(config.check_ws_orphaned_messages_interval_secs()),
