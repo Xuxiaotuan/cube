@@ -158,7 +158,9 @@ metadata:
     app.kubernetes.io/name: cubestore-metastore
     app.kubernetes.io/component: metastore
 spec:
-  maxUnavailable: 1
+  # This does not provide HA; it only prevents voluntary eviction of the sole
+  # authoritative writer during normal disruption handling.
+  minAvailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: cubestore-metastore

@@ -59,6 +59,11 @@ spec:
               value: "true"
             - name: CUBESTORE_ROUTER_ROLE_FILE
               value: /var/run/cubestore-ha/leadership.json
+            - name: CUBESTORE_META_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: cubestore-metastore-client
+                  key: CUBESTORE_META_ADDR
             - name: CUBESTORE_HTTP_PORT
               value: "3030"
             - name: CUBESTORE_NODE_NAME

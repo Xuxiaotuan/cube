@@ -24,3 +24,10 @@
 - The StatefulSet image uses the repository's existing demo default `cube-studio-router:ha-local`; production must replace it with an immutable CubeStore image tag or digest.
 
 Commit message: `feat: add authoritative cubestore metastore service`
+
+## Final fix
+
+- Updated the demo startup chain to apply `demo/k8s/metastore.yaml` and wait for the single MetaStore StatefulSet before creating/updating Router Pods.
+- Added an explicit `CUBESTORE_META_ADDR` ConfigMap reference to the Router container; both replicas now resolve the same `cubestore-metastore.cube-operator-demo.svc:9999` endpoint.
+- Changed the singleton PDB from `maxUnavailable: 1` to `minAvailable: 1`. This blocks voluntary eviction of the only writer and does not claim that the PDB provides HA.
+- Re-ran manifest client-side dry-run checks after the changes.

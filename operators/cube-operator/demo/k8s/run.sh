@@ -54,6 +54,15 @@ apply_manifest demo/k8s/namespace.yaml
 apply_manifest demo/k8s/operator-rbac.yaml
 
 cat <<'MSG'
+[1.5/7] 部署唯一 authoritative Cubestore MetaStore
+MSG
+TMP_METASTORE_MANIFEST="$(mktemp)"
+sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$TMP_METASTORE_MANIFEST"
+apply_manifest "$TMP_METASTORE_MANIFEST"
+rm -f "$TMP_METASTORE_MANIFEST"
+$KUBECTL -n "$ROUTER_NAMESPACE" rollout status statefulset/cubestore-metastore --timeout=180s
+
+cat <<'MSG'
 [2/7] 构建 Operator 镜像
 MSG
 if command -v docker >/dev/null 2>&1; then

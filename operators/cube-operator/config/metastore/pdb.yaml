@@ -6,7 +6,9 @@ metadata:
     app.kubernetes.io/name: cubestore-metastore
     app.kubernetes.io/component: metastore
 spec:
-  maxUnavailable: 1
+  # A singleton writer has no disruption budget to spend. Block voluntary
+  # eviction rather than allowing the only authoritative process to disappear.
+  minAvailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: cubestore-metastore
