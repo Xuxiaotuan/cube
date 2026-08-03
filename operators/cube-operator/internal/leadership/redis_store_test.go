@@ -14,14 +14,15 @@ import (
 
 func redisStoreForTest(t *testing.T) *RedisStore {
 	t.Helper()
-	dsn := os.Getenv("CUBESTORE_TEST_REDIS_URL")
+	dsn := os.Getenv("REDIS_URL")
 	if dsn == "" {
-		t.Skip("set CUBESTORE_TEST_REDIS_URL to run Redis lease integration tests")
+		t.Skip("SKIP: REDIS_URL is not set; Redis CAS integration tests were not run")
 	}
 	options, err := redis.ParseURL(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
+	options.Password = os.Getenv("REDIS_PASSWORD")
 	client := redis.NewClient(options)
 	t.Cleanup(func() { _ = client.Close() })
 	return NewRedisStore(client, "cubestore-test-lease-"+fmt.Sprint(time.Now().UnixNano()))
@@ -132,6 +133,37 @@ func TestRedisStoreMissingTTLIsUnknown(t *testing.T) {
 	}
 	if err := store.Release(ctx, lease); !errors.Is(err, ErrLeaseUnknown) {
 		t.Fatalf("Release without TTL error = %v, want ErrLeaseUnknown", err)
+	}
+}
+
+func TestRedisStoreRenewReleaseCAS(t *testing.T) {
+	store := redisStoreForTest(t)
+	ctx := context.Background()
+	lease, acquired, err := store.Acquire(ctx, "renew-release", "holder", time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("Acquire = (%#v, %t, %v)", lease, acquired, err)
+	}
+
+	renewed, renewedOK, err := store.Renew(ctx, lease, 2*time.Second)
+	if err != nil || !renewedOK || renewed.Epoch != lease.Epoch || renewed.Token != lease.Token {
+		t.Fatalf("valid Renew = (%#v, %t, %v)", renewed, renewedOK, err)
+	}
+
+	staleToken := renewed
+	staleToken.Token = "not-the-current-token"
+	if _, renewedOK, err := store.Renew(ctx, staleToken, time.Second); err != nil || renewedOK {
+		t.Fatalf("stale-token Renew = (%t, %v), want false, nil", renewedOK, err)
+	}
+	if err := store.Release(ctx, staleToken); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale-token Release error = %v, want ErrStaleLease", err)
+	}
+	if err := store.Release(ctx, renewed); err != nil {
+		t.Fatalf("valid Release error = %v", err)
+	}
+
+	next, acquired, err := store.Acquire(ctx, "renew-release", "next-holder", time.Second)
+	if err != nil || !acquired || next.Epoch != lease.Epoch+1 {
+		t.Fatalf("post-release Acquire = (%#v, %t, %v), want epoch %d", next, acquired, err, lease.Epoch+1)
 	}
 }
 

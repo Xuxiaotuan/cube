@@ -10,6 +10,34 @@ log() {
   printf '\n==> %s\n' "$*"
 }
 
+run_leadership_cas() {
+  local missing=()
+  [[ -n "${REDIS_URL:-}" ]] || missing+=(REDIS_URL)
+  [[ -n "${POSTGRES_URL:-}" ]] || missing+=(POSTGRES_URL)
+  if (( ${#missing[@]} > 0 )); then
+    printf 'ERROR: --leadership-cas requires %s; real backend tests will not be skipped (exit 2).\n' \
+      "${missing[*]}" >&2
+    return 2
+  fi
+
+  log "Run real Redis/PostgreSQL leadership CAS integration tests"
+  if ! (cd "$OP_DIR" && go test -count=1 ./internal/leadership); then
+    printf 'ERROR: leadership CAS integration tests failed (exit 1).\n' >&2
+    return 1
+  fi
+  log "Leadership CAS integration tests passed"
+  return 0
+}
+
+if [[ "${1:-}" == "--leadership-cas" ]]; then
+  if [[ "$#" -ne 1 ]]; then
+    printf 'ERROR: --leadership-cas does not accept additional arguments (exit 2).\n' >&2
+    exit 2
+  fi
+  run_leadership_cas
+  exit $?
+fi
+
 run() {
   local cmd="$1"
   log "$cmd"

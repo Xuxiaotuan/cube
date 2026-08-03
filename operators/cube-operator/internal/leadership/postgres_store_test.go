@@ -14,9 +14,9 @@ import (
 
 func postgresStoreForTest(t *testing.T) *PostgresStore {
 	t.Helper()
-	dsn := os.Getenv("CUBESTORE_TEST_POSTGRES_DSN")
+	dsn := os.Getenv("POSTGRES_URL")
 	if dsn == "" {
-		t.Skip("set CUBESTORE_TEST_POSTGRES_DSN to run PostgreSQL lease integration tests")
+		t.Skip("SKIP: POSTGRES_URL is not set; PostgreSQL CAS integration tests were not run")
 	}
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
@@ -133,6 +133,37 @@ func TestPostgresStoreOutageAndServerClock(t *testing.T) {
 	}
 	if _, renewed, err := valid.Renew(context.Background(), LeaseRecord{ClusterID: "missing", HolderID: "holder", Epoch: 1, Token: "token"}, time.Second); !errors.Is(err, ErrLeaseNotFound) || renewed {
 		t.Fatalf("missing Renew = (%t, %v), want false, ErrLeaseNotFound", renewed, err)
+	}
+}
+
+func TestPostgresStoreRenewReleaseCAS(t *testing.T) {
+	store := postgresStoreForTest(t)
+	ctx := context.Background()
+	lease, acquired, err := store.Acquire(ctx, "renew-release", "holder", time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("Acquire = (%#v, %t, %v)", lease, acquired, err)
+	}
+
+	renewed, renewedOK, err := store.Renew(ctx, lease, 2*time.Second)
+	if err != nil || !renewedOK || renewed.Epoch != lease.Epoch || renewed.Token != lease.Token {
+		t.Fatalf("valid Renew = (%#v, %t, %v)", renewed, renewedOK, err)
+	}
+
+	staleToken := renewed
+	staleToken.Token = "not-the-current-token"
+	if _, renewedOK, err := store.Renew(ctx, staleToken, time.Second); err != nil || renewedOK {
+		t.Fatalf("stale-token Renew = (%t, %v), want false, nil", renewedOK, err)
+	}
+	if err := store.Release(ctx, staleToken); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale-token Release error = %v, want ErrStaleLease", err)
+	}
+	if err := store.Release(ctx, renewed); err != nil {
+		t.Fatalf("valid Release error = %v", err)
+	}
+
+	next, acquired, err := store.Acquire(ctx, "renew-release", "next-holder", time.Second)
+	if err != nil || !acquired || next.Epoch != lease.Epoch+1 {
+		t.Fatalf("post-release Acquire = (%#v, %t, %v), want epoch %d", next, acquired, err, lease.Epoch+1)
 	}
 }
 
