@@ -9,6 +9,7 @@ API_SECRET="${API_SECRET:-cube-router-ha-demo-secret}"
 LEADER_SERVICE_NAME="${LEADER_SERVICE_NAME:-cube-router-leader}"
 MYSQL_IMAGE="${MYSQL_IMAGE:-mysql:8.4}"
 MYSQL_USER="${MYSQL_USER:-root}"
+MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 MYSQL_CONNECT_TIMEOUT_SECONDS="${MYSQL_CONNECT_TIMEOUT_SECONDS:-5}"
 MYSQL_POD_RUNNING_TIMEOUT_SECONDS="${MYSQL_POD_RUNNING_TIMEOUT_SECONDS:-30}"
@@ -71,6 +72,7 @@ mysql_query() {
   MYSQL_CLIENT_SEQUENCE=$((MYSQL_CLIENT_SEQUENCE + 1))
   local client_pod="cube-api-e2e-mysql-${RUN_ID}-${MYSQL_CLIENT_SEQUENCE}"
   "$KUBECTL" run -n "$NAMESPACE" "$client_pod" --rm -i --quiet --restart=Never \
+    --env="MYSQL_PWD=$MYSQL_PASSWORD" \
     --pod-running-timeout="${MYSQL_POD_RUNNING_TIMEOUT_SECONDS}s" --image="$MYSQL_IMAGE" --command -- \
     mysql --protocol=TCP --connect-timeout="$MYSQL_CONNECT_TIMEOUT_SECONDS" \
       -h "$LEADER_SERVICE_NAME.$NAMESPACE.svc.cluster.local" -P "$MYSQL_PORT" -u "$MYSQL_USER" -N -B -e "$1"
