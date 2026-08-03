@@ -23,3 +23,17 @@ The production leadership package exposes `ValidateLeaseFence`, which rejects a 
 
 - `go test ./internal/leadership` passed.
 - `kubectl apply --dry-run=client --validate=true -f config/crd/bases/cubestore.io_cubestorerouters.yaml` passed.
+
+## Concurrent follow-up
+
+Task 3 changes were paused while the concurrent Task 4/7 work stabilized. After the branch HEAD remained stable, `go test ./internal/leadership` passed from cache. No `ErrStaleLease` duplicate declaration was present, so no Task 3 implementation file was changed and no Task 4 file was modified in this follow-up.
+
+The follow-up did not add a production call site for `ValidateLeaseFence`; it remains the reusable fencing predicate documented above.
+
+## Runtime reconciliation boundary
+
+The current controller runtime reads `stateStore.secretRef` (or the legacy field's `secretRef`) and fetches the `dsn` key from that Kubernetes Secret. It does not read `leaderStateStore.dsn` directly. Therefore the API/leadership-only scope cannot make an old plaintext-DSN object semantically equivalent to the SecretRef form: doing so requires changing the controller's `externalLeaseConfig` path or introducing an explicit migration that materializes the DSN into a Secret. No schema-only claim of runtime equivalence is made here, and no controller file was changed.
+
+The lease configuration names currently align for the shared runtime path: `electionStrategy=lease`, `leaseDurationSeconds`, `renewDeadlineSeconds`, and `retryPeriodSeconds`, with defaults defined in the API and CRD. The controller consumes the lease strategy and lease duration; renew/retry timing is consumed by the leadership agent. There is no second API concept introduced in this task.
+
+The CRD requires a non-empty `spec.namespace`, but its `spec` CEL scope cannot compare that value with top-level `metadata.namespace`; admission therefore cannot enforce namespace equality. Secret-reference namespace equality has the same limitation. This is an explicit admission limitation, not a claim that the API server blocks those mismatches.
