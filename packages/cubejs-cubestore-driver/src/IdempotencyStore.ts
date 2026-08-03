@@ -32,7 +32,7 @@ export interface IdempotencyStore {
 
 type RedisClient = {
   get(key: string): Promise<string | null>;
-  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<string | number | null>;
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
 };
 
 type IdempotencyStoreOptions = {
@@ -187,12 +187,18 @@ export class RedisIdempotencyStore implements IdempotencyStore {
       local ok, record = pcall(cjson.decode, current)
       if not ok or record.status ~= 'PENDING' or record.ownerToken ~= ARGV[1] then return 0 end
       local ttl = tonumber(ARGV[5])
+      local expiresAt = tonumber(ARGV[3]) + ttl
+      if ARGV[2] == 'UNKNOWN' then expiresAt = 0 end
       local result = {
         status = ARGV[2], fingerprint = record.fingerprint, startedAt = record.startedAt,
-        finishedAt = tonumber(ARGV[3]), expiresAt = tonumber(ARGV[3]) + ttl,
+        finishedAt = tonumber(ARGV[3]), expiresAt = expiresAt,
         error = cjson.decode(ARGV[4])
       }
-      redis.call('SET', KEYS[1], cjson.encode(result), 'PX', ttl, 'XX')
+      if ARGV[2] == 'UNKNOWN' then
+        redis.call('SET', KEYS[1], cjson.encode(result), 'XX')
+      else
+        redis.call('SET', KEYS[1], cjson.encode(result), 'PX', ttl, 'XX')
+      end
       return 1
     `, {
       keys: [lease.key],
@@ -217,6 +223,33 @@ export class RedisIdempotencyStore implements IdempotencyStore {
       return this.existing(key, record);
     } catch {
       throw new Error(`mutationId ${mutationId} idempotency state is invalid`);
+    }
+  }
+
+  /**
+   * This is deliberately an explicit operation. Callers must obtain an
+   * authoritative outcome before replacing an UNKNOWN tombstone.
+   */
+  public async reconcileUnknown(mutationId: string, fingerprint: string, resultRef: string): Promise<void> {
+    const key = this.key(mutationId);
+    const now = Date.now();
+    const completedTtlMs = this.options.completedTtlSeconds * 1000;
+    const reconciled = await this.client.eval(`
+      -- IDEMPOTENCY_RECONCILE_UNKNOWN
+      local current = redis.call('GET', KEYS[1])
+      if not current then return 0 end
+      local ok, record = pcall(cjson.decode, current)
+      if not ok or record.status ~= 'UNKNOWN' or record.fingerprint ~= ARGV[1] then return 0 end
+      local ttl = tonumber(ARGV[4])
+      local result = {
+        status = 'COMPLETED', fingerprint = record.fingerprint, startedAt = record.startedAt,
+        finishedAt = tonumber(ARGV[2]), expiresAt = tonumber(ARGV[2]) + ttl, resultRef = ARGV[3]
+      }
+      redis.call('SET', KEYS[1], cjson.encode(result), 'PX', ttl, 'XX')
+      return 1
+    `, { keys: [key], arguments: [fingerprint, `${now}`, resultRef, `${completedTtlMs}`] });
+    if (reconciled !== 1 && reconciled !== '1') {
+      throw new Error(`mutationId ${mutationId} cannot be reconciled from its current state`);
     }
   }
 }

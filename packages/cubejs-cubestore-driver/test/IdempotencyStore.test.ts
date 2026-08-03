@@ -55,7 +55,7 @@ class InMemoryRedis {
     if (script.includes('IDEMPOTENCY_FAIL')) {
       this.entries.set(key, { value: JSON.stringify({
         status: args[1], fingerprint: record.fingerprint, startedAt: record.startedAt,
-        finishedAt: Number(args[2]), expiresAt: Number(args[2]) + Number(args[4]), error: JSON.parse(args[3]),
+        finishedAt: Number(args[2]), expiresAt: args[1] === 'UNKNOWN' ? 0 : Number(args[2]) + Number(args[4]), error: JSON.parse(args[3]),
       }) });
       return 1;
     }
@@ -130,5 +130,6 @@ describe('RedisIdempotencyStore', () => {
     expect('ownerToken' in observed).toBe(false);
     if ('ownerToken' in observed) throw new Error('expected existing state');
     expect(observed.status).toBe('UNKNOWN');
+    expect(observed.expiresAt).toBe(0);
   });
 });

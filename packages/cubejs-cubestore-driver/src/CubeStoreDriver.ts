@@ -427,11 +427,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   protected resolveRetryablePolicy(requestedRetryable: boolean, isMutating: boolean, mutationId?: string): boolean {
-    if (!this.strictWriteRetryWithoutMutationId) {
-      return requestedRetryable;
-    }
-
-    if (isMutating && !mutationId) {
+    if (isMutating) {
       return false;
     }
 
@@ -455,10 +451,10 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   protected resultRef(result: unknown): string {
     const serialized = JSON.stringify(result);
-    if (serialized.length <= 8192) {
+    if (typeof serialized === 'string' && serialized.length <= 8192) {
       return `inline:${serialized}`;
     }
-    return `omitted:${createHash('sha256').update(serialized).digest('hex')}`;
+    return `unrecoverable:${createHash('sha256').update(serialized || String(result)).digest('hex')}`;
   }
 
   protected resultFromRef<R>(resultRef?: string): R[] {
@@ -469,7 +465,9 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         throw new Error('mutation idempotency result reference is invalid');
       }
     }
-    return [] as R[];
+    const error = new Error('mutation completed but its response is not recoverable from the idempotency store');
+    (error as any).code = 'MUTATION_RESULT_UNRECOVERABLE';
+    throw error;
   }
 
   protected async executeOwnedMutation<R>(

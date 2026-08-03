@@ -372,7 +372,10 @@ export class WebSocketConnection {
 
   public async query(query: string, parameters: QueryParameter[], options: WebSocketQueryOptions): Promise<any[]> {
     const { inlineTables, queryTracingObj, responseFormat } = options;
-    const replaySafe = options.replaySafe ?? this.isReplaySafeQuery(query);
+    // A caller-provided flag cannot turn a mutation into a safe websocket replay.
+    // Mutation retries are coordinated by the Driver's idempotency state machine
+    // after it observes a completed authoritative result.
+    const replaySafe = (options.replaySafe ?? this.isReplaySafeQuery(query)) && this.isReplaySafeQuery(query);
 
     const builder = new flatbuffers.Builder(1024);
     const queryOffset = builder.createString(query);
