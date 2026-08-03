@@ -14,11 +14,13 @@ Added atomic Redis and PostgreSQL lease stores. Redis uses Lua scripts with dura
 
 The review fixes preserve PostgreSQL fencing epochs across release, require cluster/holder/epoch/token matches for renew and release, reject Redis hashes with missing or non-positive TTL as `ErrLeaseUnknown`, and keep Redis epoch counters durable across lease-key deletion. Tests exercise production Redis response/CAS parsing and fencing validation without fakes, plus integration coverage for stale release, stale renew, missing TTL, epoch monotonicity, and contention when the real backends are configured.
 
+The final controller fencing fix binds all downstream role/state writes to a fresh backend `Get` followed by `ValidateLeaseFence`: Pod role label updates, Router status updates, ConfigMap state writes, and remote state writes fail closed for missing, expired, stale-token, or stale-epoch leases. Controller behavior tests prove an old lease cannot update a Pod while the current lease can.
+
 ## Tests
 
 Passed: `go test ./internal/leadership ./controllers`.
 
-The production-path unit tests ran. Redis and PostgreSQL integration tests were skipped because `CUBESTORE_TEST_REDIS_URL` and `CUBESTORE_TEST_POSTGRES_DSN` are not configured; no real Redis/PostgreSQL CAS execution was performed.
+The production-path unit tests and controller behavior tests ran. Redis and PostgreSQL integration tests were skipped because `CUBESTORE_TEST_REDIS_URL` and `CUBESTORE_TEST_POSTGRES_DSN` are not configured; no real Redis/PostgreSQL CAS execution was performed.
 
 ## Required Follow-up
 

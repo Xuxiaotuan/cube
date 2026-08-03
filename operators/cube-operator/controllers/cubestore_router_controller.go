@@ -52,6 +52,7 @@ type CubestoreRouterReconciler struct {
 	*runtime.Scheme
 	leaseMu      sync.Mutex
 	routerLeases map[string]leadership.LeaseRecord
+	leaseStore   leadership.LeaseStore
 }
 
 func (r *CubestoreRouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -92,7 +93,7 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	syncStateErr := leaseErr
 	if syncStateErr == nil {
-		syncStateErr = r.syncRoles(ctx, targetNS, candidates, leader)
+		syncStateErr = r.syncRoles(ctx, targetNS, &cr, candidates, leader, lease)
 	}
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
@@ -115,6 +116,10 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if !statusEqual(cr.Status, nextStatus) {
+		if err := r.validateLeaseBeforeWrite(ctx, &cr, lease); err != nil {
+			log.Error(err, "refusing router status write without current lease")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		}
 		cr.Status = nextStatus
 		if err := r.Status().Update(ctx, &cr); err != nil {
 			log.Error(err, "update status failed")
@@ -175,6 +180,9 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 }
 
 func (r *CubestoreRouterReconciler) routerLeaseStore(ctx context.Context, cr *v1alpha1.CubestoreRouter) (leadership.LeaseStore, func(), error) {
+	if r.leaseStore != nil {
+		return r.leaseStore, func() {}, nil
+	}
 	backend, dsn, redisKey, pgTable, err := r.externalLeaseConfig(ctx, cr)
 	if err != nil {
 		return nil, nil, err
@@ -297,6 +305,22 @@ func (r *CubestoreRouterReconciler) clearLocalRouterLease(clusterID, token strin
 	if current, ok := r.routerLeases[clusterID]; ok && current.Token == token {
 		delete(r.routerLeases, clusterID)
 	}
+}
+
+func (r *CubestoreRouterReconciler) validateLeaseBeforeWrite(ctx context.Context, cr *v1alpha1.CubestoreRouter, presented leadership.LeaseRecord) error {
+	if presented.ClusterID == "" || presented.HolderID == "" || presented.Epoch <= 0 || presented.Token == "" {
+		return leadership.ErrStaleLease
+	}
+	store, closeStore, err := r.routerLeaseStore(ctx, cr)
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+	current, err := store.Get(ctx, presented.ClusterID)
+	if err != nil {
+		return err
+	}
+	return leadership.ValidateLeaseFence(current, presented)
 }
 
 func resolveRoleConfigMapName(cr *v1alpha1.CubestoreRouter) string {
@@ -580,7 +604,7 @@ func (r *CubestoreRouterReconciler) upsertCondition(conditions []metav1.Conditio
 	return append(out, condition)
 }
 
-func (r *CubestoreRouterReconciler) syncRoles(ctx context.Context, namespace string, candidates []candidate, leader *candidate) error {
+func (r *CubestoreRouterReconciler) syncRoles(ctx context.Context, namespace string, cr *v1alpha1.CubestoreRouter, candidates []candidate, leader *candidate, lease leadership.LeaseRecord) error {
 	sortedCandidates := make([]candidate, len(candidates))
 	copy(sortedCandidates, candidates)
 	sort.SliceStable(sortedCandidates, func(i, j int) bool {
@@ -631,6 +655,9 @@ func (r *CubestoreRouterReconciler) syncRoles(ctx context.Context, namespace str
 		}
 
 		if pod.Labels[labelNamespace] != role {
+			if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+				return err
+			}
 			pod.Labels[labelNamespace] = role
 			if err := r.Update(ctx, &pod); err != nil {
 				return err
@@ -648,17 +675,18 @@ func (r *CubestoreRouterReconciler) syncRoleState(
 	leader *candidate,
 	leaderEpoch int64,
 	roleStateConfigMap string,
+	lease leadership.LeaseRecord,
 ) error {
 	state := r.buildLeaderState(candidates, leader, leaderEpoch)
 	roleData, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
-	if err := r.syncRoleStateConfigMap(ctx, namespace, cr, roleStateConfigMap, roleData); err != nil {
+	if err := r.syncRoleStateConfigMap(ctx, namespace, cr, roleStateConfigMap, roleData, lease); err != nil {
 		return err
 	}
 
-	return r.syncRoleStateRemote(ctx, namespace, cr, state)
+	return r.syncRoleStateRemote(ctx, namespace, cr, state, lease)
 }
 
 func (r *CubestoreRouterReconciler) readLeaderEpochFromState(
@@ -732,6 +760,7 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 	cr *v1alpha1.CubestoreRouter,
 	roleStateConfigMap string,
 	roleState []byte,
+	lease leadership.LeaseRecord,
 ) error {
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Name: roleStateConfigMap, Namespace: namespace}, cm); err != nil {
@@ -756,6 +785,9 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 			},
 			Data: map[string]string{defaultRoleDataKey: string(roleState)},
 		}
+		if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+			return err
+		}
 		return r.Create(ctx, cm)
 	}
 
@@ -770,6 +802,9 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 	cm.Data = map[string]string{
 		defaultRoleDataKey: string(roleState),
 	}
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
+	}
 	return r.Update(ctx, cm)
 }
 
@@ -778,6 +813,7 @@ func (r *CubestoreRouterReconciler) syncRoleStateRemote(
 	namespace string,
 	cr *v1alpha1.CubestoreRouter,
 	state routerLeaderState,
+	lease leadership.LeaseRecord,
 ) error {
 	backend, err := resolveLeaderStateBackend(cr.Spec.LeaderStateStore)
 	if err != nil {
@@ -786,6 +822,9 @@ func (r *CubestoreRouterReconciler) syncRoleStateRemote(
 
 	if backend == leaderStateStoreTypeConfigMap {
 		return nil
+	}
+	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
+		return err
 	}
 
 	switch backend {
