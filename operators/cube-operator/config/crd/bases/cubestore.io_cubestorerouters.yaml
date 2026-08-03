@@ -196,6 +196,49 @@ spec:
                         type: string
                       type:
                         type: string
+                recovery:
+                  type: object
+                  properties:
+                    promotion:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                          enum: [Ready, Blocked, NeedsContext]
+                        reason:
+                          type: string
+                        message:
+                          type: string
+                    jobRecovery:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                          enum: [Ready, Blocked, NeedsContext]
+                        reason:
+                          type: string
+                        message:
+                          type: string
+                    mutationReconcile:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                          enum: [Ready, Blocked, NeedsContext]
+                        reason:
+                          type: string
+                        message:
+                          type: string
+                    refresher:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                          enum: [Ready, Blocked, NeedsContext]
+                        reason:
+                          type: string
+                        message:
+                          type: string
                 candidates:
                   type: array
                   items:

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,21 +116,34 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nextStatus := cr.Status
 	nextStatus.Candidates = r.candidatesToStatus(candidates)
 	nextStatus.Conditions = nil
-	nextStatus.Conditions = r.withLeaderCondition(candidates, leader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
+	promotionLeader := leader
+	promotionReady := leader != nil && promotionAcknowledged(*leader, lease)
+	if !promotionReady {
+		promotionLeader = nil
+	}
+	nextStatus.Conditions = r.withLeaderCondition(candidates, promotionLeader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
+	nextStatus = withRecoveryStatus(nextStatus, promotionReady)
 
 	syncStateErr := leaseErr
+	if syncStateErr == nil && lease.Epoch <= 0 {
+		syncStateErr = errors.New("no valid router lease; refusing role and promotion marker writes")
+	}
 	if syncStateErr == nil {
-		syncStateErr = r.syncRoles(ctx, targetNS, &cr, candidates, leader, lease)
+		syncStateErr = r.syncRoles(ctx, targetNS, &cr, candidates, promotionLeader, lease)
+	}
+	if syncStateErr == nil {
+		syncStateErr = r.syncRoleState(ctx, targetNS, &cr, candidates, promotionLeader, lease.Epoch, resolveRoleConfigMapName(&cr), lease)
 	}
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
+	nextStatus.Conditions = r.withRecoveryConditions(nextStatus.Conditions, nextStatus.Recovery, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
 
-	if leader != nil {
-		nextStatus.Leader = leader.Name
-		nextStatus.LeaderIP = leader.PodIP
+	if promotionLeader != nil {
+		nextStatus.Leader = promotionLeader.Name
+		nextStatus.LeaderIP = promotionLeader.PodIP
 		nextStatus.LeaderRole = labelLeader
 		nextStatus.LeaderEpoch = lease.Epoch
-		if cr.Status.Leader != leader.Name {
+		if cr.Status.Leader != promotionLeader.Name {
 			now := metav1.Now()
 			nextStatus.LastSwitchedAt = &now
 		}
@@ -520,6 +534,12 @@ type candidate struct {
 	Ready     bool
 	LastProbe metav1.Time
 	CreatedAt time.Time
+	StatusContract bool
+	IsLeader bool
+	LeaderEpoch int64
+	LeaseEpoch int64
+	LeaseTokenHash string
+	MetaStoreReady bool
 }
 
 type routerLeaderState struct {
@@ -614,6 +634,11 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 					LeaderState  struct {
 						ActiveLeader string `json:"activeLeader"`
 					} `json:"leaderState"`
+					IsLeader       bool   `json:"isLeader"`
+					LeaderEpoch    int64  `json:"leaderEpoch"`
+					LeaseEpoch     int64  `json:"leaseEpoch"`
+					LeaseTokenHash string `json:"leaseTokenHash"`
+					MetaStoreReady bool   `json:"metaStoreReady"`
 				}
 				if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
 					nodeName := strings.ToLower(strings.TrimSpace(body.NodeName))
@@ -626,10 +651,17 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 					if activeLeader != "" && nodeName != "" {
 						if activeLeader == nodeName {
 							cand.Role = labelLeader
+							cand.IsLeader = true
 						}
 					} else if r == "leader" || r == "primary" || m == "primary" {
 						cand.Role = labelLeader
+						cand.IsLeader = true
 					}
+					cand.LeaderEpoch = body.LeaderEpoch
+					cand.LeaseEpoch = body.LeaseEpoch
+					cand.LeaseTokenHash = strings.TrimSpace(body.LeaseTokenHash)
+					cand.MetaStoreReady = body.MetaStoreReady
+					cand.StatusContract = cand.IsLeader && cand.LeaderEpoch > 0 && cand.LeaseEpoch > 0 && cand.LeaseTokenHash != ""
 				}
 			}
 			_ = resp.Body.Close()
@@ -743,6 +775,43 @@ func (r *CubestoreRouterReconciler) withLeaderCondition(
 	cond.Reason = "LeaderSelected"
 	cond.Message = fmt.Sprintf("Leader elected: %s (candidates: %d)", leader.Name, len(candidates))
 	return r.upsertCondition(conditions, cond)
+}
+
+func hashLeaseToken(token string) string {
+	return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(token)))
+}
+
+func promotionAcknowledged(candidate candidate, lease leadership.LeaseRecord) bool {
+	return candidate.StatusContract && candidate.IsLeader && candidate.MetaStoreReady &&
+		candidate.LeaderEpoch == lease.Epoch && candidate.LeaseEpoch == lease.Epoch &&
+		strings.TrimSpace(candidate.LeaseTokenHash) == hashLeaseToken(lease.Token)
+}
+
+func withRecoveryStatus(status v1alpha1.CubestoreRouterStatus, promotionReady bool) v1alpha1.CubestoreRouterStatus {
+	if promotionReady {
+		status.Recovery.Promotion = v1alpha1.RecoveryGateStatus{
+			State: v1alpha1.RecoveryStateReady, Reason: "PromotionAcknowledged",
+			Message: "Router acknowledged the exact lease epoch, token hash, and MetaStore readiness.",
+		}
+	} else {
+		status.Recovery.Promotion = v1alpha1.RecoveryGateStatus{
+			State: v1alpha1.RecoveryStateNeedsContext, Reason: "NeedsContext",
+			Message: "Router status must expose isLeader, leaderEpoch, leaseEpoch, leaseTokenHash, and metaStoreReady before promotion can route traffic.",
+		}
+	}
+	status.Recovery.JobRecovery = v1alpha1.RecoveryGateStatus{
+		State: v1alpha1.RecoveryStateBlocked, Reason: "Blocked",
+		Message: "No Rust Router leadership guard is wired into Job assignment, heartbeat, or completion commits.",
+	}
+	status.Recovery.MutationReconcile = v1alpha1.RecoveryGateStatus{
+		State: v1alpha1.RecoveryStateNeedsContext, Reason: "NeedsContext",
+		Message: "No authoritative Job/upload/pre-aggregation mutation reconciliation endpoint is available for UNKNOWN outcomes.",
+	}
+	status.Recovery.Refresher = v1alpha1.RecoveryGateStatus{
+		State: v1alpha1.RecoveryStateNeedsContext, Reason: "NeedsContext",
+		Message: "No Refresher CRD/controller or durable active/standby refresh ownership entry point exists.",
+	}
+	return status
 }
 
 func (r *CubestoreRouterReconciler) upsertCondition(conditions []metav1.Condition, condition metav1.Condition) []metav1.Condition {
@@ -1341,6 +1410,30 @@ func (r *CubestoreRouterReconciler) withSyncCondition(
 	})
 }
 
+func (r *CubestoreRouterReconciler) withRecoveryConditions(conditions []metav1.Condition, status v1alpha1.RouterRecoveryStatus, observedGeneration int64) []metav1.Condition {
+	gates := []struct {
+		typ string
+		gate v1alpha1.RecoveryGateStatus
+	}{
+		{v1alpha1.CubestoreRouterConditionPromotionReady, status.Promotion},
+		{v1alpha1.CubestoreRouterConditionJobRecovery, status.JobRecovery},
+		{v1alpha1.CubestoreRouterConditionMutationReconcile, status.MutationReconcile},
+		{v1alpha1.CubestoreRouterConditionRefresherReady, status.Refresher},
+	}
+	for _, item := range gates {
+		conditionStatus := metav1.ConditionFalse
+		if item.gate.State == v1alpha1.RecoveryStateReady {
+			conditionStatus = metav1.ConditionTrue
+		}
+		conditions = r.upsertCondition(conditions, metav1.Condition{
+			Type: item.typ, Status: conditionStatus, Reason: item.gate.Reason,
+			Message: item.gate.Message, ObservedGeneration: observedGeneration,
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+	return conditions
+}
+
 func (r *CubestoreRouterReconciler) normalizeConditions(conditions []metav1.Condition) []metav1.Condition {
 	out := make([]metav1.Condition, len(conditions))
 	copy(out, conditions)
@@ -1395,6 +1488,9 @@ func isPodReady(pod *corev1.Pod) bool {
 
 func statusEqual(a, b v1alpha1.CubestoreRouterStatus) bool {
 	if a.Leader != b.Leader || a.LeaderIP != b.LeaderIP || a.LeaderRole != b.LeaderRole || a.LeaderEpoch != b.LeaderEpoch {
+		return false
+	}
+	if a.Recovery != b.Recovery {
 		return false
 	}
 

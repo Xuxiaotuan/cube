@@ -19,6 +19,14 @@ const (
 	CubestoreRouterConditionMetaStoreReady = "MetaStoreReady"
 	CubestoreRouterConditionDataPlaneReady = "DataPlaneReady"
 	CubestoreRouterConditionDegraded       = "Degraded"
+	CubestoreRouterConditionPromotionReady = "PromotionReady"
+	CubestoreRouterConditionJobRecovery    = "JobRecovery"
+	CubestoreRouterConditionMutationReconcile = "MutationReconcile"
+	CubestoreRouterConditionRefresherReady = "RefresherReady"
+
+	RecoveryStateReady        = "Ready"
+	RecoveryStateBlocked      = "Blocked"
+	RecoveryStateNeedsContext = "NeedsContext"
 )
 
 // +kubebuilder:object:root=true
@@ -100,6 +108,23 @@ type CubestoreRouterStatus struct {
 	LastSwitchedAt *metav1.Time            `json:"lastSwitchedAt,omitempty"`
 	Candidates     []RouterCandidateStatus `json:"candidates,omitempty"`
 	Conditions     []metav1.Condition      `json:"conditions,omitempty"`
+	Recovery       RouterRecoveryStatus    `json:"recovery,omitempty"`
+}
+
+// RecoveryGateStatus is explicit about capabilities that are not wired to a
+// runtime entry point yet. The controller must not infer readiness from CR
+// status alone.
+type RecoveryGateStatus struct {
+	State   string `json:"state"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type RouterRecoveryStatus struct {
+	Promotion         RecoveryGateStatus `json:"promotion"`
+	JobRecovery       RecoveryGateStatus `json:"jobRecovery"`
+	MutationReconcile RecoveryGateStatus `json:"mutationReconcile"`
+	Refresher         RecoveryGateStatus `json:"refresher"`
 }
 
 type RouterCandidateStatus struct {
@@ -264,6 +289,7 @@ func (in *CubestoreRouter) DeepCopyInto(out *CubestoreRouter) {
 		LeaderRole:  in.Status.LeaderRole,
 		LeaderIP:    in.Status.LeaderIP,
 		LeaderEpoch: in.Status.LeaderEpoch,
+		Recovery:    in.Status.Recovery,
 	}
 	if in.Status.LastSwitchedAt != nil {
 		t := in.Status.LastSwitchedAt.DeepCopy()
