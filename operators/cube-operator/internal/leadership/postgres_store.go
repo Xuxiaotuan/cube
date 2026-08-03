@@ -86,8 +86,8 @@ func (s *PostgresStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.D
 	if err := validateLeaseRequest(lease.ClusterID, lease.HolderID, ttl); err != nil {
 		return LeaseRecord{}, false, err
 	}
-	if strings.TrimSpace(lease.Token) == "" {
-		return LeaseRecord{}, false, fmt.Errorf("lease token is required")
+	if err := validateLeaseIdentity(lease); err != nil {
+		return LeaseRecord{}, false, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *PostgresStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.D
 	if err != nil {
 		return LeaseRecord{}, false, err
 	}
-	if !active || current.HolderID != lease.HolderID || current.Token != lease.Token {
+	if !active || ValidateLeaseFence(current, lease) != nil {
 		if err := tx.Commit(ctx); err != nil {
 			return LeaseRecord{}, false, err
 		}
@@ -121,11 +121,18 @@ func (s *PostgresStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.D
 }
 
 func (s *PostgresStore) Release(ctx context.Context, lease LeaseRecord) error {
-	if strings.TrimSpace(lease.ClusterID) == "" || strings.TrimSpace(lease.HolderID) == "" || strings.TrimSpace(lease.Token) == "" {
-		return fmt.Errorf("cluster ID, holder ID, and token are required")
+	if err := validateLeaseIdentity(lease); err != nil {
+		return err
 	}
-	_, err := s.pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE cluster_id = $1 AND holder_id = $2 AND token = $3`, s.table), lease.ClusterID, lease.HolderID, lease.Token)
-	return err
+	tag, err := s.pool.Exec(ctx, fmt.Sprintf(`UPDATE %s SET holder_id = '', token = '', expires_at = now()
+		WHERE cluster_id = $1 AND holder_id = $2 AND token = $3 AND epoch = $4 AND expires_at > now()`, s.table), lease.ClusterID, lease.HolderID, lease.Token, lease.Epoch)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrStaleLease
+	}
+	return nil
 }
 
 func (s *PostgresStore) Get(ctx context.Context, clusterID string) (LeaseRecord, error) {

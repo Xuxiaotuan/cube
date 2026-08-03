@@ -86,12 +86,27 @@ func TestPostgresStoreExpiryAndStaleToken(t *testing.T) {
 	if _, renewed, err := store.Renew(ctx, first, time.Second); err != nil || renewed {
 		t.Fatalf("stale renew = (%t, %v), want false, nil", renewed, err)
 	}
-	if err := store.Release(ctx, first); err != nil {
-		t.Fatal(err)
+	if err := store.Release(ctx, first); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale release error = %v, want ErrStaleLease", err)
 	}
 	got, err := store.Get(ctx, "cluster")
 	if err != nil || got.Token != second.Token {
 		t.Fatalf("Get after stale release = (%#v, %v)", got, err)
+	}
+	staleEpoch := second
+	staleEpoch.Epoch--
+	if _, renewed, err := store.Renew(ctx, staleEpoch, time.Second); err != nil || renewed {
+		t.Fatalf("stale epoch renew = (%t, %v), want false, nil", renewed, err)
+	}
+	if err := store.Release(ctx, staleEpoch); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale epoch release error = %v, want ErrStaleLease", err)
+	}
+	if err := store.Release(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	third, acquired, err := store.Acquire(ctx, "cluster", "third", time.Second)
+	if err != nil || !acquired || third.Epoch != second.Epoch+1 {
+		t.Fatalf("post-release acquire = (%#v, %t, %v), want epoch %d", third, acquired, err, second.Epoch+1)
 	}
 }
 

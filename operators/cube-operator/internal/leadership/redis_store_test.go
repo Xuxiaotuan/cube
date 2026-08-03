@@ -90,12 +90,62 @@ func TestRedisStoreExpiryAndStaleToken(t *testing.T) {
 	if _, renewed, err := store.Renew(ctx, first, time.Second); err != nil || renewed {
 		t.Fatalf("stale renew = (%t, %v), want false, nil", renewed, err)
 	}
-	if err := store.Release(ctx, first); err != nil {
-		t.Fatal(err)
+	if err := store.Release(ctx, first); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale release error = %v, want ErrStaleLease", err)
 	}
 	got, err := store.Get(ctx, "cluster")
 	if err != nil || got.Token != second.Token {
 		t.Fatalf("Get after stale release = (%#v, %v)", got, err)
+	}
+	staleEpoch := second
+	staleEpoch.Epoch--
+	if _, renewed, err := store.Renew(ctx, staleEpoch, time.Second); err != nil || renewed {
+		t.Fatalf("stale epoch renew = (%t, %v), want false, nil", renewed, err)
+	}
+	if err := store.Release(ctx, staleEpoch); !errors.Is(err, ErrStaleLease) {
+		t.Fatalf("stale epoch release error = %v, want ErrStaleLease", err)
+	}
+	if err := store.Release(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	third, acquired, err := store.Acquire(ctx, "cluster", "third", time.Second)
+	if err != nil || !acquired || third.Epoch != second.Epoch+1 {
+		t.Fatalf("post-release acquire = (%#v, %t, %v), want epoch %d", third, acquired, err, second.Epoch+1)
+	}
+}
+
+func TestRedisStoreMissingTTLIsUnknown(t *testing.T) {
+	store := redisStoreForTest(t)
+	ctx := context.Background()
+	lease, acquired, err := store.Acquire(ctx, "missing-ttl", "holder", time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("Acquire = (%#v, %t, %v)", lease, acquired, err)
+	}
+	if err := store.client.Persist(ctx, store.leaseKey(lease.ClusterID)).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, lease.ClusterID); !errors.Is(err, ErrLeaseUnknown) {
+		t.Fatalf("Get without TTL error = %v, want ErrLeaseUnknown", err)
+	}
+	if _, acquired, err := store.Acquire(ctx, lease.ClusterID, "other", time.Second); !errors.Is(err, ErrLeaseUnknown) || acquired {
+		t.Fatalf("Acquire without TTL = (%t, %v), want false, ErrLeaseUnknown", acquired, err)
+	}
+	if err := store.Release(ctx, lease); !errors.Is(err, ErrLeaseUnknown) {
+		t.Fatalf("Release without TTL error = %v, want ErrLeaseUnknown", err)
+	}
+}
+
+func TestRedisFencingValidationAndUnknownResponse(t *testing.T) {
+	stale := LeaseRecord{ClusterID: "cluster", HolderID: "holder", Epoch: 0, Token: "token"}
+	if err := validateLeaseIdentity(stale); err == nil {
+		t.Fatal("zero epoch passed lease identity validation")
+	}
+	result := []interface{}{int64(2), "holder", "token", int64(3), int64(1000), int64(0)}
+	if _, acquired, err := parseRedisAcquireResult("cluster", result); !errors.Is(err, ErrLeaseUnknown) || acquired {
+		t.Fatalf("unknown acquire = (%t, %v), want false, ErrLeaseUnknown", acquired, err)
+	}
+	if _, found, err := parseRedisGetResult("cluster", result); !errors.Is(err, ErrLeaseUnknown) || found {
+		t.Fatalf("unknown get = (%t, %v), want false, ErrLeaseUnknown", found, err)
 	}
 }
 

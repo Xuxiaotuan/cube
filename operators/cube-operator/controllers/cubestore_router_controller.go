@@ -225,7 +225,9 @@ func (r *CubestoreRouterReconciler) externalLeaseConfig(ctx context.Context, cr 
 		secretRef = cr.Spec.StateStore.SecretRef
 	} else if cr.Spec.LeaderStateStore != nil {
 		backend = leaderStateBackendType(strings.TrimSpace(strings.ToLower(cr.Spec.LeaderStateStore.Type)))
-		secretRef = cr.Spec.LeaderStateStore.SecretRef
+		if cr.Spec.LeaderStateStore.SecretRef != nil {
+			secretRef = *cr.Spec.LeaderStateStore.SecretRef
+		}
 		redisKey = cr.Spec.LeaderStateStore.RedisKey
 		pgTable = cr.Spec.LeaderStateStore.PGTable
 	} else {

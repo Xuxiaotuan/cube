@@ -14,6 +14,7 @@ import (
 )
 
 var ErrLeaseNotFound = errors.New("lease not found")
+var ErrLeaseUnknown = errors.New("lease state is unknown")
 
 var redisAcquireScript = redis.NewScript(`
 local function now_ms()
@@ -24,20 +25,17 @@ local current = redis.call('HGETALL', KEYS[1])
 if #current == 0 then
   local epoch = redis.call('INCR', KEYS[2])
   local issued = now_ms()
-  local expires = issued + tonumber(ARGV[3])
-  redis.call('HSET', KEYS[1], 'holder', ARGV[1], 'token', ARGV[2], 'epoch', epoch, 'issued', issued)
-  redis.call('PEXPIRE', KEYS[1], ARGV[3])
-  return {1, ARGV[1], ARGV[2], epoch, issued, expires}
+  local expires = issued + tonumber(ARGV[4])
+  redis.call('HSET', KEYS[1], 'cluster', ARGV[1], 'holder', ARGV[2], 'token', ARGV[3], 'epoch', epoch, 'issued', issued)
+  redis.call('PEXPIRE', KEYS[1], ARGV[4])
+  return {1, ARGV[2], ARGV[3], epoch, issued, expires}
 end
 local ttl = redis.call('PTTL', KEYS[1])
 if ttl <= 0 then
-  redis.call('DEL', KEYS[1])
-  local epoch = redis.call('INCR', KEYS[2])
-  local issued = now_ms()
-  local expires = issued + tonumber(ARGV[3])
-  redis.call('HSET', KEYS[1], 'holder', ARGV[1], 'token', ARGV[2], 'epoch', epoch, 'issued', issued)
-  redis.call('PEXPIRE', KEYS[1], ARGV[3])
-  return {1, ARGV[1], ARGV[2], epoch, issued, expires}
+  return {2, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), redis.call('HGET', KEYS[1], 'issued'), 0}
+end
+if redis.call('HGET', KEYS[1], 'cluster') ~= ARGV[1] then
+  return {2, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), redis.call('HGET', KEYS[1], 'issued'), 0}
 end
 local issued = redis.call('HGET', KEYS[1], 'issued')
 return {0, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), issued, now_ms() + ttl}
@@ -48,22 +46,34 @@ local function now_ms()
   local now = redis.call('TIME')
   return now[1] * 1000 + math.floor(now[2] / 1000)
 end
-if redis.call('HGET', KEYS[1], 'holder') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[2] then
+if redis.call('HGET', KEYS[1], 'cluster') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'holder') ~= ARGV[2] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[3] or redis.call('HGET', KEYS[1], 'epoch') ~= ARGV[4] then
   return {0}
 end
-if redis.call('PTTL', KEYS[1]) <= 0 then
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl == -1 or ttl == 0 then
+  return {2}
+end
+if ttl < 0 then
   return {0}
 end
 local issued = redis.call('HGET', KEYS[1], 'issued')
 local epoch = redis.call('HGET', KEYS[1], 'epoch')
 local now = now_ms()
-redis.call('PEXPIRE', KEYS[1], ARGV[3])
-return {1, ARGV[1], ARGV[2], epoch, issued, now + tonumber(ARGV[3])}
+redis.call('PEXPIRE', KEYS[1], ARGV[5])
+return {1, ARGV[2], ARGV[3], epoch, issued, now + tonumber(ARGV[5])}
 `)
 
 var redisReleaseScript = redis.NewScript(`
-if redis.call('HGET', KEYS[1], 'holder') == ARGV[1] and redis.call('HGET', KEYS[1], 'token') == ARGV[2] then
-  return redis.call('DEL', KEYS[1])
+if redis.call('HGET', KEYS[1], 'cluster') == ARGV[1] and redis.call('HGET', KEYS[1], 'holder') == ARGV[2] and redis.call('HGET', KEYS[1], 'token') == ARGV[3] and redis.call('HGET', KEYS[1], 'epoch') == ARGV[4] then
+  local ttl = redis.call('PTTL', KEYS[1])
+  if ttl == -1 or ttl == 0 then
+    return 2
+  end
+  if ttl < 0 then
+    return 0
+  end
+  redis.call('DEL', KEYS[1])
+  return 1
 end
 return 0
 `)
@@ -74,7 +84,10 @@ if #current == 0 then
   return {0}
 end
 local ttl = redis.call('PTTL', KEYS[1])
-if ttl <= 0 then
+if ttl == -1 or ttl == 0 then
+  return {2, redis.call('HGET', KEYS[1], 'holder'), redis.call('HGET', KEYS[1], 'token'), redis.call('HGET', KEYS[1], 'epoch'), redis.call('HGET', KEYS[1], 'issued'), 0}
+end
+if ttl < 0 then
   return {0}
 end
 local now = redis.call('TIME')
@@ -99,7 +112,7 @@ func (s *RedisStore) Acquire(ctx context.Context, clusterID, holderID string, tt
 	if err != nil {
 		return LeaseRecord{}, false, err
 	}
-	result, err := redisAcquireScript.Run(ctx, s.client, s.keys(clusterID), holderID, token, ttl.Milliseconds()).Result()
+	result, err := redisAcquireScript.Run(ctx, s.client, s.keys(clusterID), clusterID, holderID, token, ttl.Milliseconds()).Result()
 	if err != nil {
 		return LeaseRecord{}, false, err
 	}
@@ -110,10 +123,10 @@ func (s *RedisStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.Dura
 	if err := validateLeaseRequest(lease.ClusterID, lease.HolderID, ttl); err != nil {
 		return LeaseRecord{}, false, err
 	}
-	if strings.TrimSpace(lease.Token) == "" {
-		return LeaseRecord{}, false, fmt.Errorf("lease token is required")
+	if err := validateLeaseIdentity(lease); err != nil {
+		return LeaseRecord{}, false, err
 	}
-	result, err := redisRenewScript.Run(ctx, s.client, []string{s.leaseKey(lease.ClusterID)}, lease.HolderID, lease.Token, ttl.Milliseconds()).Result()
+	result, err := redisRenewScript.Run(ctx, s.client, []string{s.leaseKey(lease.ClusterID)}, lease.ClusterID, lease.HolderID, lease.Token, lease.Epoch, ttl.Milliseconds()).Result()
 	if err != nil {
 		return LeaseRecord{}, false, err
 	}
@@ -121,11 +134,25 @@ func (s *RedisStore) Renew(ctx context.Context, lease LeaseRecord, ttl time.Dura
 }
 
 func (s *RedisStore) Release(ctx context.Context, lease LeaseRecord) error {
-	if strings.TrimSpace(lease.ClusterID) == "" || strings.TrimSpace(lease.HolderID) == "" || strings.TrimSpace(lease.Token) == "" {
-		return fmt.Errorf("cluster ID, holder ID, and token are required")
+	if err := validateLeaseIdentity(lease); err != nil {
+		return err
 	}
-	_, err := redisReleaseScript.Run(ctx, s.client, []string{s.leaseKey(lease.ClusterID)}, lease.HolderID, lease.Token).Result()
-	return err
+	result, err := redisReleaseScript.Run(ctx, s.client, []string{s.leaseKey(lease.ClusterID)}, lease.ClusterID, lease.HolderID, lease.Token, lease.Epoch).Result()
+	if err != nil {
+		return err
+	}
+	state, err := redisInt(result)
+	if err != nil {
+		return err
+	}
+	switch state {
+	case 1:
+		return nil
+	case 2:
+		return ErrLeaseUnknown
+	default:
+		return ErrStaleLease
+	}
 }
 
 func (s *RedisStore) Get(ctx context.Context, clusterID string) (LeaseRecord, error) {
@@ -158,6 +185,13 @@ func parseRedisAcquireResult(clusterID string, result interface{}) (LeaseRecord,
 	if err != nil {
 		return LeaseRecord{}, false, err
 	}
+	if state == 2 {
+		record, recordErr := parseRedisLeaseValues(clusterID, values)
+		if recordErr != nil {
+			return LeaseRecord{}, false, recordErr
+		}
+		return record, false, ErrLeaseUnknown
+	}
 	if state != 0 && state != 1 {
 		return LeaseRecord{}, false, fmt.Errorf("unexpected Redis acquire state %d", state)
 	}
@@ -173,6 +207,9 @@ func parseRedisRenewResult(clusterID string, result interface{}) (LeaseRecord, b
 	if state == 0 {
 		return LeaseRecord{}, false, nil
 	}
+	if state == 2 {
+		return LeaseRecord{}, false, ErrLeaseUnknown
+	}
 	if state != 1 {
 		return LeaseRecord{}, false, fmt.Errorf("unexpected Redis renew state %d", state)
 	}
@@ -187,6 +224,9 @@ func parseRedisGetResult(clusterID string, result interface{}) (LeaseRecord, boo
 	}
 	if state == 0 {
 		return LeaseRecord{}, false, nil
+	}
+	if state == 2 {
+		return LeaseRecord{}, false, ErrLeaseUnknown
 	}
 	if state != 1 {
 		return LeaseRecord{}, false, fmt.Errorf("unexpected Redis get state %d", state)
@@ -245,6 +285,16 @@ func validateLeaseRequest(clusterID, holderID string, ttl time.Duration) error {
 	}
 	if ttl <= 0 || ttl.Milliseconds() <= 0 {
 		return fmt.Errorf("lease TTL must be at least one millisecond")
+	}
+	return nil
+}
+
+func validateLeaseIdentity(lease LeaseRecord) error {
+	if strings.TrimSpace(lease.ClusterID) == "" || strings.TrimSpace(lease.HolderID) == "" || strings.TrimSpace(lease.Token) == "" {
+		return fmt.Errorf("cluster ID, holder ID, and token are required")
+	}
+	if lease.Epoch <= 0 {
+		return fmt.Errorf("lease epoch must be positive")
 	}
 	return nil
 }
