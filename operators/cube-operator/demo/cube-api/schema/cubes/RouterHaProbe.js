@@ -2,7 +2,7 @@ const schema = process.env.ROUTER_HA_SCHEMA || 'router_ha_probe';
 const table = process.env.ROUTER_HA_TABLE || 'router_ha_data';
 
 cube('RouterHaProbe', {
-  sql: `SELECT id, amount FROM ${schema}.${table}`,
+  sql: `SELECT id, amount, region, payload FROM ${schema}.${table}`,
 
   measures: {
     rowCount: { type: `count`, sql: `id` },
@@ -11,6 +11,8 @@ cube('RouterHaProbe', {
 
   dimensions: {
     id: { sql: `id`, type: `number`, primaryKey: true },
-    amount: { sql: `amount`, type: `number` }
+    amount: { sql: `amount`, type: `number` },
+    region: { sql: `region`, type: `string` },
+    payload: { sql: `payload`, type: `string` }
   }
 });
