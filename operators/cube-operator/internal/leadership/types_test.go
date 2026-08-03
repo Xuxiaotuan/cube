@@ -132,6 +132,19 @@ func TestRouterSpecAcceptsLegacyDSNForMigration(t *testing.T) {
 	}
 }
 
+func TestRouterSpecRejectsUnknownLegacyStoreType(t *testing.T) {
+	spec := validRouterSpec()
+	spec.StateStore = nil
+	spec.LeaderStateStore = &v1alpha1.LeaderStateStore{
+		Type: "etcd",
+		DSN:  "etcd://legacy.example.invalid:2379",
+	}
+
+	if err := spec.Validate(); err == nil {
+		t.Fatal("expected unknown legacy store type to be rejected")
+	}
+}
+
 func TestLeaseStoreFencesStaleEpoch(t *testing.T) {
 	store := &fencingLeaseStore{}
 	ctx := context.Background()
@@ -150,6 +163,12 @@ func TestLeaseStoreFencesStaleEpoch(t *testing.T) {
 	}
 	if second.Epoch != first.Epoch+1 || second.Token == first.Token {
 		t.Fatalf("new holder must receive a new fencing epoch and token: first=%#v second=%#v", first, second)
+	}
+	if err := ValidateLeaseFence(second, first); err == nil {
+		t.Fatal("production fence predicate must reject the old epoch and token")
+	}
+	if err := ValidateLeaseFence(second, second); err != nil {
+		t.Fatalf("production fence predicate must accept the current epoch and token: %v", err)
 	}
 
 	if renewed, ok, err := store.Renew(ctx, first, time.Hour); err != nil || ok || renewed.Epoch != second.Epoch {
@@ -188,7 +207,7 @@ func (s *fencingLeaseStore) Acquire(_ context.Context, clusterID, holderID strin
 func (s *fencingLeaseStore) Renew(_ context.Context, lease LeaseRecord, duration time.Duration) (LeaseRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if lease.Token != s.record.Token || lease.Epoch != s.record.Epoch || !s.record.ExpiresAt.After(time.Now()) {
+	if err := ValidateLeaseFence(s.record, lease); err != nil || !s.record.ExpiresAt.After(time.Now()) {
 		return s.record, false, nil
 	}
 	s.record.ExpiresAt = time.Now().Add(duration)
@@ -198,8 +217,8 @@ func (s *fencingLeaseStore) Renew(_ context.Context, lease LeaseRecord, duration
 func (s *fencingLeaseStore) Release(_ context.Context, lease LeaseRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if lease.Token != s.record.Token || lease.Epoch != s.record.Epoch {
-		return fmt.Errorf("stale lease")
+	if err := ValidateLeaseFence(s.record, lease); err != nil {
+		return err
 	}
 	s.record = LeaseRecord{}
 	return nil

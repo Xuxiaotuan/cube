@@ -163,11 +163,19 @@ func (in *CubestoreRouterSpec) Validate() error {
 		return fmt.Errorf("exactly one of stateStore or deprecated leaderStateStore must be configured")
 	}
 	if in.StateStore != nil {
+		if err := validateBackendType("stateStore.type", in.StateStore.Type); err != nil {
+			return err
+		}
 		if err := validateSecretReference("stateStore.secretRef", in.StateStore.SecretRef); err != nil {
 			return err
 		}
 	}
 	if in.LeaderStateStore != nil {
+		if in.LeaderStateStore.Type != "" {
+			if err := validateBackendType("leaderStateStore.type", in.LeaderStateStore.Type); err != nil {
+				return err
+			}
+		}
 		if in.LeaderStateStore.DSN != "" && in.LeaderStateStore.SecretRef != nil {
 			return fmt.Errorf("leaderStateStore must use either dsn or secretRef, not both")
 		}
@@ -190,6 +198,13 @@ func (in *CubestoreRouterSpec) Validate() error {
 		if err := validateSecretReference("storage.objectStoreSecretRef", *in.Storage.ObjectStoreSecretRef); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateBackendType(field, backendType string) error {
+	if backendType != "redis" && backendType != "postgres" {
+		return fmt.Errorf("%s must be redis or postgres", field)
 	}
 	return nil
 }
