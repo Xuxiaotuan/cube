@@ -64,13 +64,6 @@ pub enum NetworkMessage {
     MetaStoreCall(MetaStoreRpcMethodCall),
     MetaStoreCallResult(MetaStoreRpcMethodResult),
 
-    GetRouterInfo,
-    RouterInfo {
-        node_name: String,
-        is_leader: bool,
-        known_nodes: Vec<String>,
-    },
-
     NotifyJobListeners,
     NotifyJobListenersSuccess,
 }
