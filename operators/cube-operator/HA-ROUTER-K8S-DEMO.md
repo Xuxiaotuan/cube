@@ -57,6 +57,101 @@ Router 双 Pod
 
 它不是“所有 CubeStore 运行时状态都已经复制”的多活集群，也不是“所有业务写入都具备 exactly-once 语义”。Router 本地连接上下文、内存缓存、执行中的请求仍可能在进程故障时丢失；生产写入必须依赖幂等键、结果查询和下游事务约束。
 
+## 2.3 Router 的作用、功能与影响范围
+
+### Router 是什么
+
+Router 是 Cube API 与 CubeStore Worker 之间的 **请求入口和路由层**。它不是 Worker，也不是数据仓库；它主要负责接收连接、校验当前角色、访问集群元信息、把请求转发到合适的 Worker，并处理上传/结果返回等连接级流程。
+
+在本方案中，Router 还承担了一个额外职责：作为主备入口的承载进程，只有被 Operator 授予当前 `leaderEpoch` 的 Router 才能进入 `cube-router-leader` Service。
+
+### Router 负责的 7 类能力
+
+| 能力 | Router 做什么 | 依赖/影响 |
+|---|---|---|
+| 1. 连接入口 | 接收 CubeStoreDriver 的查询、上传和控制请求，维护连接与响应流 | 直接影响 Cube API 的连通性和切换后的重连 |
+| 2. 请求路由 | 根据请求类型、元数据和 Worker 状态，把任务转给 Worker | 直接影响查询延迟、失败重试和 Worker 负载 |
+| 3. 元数据访问 | 读取集群元信息、表/分片/快照等路由所需信息 | 依赖 MetaStore；MetaStore 异常会影响新请求路由 |
+| 4. 查询转发 | 将 SQL/查询任务发送给 Worker，并把结果流返回 Cube API | Worker 执行数据计算，Router 不替代 Worker |
+| 5. 上传入口 | 接收上传数据，使用本地临时目录和共享对象存储完成中转 | 本地临时态可能随 Router 故障丢失，生产必须支持可恢复重放 |
+| 6. 角色门禁 | leader 接受业务入口请求，follower 拒绝主入口请求，避免双主 | 依赖 Operator、Lease/CAS、Role ConfigMap 和角色文件 |
+| 7. 状态/故障处理 | 在连接断开、切主、重试时返回错误或触发安全重建 | 读请求可重试；未知结果的写请求必须使用 `mutationId` 查询结果 |
+
+### Router 不负责的事情
+
+| 组件 | 负责内容 | 为什么不能交给 Router 单独解决 |
+|---|---|---|
+| Cube API | 业务 API、查询编排、业务写入语义、客户端重试 | Router 不知道业务请求是否已经提交成功 |
+| CubeStore Worker | 实际查询计算、数据处理、部分任务执行 | Router 只转发和承载连接，不保存 Worker 的全部运行时状态 |
+| MetaStore | 集群元数据、快照/日志引用等权威信息 | Router 本地缓存不能替代权威持久化存储 |
+| Object Store | 上传对象、快照、日志或临时文件的持久化 | Router 本地目录不能作为跨实例共享数据源 |
+| cube-operator | 选主、任期、Pod label、Service 入口和 CR 状态 | Kubernetes Service 本身不会选主 |
+| Redis/PG | Lease/CAS、幂等记录或外部状态 | 外部存储负责持久化和竞争，Router 只执行状态门禁 |
+| Refresher/Job | 预聚合刷新、异步任务编排与恢复 | 需要任务 owner、fencing token 和恢复入口，不是普通查询路由 |
+
+### Router 影响的节点和流程
+
+```mermaid
+flowchart TB
+    API["Cube API"] --> DRIVER["CubeStoreDriver\n连接、超时、重试"]
+    DRIVER --> SERVICE["cube-router-leader Service\n唯一业务入口"]
+    SERVICE --> ROUTER["Router\n接入、鉴权/角色门禁、路由、转发"]
+    ROUTER --> WORKER["Worker\n查询计算、数据处理"]
+    ROUTER --> META["MetaStore\n元数据/快照引用"]
+    ROUTER --> OBJECT["Object Store\n上传对象/快照/日志/临时文件"]
+
+    OP["cube-operator"] -->|leaderEpoch + role| ROUTER
+    OP -->|Pod label| SERVICE
+    OP -->|CR status| OBS["状态、告警、运维"]
+    REDIS["Redis/PG\nLease/CAS/幂等记录"] --> OP
+
+    REFRESH["Refresher / Job / Pre-aggregation"] -."异步任务请求\n需要独立恢复协议".-> ROUTER
+    ROUTER -."故障会影响入口\n但不等于任务已恢复".-> REFRESH
+```
+
+### 按流程看 Router 的影响
+
+| 流程 | Router 参与点 | Router 故障时的直接影响 | 切主后需要保证 |
+|---|---|---|---|
+| 普通查询 | 接收请求、读取路由元数据、转发 Worker、返回结果 | 新连接失败；执行中的请求可能中断 | Driver 重连到 Service，新查询转到新 leader |
+| 查询重试 | 返回连接错误/超时，Driver 决定是否重试 | 读请求可能短暂失败 | 读请求可安全重试，结果应与切主前一致 |
+| 业务写入 | 接收上传或写请求，转发并返回提交结果 | 可能出现“结果未知” | 依赖 `mutationId`、去重记录和结果查询，禁止盲目重放 |
+| 文件上传 | 本地临时目录中转，再写共享对象存储 | 本地未完成上传可能丢失 | 上传必须可断点/重放，完成状态要持久化 |
+| Job/预聚合 | 承载任务相关请求或结果回传 | 任务可能处于运行中/未知状态 | owner epoch/fencing + `PENDING/UNKNOWN` 恢复扫描 |
+| Refresher | 接收刷新触发或相关访问 | 触发请求可能失败，任务本身不一定丢失 | 新 leader 能识别未完成任务并安全接管 |
+| 元数据访问 | 读取或转发 MetaStore 请求 | 新请求可能无法获取最新路由信息 | MetaStore 可用且新旧 Router 看到同一权威状态 |
+
+### 一次查询经过哪些节点
+
+```text
+Cube API
+  -> CubeStoreDriver
+  -> cube-router-leader Service
+  -> 当前 leader Router
+  -> MetaStore（获取路由/元数据）
+  -> Worker（执行计算）
+  -> Object Store（读取共享对象或快照）
+  -> Router 返回结果
+  -> Cube API
+```
+
+### 一次主备切换影响哪些节点
+
+```text
+故障 Router
+  -> cube-operator 发现故障
+  -> Lease/CAS 竞争新任期
+  -> Role State ConfigMap 写入新 leaderEpoch
+  -> 新 Router 写入 leader 角色
+  -> Pod label 更新
+  -> EndpointSlice 更新
+  -> CubeStoreDriver 连接重建
+  -> 新 leader Router 接收后续请求
+  -> Worker / MetaStore / Object Store 继续使用共享状态
+```
+
+其中只有 Router 入口发生切换；Worker、MetaStore 和 Object Store 不应因为 Router 主备切换而生成第二份独立业务数据。若 Router 故障发生在写入结果已经提交但客户端尚未收到响应的时间窗口，必须通过 `mutationId` 和持久化去重状态判断结果，而不是依赖 Router 自身内存判断。
+
 ## 3. 逻辑架构图
 
 ```mermaid
