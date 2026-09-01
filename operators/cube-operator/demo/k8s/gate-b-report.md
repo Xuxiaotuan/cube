@@ -1,33 +1,46 @@
 # Gate B failover report
 
-- Started: 2026-08-03T16:05:39Z
+- Started: 2026-09-01T15:32:36Z
 - Namespace: `cube-operator-demo`
 
 ## Preflight
-- PASS: Redis Deployment available
+- PASS: Using Kubernetes Lease backend; skipping Redis checks
 - PASS: MetaStore ready
 - PASS: Workers ready: 2
-- PASS: Redis PING/PONG
-- PASS: Redis Secret contains dsn/url/password keys
-- Before leader: none (epoch=8, ip=none)
-- FAIL: CR leader/epoch preflight invalid
+- PASS: Using Kubernetes Lease backend; Redis secret is not required
+- Before leader: cube-router-demo-8c6ccc8dd-sjblw (epoch=8, ip=192.168.194.90)
+- PASS: CR leader and epoch present
 - PASS: promotion ConfigMap matches CR leader/epoch
 ## Router contracts before deletion
-- FAIL: cube-router-demo-6545987484-8rdrj promotion.json contract invalid
-- FAIL: cube-router-demo-6545987484-wktg6 promotion.json contract invalid
-- FAIL: leader EndpointSlice mismatch or empty: none
+- FAIL: cube-router-demo-8c6ccc8dd-mg7q8 promotion.json contract invalid
+- FAIL: cube-router-demo-8c6ccc8dd-sjblw promotion.json contract invalid
+- PASS: leader Service EndpointSlice matches old leader
 NAME                 TYPE        CLUSTER-IP        EXTERNAL-IP   PORT(S)             AGE   SELECTOR
-cube-router-leader   ClusterIP   192.168.194.158   <none>        3030/TCP,3306/TCP   4d    app=cube-router,cubestore.io/router-role=leader
+cube-router-leader   ClusterIP   192.168.194.158   <none>        3030/TCP,3306/TCP   32d   app=cube-router,cubestore.io/router-role=leader
 apiVersion: v1
 items:
 - addressType: IPv4
   apiVersion: discovery.k8s.io/v1
-  endpoints: null
+  endpoints:
+  - addresses:
+    - 192.168.194.90
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: orbstack
+    targetRef:
+      kind: Pod
+      name: cube-router-demo-8c6ccc8dd-sjblw
+      namespace: cube-operator-demo
+      uid: c9eae115-4044-4427-a522-ea2baf617fc6
   kind: EndpointSlice
   metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-09-01T15:31:21Z"
     creationTimestamp: "2026-07-30T15:35:57Z"
     generateName: cube-router-leader-
-    generation: 2410
+    generation: 2563
     labels:
       app: cube-router
       endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
@@ -41,34 +54,50 @@ items:
       kind: Service
       name: cube-router-leader
       uid: 039eded6-5b5b-40ad-85b7-77924388428a
-    resourceVersion: "1217609"
+    resourceVersion: "2822032"
     uid: ce5d3a10-2034-475a-8020-c212d097ab0e
-  ports: null
+  ports:
+  - name: http
+    port: 3030
+    protocol: TCP
+  - name: mysql
+    port: 3306
+    protocol: TCP
 kind: List
 metadata:
   resourceVersion: ""
-- FAIL: no active leader Pod; destructive deletion was not executed
+## Destructive failover
+- PASS: MySQL probe pod ready
+- Deleting old leader Pod: cube-router-demo-8c6ccc8dd-sjblw
+- PASS: delete accepted at 2026-09-01T15:34:17.3NZ
+- FAIL: did not observe old primary write rejection
+- PASS: new leader: cube-router-demo-8c6ccc8dd-mg7q8
+- PASS: leaderEpoch increased: 8 -> 9
+- FAIL: cube-router-demo-8c6ccc8dd-mg7q8 promotion.json contract invalid
+- FAIL: no transient API HTTP 503 observed
+- FAIL: API did not show a successful post-failover response
 ## Final resources
-NAME                                READY   STATUS    RESTARTS   AGE   IP                NODE       NOMINATED NODE   READINESS GATES   LABELS
-cube-router-demo-6545987484-8rdrj   2/2     Running   0          10m   192.168.194.112   orbstack   <none>           <none>            app.kubernetes.io/name=cube-router-demo,app=cube-router,cubestore.io/router-role=follower,pod-template-hash=6545987484
-cube-router-demo-6545987484-wktg6   2/2     Running   0          11m   192.168.194.111   orbstack   <none>           <none>            app.kubernetes.io/name=cube-router-demo,app=cube-router,cubestore.io/router-role=follower,pod-template-hash=6545987484
+NAME                               READY   STATUS    RESTARTS   AGE     IP               NODE       NOMINATED NODE   READINESS GATES   LABELS
+cube-router-demo-8c6ccc8dd-mg7q8   2/2     Running   0          3m30s   192.168.194.91   orbstack   <none>           <none>            app.kubernetes.io/name=cube-router-demo,app=cube-router,cubestore.io/router-role=leader,pod-template-hash=8c6ccc8dd
+cube-router-demo-8c6ccc8dd-zj8ct   2/2     Running   0          35s     192.168.194.93   orbstack   <none>           <none>            app.kubernetes.io/name=cube-router-demo,app=cube-router,cubestore.io/router-role=follower,pod-template-hash=8c6ccc8dd
 apiVersion: cubestore.io/v1alpha1
 kind: CubestoreRouter
 metadata:
   annotations:
     cubestore.io/lease-cluster: cube-operator-demo/demo
-    cubestore.io/lease-epoch: "8"
-    cubestore.io/lease-token: 8f58ed57bfebe6bd0eb43dc9094c39ffac50d394f60349459469d6008a035efd
-    cubestore.io/promotion-candidate: cube-router-demo-6545987484-wktg6
-    cubestore.io/promotion-epoch: "8"
-    cubestore.io/promotion-phase: fenced
+    cubestore.io/lease-epoch: "9"
+    cubestore.io/lease-token: cdd6776272551d832bcc9a41df1ed8b8775cd437fb87f3e2bbf36d41c97bda21
+    cubestore.io/promotion-candidate: cube-router-demo-8c6ccc8dd-mg7q8
+    cubestore.io/promotion-epoch: "9"
+    cubestore.io/promotion-phase: serving
     kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"cubestore.io/v1alpha1","kind":"CubestoreRouter","metadata":{"annotations":{},"name":"demo","namespace":"cube-operator-demo"},"spec":{"electionStrategy":"lease","healthPath":"/router/status","metaStore":{"address":"cubestore-metastore.cube-operator-demo.svc:9999"},"namespace":"cube-operator-demo","roleConfigMapName":"cube-router-demo-router-role-state","routerPort":3030,"selector":{"app":"cube-router"},"stateStore":{"secretRef":{"name":"cube-router-demo-lease-store","namespace":"cube-operator-demo"},"type":"redis"},"storage":{"dataPVC":"worker-data"}}}
+      {"apiVersion":"cubestore.io/v1alpha1","kind":"CubestoreRouter","metadata":{"annotations":{},"name":"demo","namespace":"cube-operator-demo"},"spec":{"electionStrategy":"lease","healthPath":"/router/status","metaStore":{"address":"cubestore-metastore.cube-operator-demo.svc:9999"},"namespace":"cube-operator-demo","roleConfigMapName":"cube-router-demo-router-role-state","routerPort":3030,"selector":{"app":"cube-router"},"stateStore":{"type":"kubernetes"},"storage":{"dataPVC":"worker-data"}}}
+    test.t: tmp-1788273916
   creationTimestamp: "2026-07-30T15:35:57Z"
-  generation: 3
+  generation: 4
   name: demo
   namespace: cube-operator-demo
-  resourceVersion: "1219039"
+  resourceVersion: "2822268"
   uid: b5a03658-1869-4286-b27e-fb1780c5fc6c
 spec:
   electionStrategy: lease
@@ -84,70 +113,69 @@ spec:
   selector:
     app: cube-router
   stateStore:
-    secretRef:
-      name: cube-router-demo-lease-store
-      namespace: cube-operator-demo
-    type: redis
+    type: kubernetes
   storage:
     dataPVC: worker-data
 status:
   candidates:
-  - ip: 192.168.194.112
-    lastProbeTime: "2026-08-03T16:05:05Z"
-    name: cube-router-demo-6545987484-8rdrj
+  - ip: 192.168.194.91
+    lastProbeTime: "2026-09-01T15:34:50Z"
+    name: cube-router-demo-8c6ccc8dd-mg7q8
     namespace: cube-operator-demo
     ready: true
-    role: follower
-  - ip: 192.168.194.111
-    lastProbeTime: "2026-08-03T16:05:05Z"
-    name: cube-router-demo-6545987484-wktg6
+    role: leader
+  - ip: 192.168.194.93
+    lastProbeTime: "2026-09-01T15:34:50Z"
+    name: cube-router-demo-8c6ccc8dd-zj8ct
     namespace: cube-operator-demo
     ready: true
     role: follower
   conditions:
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
-    message: No leader candidate detected from role state; waiting for reconciliation.
-    observedGeneration: 3
-    reason: NoLeader
-    status: "False"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
+    message: 'Leader elected: cube-router-demo-8c6ccc8dd-mg7q8 (candidates: 2)'
+    observedGeneration: 4
+    reason: LeaderSelected
+    status: "True"
     type: LeaderElection
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
-    message: 'Failed to sync role state: router promotion is waiting for a readiness
-      gate'
-    observedGeneration: 3
-    reason: StateSyncFailed
-    status: "False"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
+    message: Role state and labels synchronized.
+    observedGeneration: 4
+    reason: StateSyncSucceeded
+    status: "True"
     type: RoleStateSync
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
     message: No Rust Router leadership guard is wired into Job assignment, heartbeat,
       or completion commits.
-    observedGeneration: 3
+    observedGeneration: 4
     reason: Blocked
     status: "False"
     type: JobRecovery
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
     message: No authoritative Job/upload/pre-aggregation mutation reconciliation endpoint
       is available for UNKNOWN outcomes.
-    observedGeneration: 3
+    observedGeneration: 4
     reason: NeedsContext
     status: "False"
     type: MutationReconcile
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
-    message: Router status must expose isLeader, leaderEpoch, leaseEpoch, leaseTokenHash,
-      and metaStoreReady before promotion can route traffic.
-    observedGeneration: 3
-    reason: NeedsContext
-    status: "False"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
+    message: Router acknowledged the exact lease epoch, token hash, and MetaStore
+      readiness.
+    observedGeneration: 4
+    reason: PromotionAcknowledged
+    status: "True"
     type: PromotionReady
-  - lastTransitionTime: "2026-08-03T16:05:05Z"
+  - lastTransitionTime: "2026-09-01T15:34:50Z"
     message: No Refresher CRD/controller or durable active/standby refresh ownership
       entry point exists.
-    observedGeneration: 3
+    observedGeneration: 4
     reason: NeedsContext
     status: "False"
     type: RefresherReady
-  lastSwitchedAt: "2026-08-03T15:28:41Z"
-  leaderEpoch: 8
+  lastSwitchedAt: "2026-09-01T15:34:50Z"
+  leader: cube-router-demo-8c6ccc8dd-mg7q8
+  leaderEpoch: 9
+  leaderIP: 192.168.194.91
+  leaderRole: leader
   recovery:
     jobRecovery:
       message: No Rust Router leadership guard is wired into Job assignment, heartbeat,
@@ -160,25 +188,41 @@ status:
       reason: NeedsContext
       state: NeedsContext
     promotion:
-      message: Router status must expose isLeader, leaderEpoch, leaseEpoch, leaseTokenHash,
-        and metaStoreReady before promotion can route traffic.
-      reason: NeedsContext
-      state: NeedsContext
+      message: Router acknowledged the exact lease epoch, token hash, and MetaStore
+        readiness.
+      reason: PromotionAcknowledged
+      state: Ready
     refresher:
       message: No Refresher CRD/controller or durable active/standby refresh ownership
         entry point exists.
       reason: NeedsContext
       state: NeedsContext
+NAME                 TYPE        CLUSTER-IP        EXTERNAL-IP   PORT(S)             AGE   SELECTOR
+cube-router-leader   ClusterIP   192.168.194.158   <none>        3030/TCP,3306/TCP   32d   app=cube-router,cubestore.io/router-role=leader
 apiVersion: v1
 items:
 - addressType: IPv4
   apiVersion: discovery.k8s.io/v1
-  endpoints: null
+  endpoints:
+  - addresses:
+    - 192.168.194.91
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: orbstack
+    targetRef:
+      kind: Pod
+      name: cube-router-demo-8c6ccc8dd-mg7q8
+      namespace: cube-operator-demo
+      uid: 4eb50c34-3a64-4a9e-a898-6c2d093014f2
   kind: EndpointSlice
   metadata:
+    annotations:
+      endpoints.kubernetes.io/last-change-trigger-time: "2026-09-01T15:31:23Z"
     creationTimestamp: "2026-07-30T15:35:57Z"
     generateName: cube-router-leader-
-    generation: 2410
+    generation: 2566
     labels:
       app: cube-router
       endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
@@ -192,93 +236,20 @@ items:
       kind: Service
       name: cube-router-leader
       uid: 039eded6-5b5b-40ad-85b7-77924388428a
-    resourceVersion: "1217609"
+    resourceVersion: "2822261"
     uid: ce5d3a10-2034-475a-8020-c212d097ab0e
-  ports: null
+  ports:
+  - name: http
+    port: 3030
+    protocol: TCP
+  - name: mysql
+    port: 3306
+    protocol: TCP
 kind: List
 metadata:
   resourceVersion: ""
-2026-08-03T16:05:05Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "a301f077-1d03-4edf-a26c-dde5049dcd6e"}
-2026-08-03T16:05:05Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "a301f077-1d03-4edf-a26c-dde5049dcd6e", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:05Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "97bedf79-df2f-4caa-84f6-44ae736c6fc4"}
-2026-08-03T16:05:05Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "97bedf79-df2f-4caa-84f6-44ae736c6fc4", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:05Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "f791f9f5-dbbf-4ad1-b9bd-1c178c798935"}
-2026-08-03T16:05:05Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "f791f9f5-dbbf-4ad1-b9bd-1c178c798935", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:05Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "34e88adc-7cc7-4c8c-84da-960a7bb14953"}
-2026-08-03T16:05:05Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "34e88adc-7cc7-4c8c-84da-960a7bb14953", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:05Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "25383acc-68ad-4a92-b82a-b19fbcaa3eb7"}
-2026-08-03T16:05:05Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "25383acc-68ad-4a92-b82a-b19fbcaa3eb7", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:06Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "6a09d5a9-a38e-470a-b1d3-d6628ed92a0d"}
-2026-08-03T16:05:06Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "6a09d5a9-a38e-470a-b1d3-d6628ed92a0d", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:07Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "36bae84a-494f-4b06-9a33-63e0b3f392f5"}
-2026-08-03T16:05:07Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "36bae84a-494f-4b06-9a33-63e0b3f392f5", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:10Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "4705eaee-6c51-4387-bf20-c680e0d53e5c"}
-2026-08-03T16:05:10Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "4705eaee-6c51-4387-bf20-c680e0d53e5c", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:15Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "7cd580c7-617e-4503-a2e6-836fc04d7a8a"}
-2026-08-03T16:05:15Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "7cd580c7-617e-4503-a2e6-836fc04d7a8a", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-2026-08-03T16:05:25Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "9a411ed8-5af6-438c-a8a9-497353a8c095"}
-2026-08-03T16:05:25Z	ERROR	Reconciler error	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "CubestoreRouter": {"name":"demo","namespace":"cube-operator-demo"}, "namespace": "cube-operator-demo", "name": "demo", "reconcileID": "9a411ed8-5af6-438c-a8a9-497353a8c095", "error": "router promotion is waiting for a readiness gate"}
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
-sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
-	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
-- Finished: 2026-08-03T16:05:43Z
+- API trace: /tmp/gate-b-api-53247.trace
+- Finished: 2026-09-01T15:34:52Z
 
 ## Result
-FAIL: no safe leader target; failover was not attempted.
+FAIL: 6 check(s) failed.

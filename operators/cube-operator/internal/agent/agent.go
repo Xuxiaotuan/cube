@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -102,8 +103,11 @@ func New(config Config) (*Agent, error) {
 func (a *Agent) Run(ctx context.Context) error {
 	defer a.writeExpiredFollower()
 
-	if err := a.Sync(ctx); err != nil && ctx.Err() != nil {
-		return nil
+	if err := a.Sync(ctx); err != nil {
+		log.Printf("lease sync failed: %v", err)
+		if ctx.Err() != nil {
+			return nil
+		}
 	}
 
 	ticker := time.NewTicker(a.retryPeriod)
@@ -113,7 +117,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			_ = a.Sync(ctx)
+			if err := a.Sync(ctx); err != nil {
+				log.Printf("lease sync failed: %v", err)
+			}
 		}
 	}
 }

@@ -15,25 +15,35 @@
 - 切主演示方法：删除当前 leader Pod，观察 operator 在 CR 与 Pod label 上切换。
 - 数据一致性演练：使用 `demo/k8s/data-consistency-check.sh` 在杀掉 leader 前后执行同一条 `SELECT`，对比结果 hash，验证切换窗口内读一致性。
 
-## 外部状态介质（PG/Redis）
+## 主备元信息持久化（默认 Kubernetes，外部介质可选）
 
-- PostgreSQL
+- 默认后端：`stateStore.type: kubernetes`（`demo/k8s/run.sh` 默认）
+- 可选后端：`stateStore.type: redis`，需要 `cube-router-demo-lease-store` Secret 与 redis 可达
+
+### Kubernetes（默认）
 ```yaml
-leaderStateStore:
-  type: postgres
-  dsn: "postgres://user:password@postgres.default.svc:5432/cubeha?sslmode=disable"
-  pgTable: "cubestore_router_leader_state"
+stateStore:
+  type: kubernetes
 ```
 
-- Redis
+### Redis（可选）
 ```yaml
-leaderStateStore:
+stateStore:
   type: redis
-  dsn: "redis://redis.default.svc:6379/0"
-  redisKey: "cube-router/leader-state"
+  secretRef:
+    name: cube-router-demo-lease-store
+    namespace: cube-operator-demo
 ```
 
-- 在 `type` 指定为 `postgres` 或 `redis` 时，如果外部存储不可达，`RoleStateSync` 状态会变为 `False`，Operator 不会静默吞错。
+- 在 `type` 指定为 `redis` 时，如果外部 Redis 不可达，`RoleStateSync` 会降为 `False`，并进入安全降级；Kubernetes 模式默认不依赖外部服务。
+
+你可以通过运行参数切换：
+```bash
+cd /Users/xujiawei/magic/workbench/cube/operators/cube-operator
+LEASE_BACKEND=kubernetes ./demo/k8s/run.sh   # 默认，推荐
+# 或
+LEASE_BACKEND=redis ./demo/k8s/run.sh        # 兼容历史测试
+```
 
 可直接执行的校验命令：
 ```bash

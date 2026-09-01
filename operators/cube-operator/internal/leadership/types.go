@@ -4,6 +4,7 @@ package leadership
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -15,12 +16,14 @@ var ErrStaleLease = errors.New("stale lease")
 // LeaseRecord is a fenced lease snapshot. Epoch and Token must change whenever
 // leadership changes so callers can reject stale writes from former leaders.
 type LeaseRecord struct {
-	ClusterID string
-	HolderID  string
-	Epoch     int64
-	Token     string
-	IssuedAt  time.Time
-	ExpiresAt time.Time
+	ClusterID  string
+	HolderID   string
+	HolderUID  string
+	Epoch      int64
+	Generation string
+	Token      string
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
 }
 
 // ValidateLeaseFence accepts only the exact current holder, epoch, and token.
@@ -35,6 +38,16 @@ func ValidateLeaseFence(current, presented LeaseRecord) error {
 		presented.Epoch != current.Epoch ||
 		presented.Token != current.Token {
 		return ErrStaleLease
+	}
+	if current.Generation != "" || presented.Generation != "" {
+		if strings.TrimSpace(current.Generation) != strings.TrimSpace(presented.Generation) {
+			return ErrStaleLease
+		}
+	}
+	if current.HolderUID != "" || presented.HolderUID != "" {
+		if strings.TrimSpace(current.HolderUID) != strings.TrimSpace(presented.HolderUID) {
+			return ErrStaleLease
+		}
 	}
 	return nil
 }

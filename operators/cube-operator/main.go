@@ -9,6 +9,7 @@ import (
 	"github.com/cube-js/cube-operator/controllers"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,6 +23,7 @@ func init() {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(discoveryv1.AddToScheme(scheme))
+	utilruntime.Must(coordinationv1.AddToScheme(scheme))
 }
 
 func main() {

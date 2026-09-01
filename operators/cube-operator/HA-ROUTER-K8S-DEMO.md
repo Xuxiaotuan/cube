@@ -12,6 +12,8 @@
 
 本方案解决的是 Router 单实例入口故障问题：部署两个 Router，但任意时刻只允许一个 Router 进入业务 Service，另一个作为 follower 等待接管。
 
+默认演示后端为 `stateStore.type: kubernetes`（`run.sh` 默认 `LEASE_BACKEND=kubernetes`），Redis 仅用于历史兼容验证。
+
 ### 已覆盖
 
 | 能力 | 当前结果 | 证据 |
@@ -33,7 +35,7 @@
 | 非幂等写在超时/重试/切主期间绝不重复 | 未完全闭环 |
 | Job、upload、preaggregation、Refresher 的安全接管与恢复 | 未完全闭环 |
 | MetaStore 自身高可用 | 当前仍为单一权威服务，需要备份/恢复与故障预案 |
-| Redis/对象存储生产级故障域 HA | 演示环境已接入，生产形态仍需外部集群化 |
+| Redis 生产级故障域 HA | 当前默认走 Kubernetes Lease；Redis 仅在兼容模式下启用 |
 | 全量网络分区、存储故障、并发写压测 | 未完成 |
 
 ## 2. 当前结论
@@ -103,7 +105,7 @@ flowchart TB
     OP["cube-operator"] -->|leaderEpoch + role| ROUTER
     OP -->|Pod label| SERVICE
     OP -->|CR status| OBS["状态、告警、运维"]
-    REDIS["Redis/PG\nLease/CAS/幂等记录"] --> OP
+    K8S_LEASE["Kubernetes Lease\nLeader Election"] --> OP
 
     REFRESH["Refresher / Job / Pre-aggregation"] -."异步任务请求\n需要独立恢复协议".-> ROUTER
     ROUTER -."故障会影响入口\n但不等于任务已恢复".-> REFRESH
@@ -192,7 +194,7 @@ flowchart TB
     NS --> LS["Service: cube-router-leader\nselector: router-role=leader"]
     NS --> OBJ["MinIO Deployment + PVC\nbucket: cube-router-ha"]
     NS --> META["MetaStore PVC\n单权威服务"]
-    NS --> REDIS["外部 Redis\n用于 CAS/状态测试"]
+    NS --> K8S_LEASE["Kubernetes Lease\n默认"]
 
     OP -->|watch/update| CR
     OP -->|label| R
@@ -327,7 +329,7 @@ RefresherReady
 | 测试 | 结果 | 说明 |
 |---|---:|---|
 | `go test ./...` | PASS | Operator/Go 组件通过 |
-| 真实 Redis `go test ./internal/leadership` | PASS | 使用外部 Redis CAS 验证 |
+| `go test ./internal/leadership` | PASS（示例） | 可在 `LEASE_BACKEND=redis` 下覆盖验证 |
 | `cargo test -p cubestore http::tests --lib` | 9 PASS | Router HTTP 相关测试 |
 | Router 远程 MetaStore 配置测试 | 1 PASS | focused test |
 | `cargo test -p cubestore --lib` | 317 PASS / 2 FAIL | 仍有时序清理与 SQL explain 测试失败 |
@@ -441,4 +443,4 @@ kubectl -n cube-operator-demo get endpointslice -l kubernetes.io/service-name=cu
 
 ## 11. 汇报用一句话
 
-> 我们已经把 Cube Router 做成了 Kubernetes 上的单写主备：Operator 负责选主和任期，Service 只暴露 leader，两个 Router 共享对象存储；真实 Cube API 在删除 leader 后切换到新 leader，切换前后 12 行数据、金额 780 和结果 hash 全部一致。但生产发布前还必须补齐非幂等写恢复、任务接管、MetaStore/Redis/对象存储高可用以及完整故障回归。
+> 我们已经把 Cube Router 做成了 Kubernetes 上的单写主备：Operator 负责选主和任期，Service 只暴露 leader，两个 Router 共享对象存储；真实 Cube API 在删除 leader 后切换到新 leader，切换前后 12 行数据、金额 780 和结果 hash 全部一致。当前默认运行在 Kubernetes lease 后端，生产发布前还必须补齐非幂等写恢复、任务接管、MetaStore/对象存储高可用以及完整故障回归。

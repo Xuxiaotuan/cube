@@ -97,29 +97,30 @@ export VERIFY_LEADER_SERVICE_QUERY=false  # 首次演练可先跳过 service 路
 - 引入 `status.leaderEpoch`，用于防止回退到旧 leader：同一时刻应只允许 leader 任期前进。
 - 会将 Pod 标签写成 `cubestore.io/router-role=leader|follower`。
 
-### 外部状态持久化（PG/Redis）
+### 主备状态介质（默认 Kubernetes，Redis 可选）
 
-你可以在 `CubestoreRouter` CR 中开启外部状态介质，避免仅依赖 ConfigMap 的状态单点：
+演示环境默认使用 Kubernetes Lease/CAS，脚本可通过 `LEASE_BACKEND` 选择后端：
 
-```yaml
-spec:
-  leaderStateStore:
-    type: redis # 或 postgres
-    dsn: "redis://redis.default.svc:6379/0"
-    redisKey: "cube-router/leader-state"
-```
-
-或
+- `LEASE_BACKEND=kubernetes`（默认）
 
 ```yaml
 spec:
-  leaderStateStore:
-    type: postgres
-    dsn: "postgres://user:password@postgres.default.svc:5432/cubeha?sslmode=disable"
-    pgTable: cubestore_router_leader_state
+  stateStore:
+    type: kubernetes
 ```
 
-若未设置 `leaderStateStore`，系统默认回退到 `ConfigMap`；生产建议启用外部介质。
+- `LEASE_BACKEND=redis`（兼容历史验证）
+
+```yaml
+spec:
+  stateStore:
+    type: redis
+    secretRef:
+      name: cube-router-demo-lease-store
+      namespace: cube-operator-demo
+```
+
+若未设置 `stateStore` 或类型不匹配，示例会回退到 kubernetes 后端。
 
 > 当前实现支持 `CUBESTORE_ROUTER_ROLE_FILE` 主备真值源；生产上建议补充告警、限流与故障演练手册。
 

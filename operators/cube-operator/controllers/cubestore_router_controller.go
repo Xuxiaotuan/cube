@@ -30,25 +30,26 @@ import (
 )
 
 const (
-	labelNamespace                    = "cubestore.io/router-role"
-	labelLeader                       = "leader"
-	labelFollower                     = "follower"
-	defaultPort                 int32 = 3030
-	defaultPath                       = "/router/status"
-	defaultRoleDataKey                = "route-role.json"
-	defaultRoleConfigMap              = "router-role-state"
-	defaultPgTable                    = "cubestore_router_leader_state"
-	defaultRedisKey                   = "cube-router/leader-state"
-	leaderStateBackendConfigMap       = "configmap"
-	leaderStateBackendPostgres        = "postgres"
-	leaderStateBackendRedis           = "redis"
-	leaderConditionType               = "LeaderElection"
-	syncConditionType                 = "RoleStateSync"
-	leaderStateRecordID               = "leader-state"
-	leaderStateRecordIDPrefix         = "route-state"
-	leaseClusterAnnotation            = "cubestore.io/lease-cluster"
-	leaseEpochAnnotation              = "cubestore.io/lease-epoch"
-	leaseTokenAnnotation              = "cubestore.io/lease-token"
+	labelNamespace                     = "cubestore.io/router-role"
+	labelLeader                        = "leader"
+	labelFollower                      = "follower"
+	defaultPort                  int32 = 3030
+	defaultPath                        = "/router/status"
+	defaultRoleDataKey                 = "route-role.json"
+	defaultRoleConfigMap               = "router-role-state"
+	defaultPgTable                     = "cubestore_router_leader_state"
+	defaultRedisKey                    = "cube-router/leader-state"
+	leaderStateBackendConfigMap        = "configmap"
+	leaderStateBackendPostgres         = "postgres"
+	leaderStateBackendRedis            = "redis"
+	leaderStateBackendKubernetes       = "kubernetes"
+	leaderConditionType                = "LeaderElection"
+	syncConditionType                  = "RoleStateSync"
+	leaderStateRecordID                = "leader-state"
+	leaderStateRecordIDPrefix          = "route-state"
+	leaseClusterAnnotation             = "cubestore.io/lease-cluster"
+	leaseEpochAnnotation               = "cubestore.io/lease-epoch"
+	leaseTokenAnnotation               = "cubestore.io/lease-token"
 )
 
 const leaderStateOpTimeout = 4 * time.Second
@@ -77,7 +78,7 @@ return 1
 
 type CubestoreRouterReconciler struct {
 	client.Client
-	APIReader    client.Reader
+	APIReader client.Reader
 	*runtime.Scheme
 	leaseMu      sync.Mutex
 	routerLeases map[string]leadership.LeaseRecord
@@ -252,6 +253,9 @@ func (r *CubestoreRouterReconciler) routerLeaseStore(ctx context.Context, cr *v1
 	}
 
 	switch backend {
+	case leaderStateBackendKubernetes:
+		leaseName := kubernetesLeaseName(cr)
+		return leadership.NewKubernetesStore(r.Client, cr.Namespace, leaseName, nil), func() {}, nil
 	case leaderStateStoreTypeRedis:
 		options, err := redis.ParseURL(dsn)
 		if err != nil {
@@ -303,6 +307,10 @@ func (r *CubestoreRouterReconciler) externalLeaseConfig(ctx context.Context, cr 
 		pgTable = cr.Spec.LeaderStateStore.PGTable
 	} else {
 		return "", "", "", "", fmt.Errorf("an external stateStore is required for router leadership")
+	}
+
+	if backend == leaderStateBackendKubernetes {
+		return backend, "", "", "", nil
 	}
 
 	if backend != leaderStateStoreTypeRedis && backend != leaderStateStoreTypePostgres {
@@ -368,6 +376,18 @@ func routerLeaseTTL(cr *v1alpha1.CubestoreRouter) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
+func kubernetesLeaseName(cr *v1alpha1.CubestoreRouter) string {
+	namespace := strings.TrimSpace(cr.Namespace)
+	if namespace == "" {
+		namespace = "default"
+	}
+	name := strings.TrimSpace(cr.Name)
+	if name == "" {
+		name = "router"
+	}
+	return "cube-router-" + strings.ReplaceAll(namespace+"/"+name, "/", "-")
+}
+
 func readyCandidateByName(candidates []candidate, name string) *candidate {
 	for i := range candidates {
 		if candidates[i].Name == name && candidates[i].Ready && candidates[i].PodIP != "" {
@@ -415,7 +435,13 @@ func (r *CubestoreRouterReconciler) validateLeaseBeforeWrite(ctx context.Context
 	if err != nil {
 		return err
 	}
-	return leadership.ValidateLeaseFence(current, presented)
+	if err := leadership.ValidateLeaseFence(current, presented); err != nil {
+		if errors.Is(err, leadership.ErrStaleLease) {
+			r.clearLocalRouterLease(presented.ClusterID, presented.Token)
+		}
+		return err
+	}
+	return nil
 }
 
 type leaseJSONPatchOperation struct {
@@ -428,6 +454,24 @@ func hasLeaseFence(annotations map[string]string, lease leadership.LeaseRecord) 
 	return annotations[leaseClusterAnnotation] == lease.ClusterID &&
 		annotations[leaseEpochAnnotation] == strconv.FormatInt(lease.Epoch, 10) &&
 		annotations[leaseTokenAnnotation] == lease.Token
+}
+
+func isRoleStateStaleButRecoverable(cm *corev1.ConfigMap, lease leadership.LeaseRecord) bool {
+	annotations := cm.GetAnnotations()
+	if annotations == nil {
+		return true
+	}
+	if annotations[leaseClusterAnnotation] == "" && annotations[leaseEpochAnnotation] == "" && annotations[leaseTokenAnnotation] == "" {
+		return true
+	}
+	if annotations[leaseClusterAnnotation] != lease.ClusterID {
+		return false
+	}
+	currentEpoch, epochErr := strconv.ParseInt(annotations[leaseEpochAnnotation], 10, 64)
+	if epochErr != nil {
+		return true
+	}
+	return currentEpoch > lease.Epoch
 }
 
 func leaseFenceValues(lease leadership.LeaseRecord) map[string]string {
@@ -749,9 +793,9 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 			if leaseErr == nil {
 				if leaseResp.StatusCode == http.StatusOK {
 					var leaseBody struct {
-						Epoch     int64  `json:"epoch"`
-						TokenHash string `json:"tokenHash"`
-						WriteReady bool  `json:"writeReady"`
+						Epoch           int64  `json:"epoch"`
+						TokenHash       string `json:"tokenHash"`
+						WriteReady      bool   `json:"writeReady"`
 						PromotionMarker *struct {
 							LeaseEpoch     int64  `json:"leaseEpoch"`
 							LeaseTokenHash string `json:"leaseTokenHash"`
@@ -1056,7 +1100,7 @@ func resolveLeaderStateBackend(store *v1alpha1.LeaderStateStore) (leaderStateBac
 	}
 
 	switch leaderStateBackendType(raw) {
-	case leaderStateStoreTypeConfigMap, leaderStateStoreTypePostgres, leaderStateStoreTypeRedis:
+	case leaderStateStoreTypeConfigMap, leaderStateBackendKubernetes, leaderStateStoreTypePostgres, leaderStateStoreTypeRedis:
 		return leaderStateBackendType(raw), nil
 	default:
 		return "", fmt.Errorf("unsupported leaderStateStore.type: %s", store.Type)
@@ -1142,6 +1186,9 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 		return err
 	}
 	if err := r.ensureObjectFence(ctx, cm, lease); err != nil {
+		if errors.Is(err, leadership.ErrStaleLease) && isRoleStateStaleButRecoverable(cm, lease) {
+			return r.rebuildRoleStateConfigMap(ctx, cm, roleState, lease)
+		}
 		return err
 	}
 	fresh := &corev1.ConfigMap{}
@@ -1164,6 +1211,26 @@ func (r *CubestoreRouterReconciler) syncRoleStateConfigMap(
 	return r.Patch(ctx, fresh, client.RawPatch(types.JSONPatchType, patch))
 }
 
+func (r *CubestoreRouterReconciler) rebuildRoleStateConfigMap(
+	ctx context.Context,
+	cm *corev1.ConfigMap,
+	roleState []byte,
+	lease leadership.LeaseRecord,
+) error {
+	cm.Data = map[string]string{
+		defaultRoleDataKey: string(roleState),
+	}
+	annotations := cm.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	for key, value := range leaseFenceValues(lease) {
+		annotations[key] = value
+	}
+	cm.Annotations = annotations
+	return r.Update(ctx, cm)
+}
+
 func (r *CubestoreRouterReconciler) syncRoleStateRemote(
 	ctx context.Context,
 	namespace string,
@@ -1176,7 +1243,7 @@ func (r *CubestoreRouterReconciler) syncRoleStateRemote(
 		return err
 	}
 
-	if backend == leaderStateStoreTypeConfigMap {
+	if backend == leaderStateStoreTypeConfigMap || backend == leaderStateBackendKubernetes {
 		return nil
 	}
 	if err := r.validateLeaseBeforeWrite(ctx, cr, lease); err != nil {
@@ -1209,6 +1276,8 @@ func (r *CubestoreRouterReconciler) readLeaderState(
 	}
 
 	switch backend {
+	case leaderStateBackendKubernetes:
+		return r.readLeaderStateFromConfigMap(ctx, namespace, configMapName)
 	case leaderStateStoreTypePostgres:
 		return r.readLeaderStateFromPostgres(ctx, cr)
 	case leaderStateStoreTypeRedis:

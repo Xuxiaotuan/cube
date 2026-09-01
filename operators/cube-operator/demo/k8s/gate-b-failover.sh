@@ -6,8 +6,10 @@ KUBECTL="${KUBECTL:-kubectl}"
 CR_NAME="${CR_NAME:-demo}"
 API_DEPLOYMENT="${API_DEPLOYMENT:-cube-api-demo}"
 API_SECRET="${API_SECRET:-cube-router-ha-demo-secret}"
+LEASE_BACKEND="${LEASE_BACKEND:-kubernetes}"
 REPORT="${REPORT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gate-b-report.md}"
 WAIT_SECONDS="${WAIT_SECONDS:-120}"
+LEASE_BACKEND="$(printf '%s' "$LEASE_BACKEND" | tr '[:upper:]' '[:lower:]')"
 MYSQL_IMAGE="${MYSQL_IMAGE:-mysql:8.4}"
 MYSQL_USER="${MYSQL_USER:-root}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
@@ -45,16 +47,24 @@ need_cmd jq
 need_cmd curl
 
 record '## Preflight'
-if "$KUBECTL" -n "$NAMESPACE" wait --for=condition=available deploy/redis --timeout=120s >/dev/null 2>&1; then pass 'Redis Deployment available'; else fail 'Redis Deployment is not available'; fi
+if [ "$LEASE_BACKEND" = "redis" ]; then
+  if "$KUBECTL" -n "$NAMESPACE" wait --for=condition=available deploy/redis --timeout=120s >/dev/null 2>&1; then pass 'Redis Deployment available'; else fail 'Redis Deployment is not available'; fi
+  if "$KUBECTL" -n "$NAMESPACE" exec deploy/redis -- redis-cli ping 2>/dev/null | grep -q PONG; then pass 'Redis PING/PONG'; else fail 'Redis PING failed'; fi
+else
+  pass 'Using Kubernetes Lease backend; skipping Redis checks'
+fi
 if "$KUBECTL" -n "$NAMESPACE" wait --for=condition=ready pod/cubestore-metastore-0 --timeout=120s >/dev/null 2>&1; then pass 'MetaStore ready'; else fail 'MetaStore not ready'; fi
 if "$KUBECTL" -n "$NAMESPACE" wait --for=jsonpath='{.status.readyReplicas}'=2 statefulset/cube-worker-demo --timeout=120s >/dev/null 2>&1; then pass 'Workers ready: 2'; else fail 'Workers are not both ready'; fi
-if "$KUBECTL" -n "$NAMESPACE" exec deploy/redis -- redis-cli ping 2>/dev/null | grep -q PONG; then pass 'Redis PING/PONG'; else fail 'Redis PING failed'; fi
 
-secret_json="$($KUBECTL -n "$NAMESPACE" get secret cube-router-demo-lease-store -o json 2>/dev/null || true)"
-if printf '%s' "$secret_json" | jq -e '.data.dsn and .data.url and .data.password' >/dev/null 2>&1; then
-  pass 'Redis Secret contains dsn/url/password keys'
+if [ "$LEASE_BACKEND" = "redis" ]; then
+  secret_json="$($KUBECTL -n "$NAMESPACE" get secret cube-router-demo-lease-store -o json 2>/dev/null || true)"
+  if printf '%s' "$secret_json" | jq -e '.data.dsn and .data.url and .data.password' >/dev/null 2>&1; then
+    pass 'Redis Secret contains dsn/url/password keys'
+  else
+    fail 'Redis Secret missing dsn/url/password keys'
+  fi
 else
-  fail 'Redis Secret missing dsn/url/password keys'
+  pass 'Using Kubernetes Lease backend; Redis secret is not required'
 fi
 
 leader_before="$($KUBECTL -n "$NAMESPACE" get cubestorerouter "$CR_NAME" -o jsonpath='{.status.leader}' 2>/dev/null || true)"

@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,15 +15,15 @@ const (
 	DefaultRetryPeriodSeconds   int32 = 5
 	ElectionStrategyLease             = "lease"
 
-	CubestoreRouterConditionLeaseAcquired = "LeaseAcquired"
-	CubestoreRouterConditionLeaderReady   = "LeaderReady"
-	CubestoreRouterConditionMetaStoreReady = "MetaStoreReady"
-	CubestoreRouterConditionDataPlaneReady = "DataPlaneReady"
-	CubestoreRouterConditionDegraded       = "Degraded"
-	CubestoreRouterConditionPromotionReady = "PromotionReady"
-	CubestoreRouterConditionJobRecovery    = "JobRecovery"
+	CubestoreRouterConditionLeaseAcquired     = "LeaseAcquired"
+	CubestoreRouterConditionLeaderReady       = "LeaderReady"
+	CubestoreRouterConditionMetaStoreReady    = "MetaStoreReady"
+	CubestoreRouterConditionDataPlaneReady    = "DataPlaneReady"
+	CubestoreRouterConditionDegraded          = "Degraded"
+	CubestoreRouterConditionPromotionReady    = "PromotionReady"
+	CubestoreRouterConditionJobRecovery       = "JobRecovery"
 	CubestoreRouterConditionMutationReconcile = "MutationReconcile"
-	CubestoreRouterConditionRefresherReady = "RefresherReady"
+	CubestoreRouterConditionRefresherReady    = "RefresherReady"
 
 	RecoveryStateReady        = "Ready"
 	RecoveryStateBlocked      = "Blocked"
@@ -50,7 +51,7 @@ type CubestoreRouterList struct {
 
 type CubestoreRouterSpec struct {
 	// +kubebuilder:validation:MinProperties=1
-	Selector map[string]string `json:"selector"`
+	Selector  map[string]string `json:"selector"`
 	Namespace string            `json:"namespace"`
 
 	RouterPort int32  `json:"routerPort,omitempty"`
@@ -82,7 +83,7 @@ type CubestoreRouterSpec struct {
 }
 
 type StateStore struct {
-	// +kubebuilder:validation:Enum=redis;postgres
+	// +kubebuilder:validation:Enum=redis;postgres;kubernetes
 	Type string `json:"type"`
 
 	SecretRef corev1.SecretReference `json:"secretRef"`
@@ -140,10 +141,10 @@ type LeaderStateStore struct {
 	Type string `json:"type"`
 	// DSN is retained only so existing v1alpha1 objects can be read and
 	// migrated. New objects must use SecretRef on stateStore.
-	DSN       string                   `json:"dsn,omitempty"`
+	DSN       string                  `json:"dsn,omitempty"`
 	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
-	RedisKey  string                   `json:"redisKey,omitempty"`
-	PGTable   string                   `json:"pgTable,omitempty"`
+	RedisKey  string                  `json:"redisKey,omitempty"`
+	PGTable   string                  `json:"pgTable,omitempty"`
 }
 
 // ApplyDefaults applies the CRD defaults for callers that construct router
@@ -191,6 +192,9 @@ func (in *CubestoreRouterSpec) Validate() error {
 		if err := validateBackendType("stateStore.type", in.StateStore.Type); err != nil {
 			return err
 		}
+		if strings.EqualFold(strings.TrimSpace(in.StateStore.Type), "kubernetes") {
+			return nil
+		}
 		if err := validateSecretReference("stateStore.secretRef", in.StateStore.SecretRef); err != nil {
 			return err
 		}
@@ -228,8 +232,8 @@ func (in *CubestoreRouterSpec) Validate() error {
 }
 
 func validateBackendType(field, backendType string) error {
-	if backendType != "redis" && backendType != "postgres" {
-		return fmt.Errorf("%s must be redis or postgres", field)
+	if backendType != "redis" && backendType != "postgres" && backendType != "kubernetes" {
+		return fmt.Errorf("%s must be redis, kubernetes or postgres", field)
 	}
 	return nil
 }

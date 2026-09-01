@@ -8,6 +8,7 @@ IMAGE="${IMAGE:-cube-operator:dev}"
 ROUTER_IMAGE="${ROUTER_IMAGE:-cube-studio-router:ha-local}"
 WORKER_IMAGE="${WORKER_IMAGE:-$ROUTER_IMAGE}"
 LEASE_AGENT_IMAGE="${LEASE_AGENT_IMAGE:-cube-operator:dev}"
+LEASE_BACKEND="${LEASE_BACKEND:-kubernetes}"
 REDIS_URL="${REDIS_URL:-redis://redis.cube-operator-demo.svc:6379/0}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 META_STORE_ADDRESS="${META_STORE_ADDRESS:-cubestore-metastore.cube-operator-demo.svc:9999}"
@@ -19,6 +20,7 @@ ROUTER_NAMESPACE="cube-operator-demo"
 ROUTER_DEPLOYMENT="cube-router-demo"
 KUBECTL_VALIDATE="${KUBECTL_VALIDATE:-auto}"
 KUBECTL_VALIDATE_FALLBACK="${KUBECTL_VALIDATE_FALLBACK:-true}"
+LEASE_BACKEND="$(printf '%s' "$LEASE_BACKEND" | tr '[:upper:]' '[:lower:]')"
 DRY_RUN="false"
 
 render_router_manifest() {
@@ -27,10 +29,67 @@ render_router_manifest() {
   sed \
     -e "s|\${ROUTER_IMAGE}|${ROUTER_IMAGE}|g" \
     -e "s|\${LEASE_AGENT_IMAGE}|${LEASE_AGENT_IMAGE}|g" \
+    -e "s|\${LEASE_BACKEND}|${LEASE_BACKEND}|g" \
     -e "s|\${REDIS_URL}|${REDIS_URL}|g" \
     -e "s|\${REDIS_PASSWORD}|${REDIS_PASSWORD}|g" \
     -e "s|\${META_STORE_ADDRESS}|${META_STORE_ADDRESS}|g" \
     "$source" > "$target"
+}
+
+render_router_cr_manifest() {
+  local target="$1"
+
+  if [ "$LEASE_BACKEND" = "kubernetes" ]; then
+    cat > "$target" <<EOF
+apiVersion: cubestore.io/v1alpha1
+kind: CubestoreRouter
+metadata:
+  name: demo
+  namespace: cube-operator-demo
+spec:
+  namespace: cube-operator-demo
+  selector:
+    app: cube-router
+  routerPort: 3030
+  healthPath: /router/status
+  electionStrategy: lease
+  roleConfigMapName: cube-router-demo-router-role-state
+  metaStore:
+    address: cubestore-metastore.cube-operator-demo.svc:9999
+  storage:
+    dataPVC: worker-data
+  stateStore:
+    type: kubernetes
+EOF
+  elif [ "$LEASE_BACKEND" = "redis" ]; then
+    cat > "$target" <<EOF
+apiVersion: cubestore.io/v1alpha1
+kind: CubestoreRouter
+metadata:
+  name: demo
+  namespace: cube-operator-demo
+spec:
+  namespace: cube-operator-demo
+  selector:
+    app: cube-router
+  routerPort: 3030
+  healthPath: /router/status
+  electionStrategy: lease
+  roleConfigMapName: cube-router-demo-router-role-state
+  metaStore:
+    address: cubestore-metastore.cube-operator-demo.svc:9999
+  storage:
+    dataPVC: worker-data
+  stateStore:
+    type: redis
+    secretRef:
+      name: cube-router-demo-lease-store
+      namespace: cube-operator-demo
+EOF
+  else
+    echo "error: unsupported LEASE_BACKEND '$LEASE_BACKEND' (expected kubernetes|redis)" >&2
+    exit 1
+  fi
 }
 
 case "${1:-}" in
@@ -54,6 +113,7 @@ run_dry_run() {
   local metastore_manifest
   local worker_manifest
   local router_manifest
+  local router_cr_manifest
   local index=0
   local metastore_index=-1
   local worker_index=-1
@@ -63,9 +123,11 @@ run_dry_run() {
   metastore_manifest="$tmp_dir/metastore.yaml"
   worker_manifest="$tmp_dir/workers.yaml"
   router_manifest="$tmp_dir/routers.yaml"
+  router_cr_manifest="$tmp_dir/router-cr.yaml"
   sed "s|image: .*|image: ${ROUTER_IMAGE}|g" demo/k8s/metastore.yaml > "$metastore_manifest"
   sed "s|image: .*|image: ${WORKER_IMAGE}|g" demo/k8s/mock-workers.yaml > "$worker_manifest"
   render_router_manifest demo/k8s/mock-routers.yaml "$router_manifest"
+  render_router_cr_manifest "$router_cr_manifest"
 
   for manifest in \
     demo/k8s/namespace.yaml \
@@ -93,9 +155,8 @@ run_dry_run() {
     rm -rf "$tmp_dir"
     return 1
   fi
-  if ! rg -q 'name: CUBESTORE_WORKERS' "$worker_manifest" || \
-     ! rg -q 'name: CUBESTORE_WORKERS' "$router_manifest"; then
-    echo "dry-run configuration failure: workers and routers must consume CUBESTORE_WORKERS" >&2
+  if ! rg -q 'name: CUBESTORE_WORKERS' "$worker_manifest"; then
+    echo "dry-run configuration failure: worker deployment must consume CUBESTORE_WORKERS" >&2
     rm -rf "$tmp_dir"
     return 1
   fi
@@ -112,6 +173,22 @@ run_dry_run() {
     return 1
   fi
 
+  if ! rg -q "stateStore:\s*$" "$router_cr_manifest"; then
+    echo "dry-run configuration failure: router CR should include stateStore" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if [ "$LEASE_BACKEND" = "kubernetes" ] && ! rg -q 'type:\s*kubernetes' "$router_cr_manifest"; then
+    echo "dry-run configuration failure: kubernetes backend requires stateStore.type=kubernetes" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  if [ "$LEASE_BACKEND" = "redis" ] && ! rg -q 'type:\s*redis' "$router_cr_manifest"; then
+    echo "dry-run configuration failure: redis backend requires stateStore.type=redis" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
   printf 'dry-run: manifests valid; upgrade order verified: metastore -> workers -> routers\n'
   rm -rf "$tmp_dir"
 }
@@ -119,6 +196,15 @@ run_dry_run() {
 if [[ "$DRY_RUN" == "true" ]]; then
   run_dry_run
   exit $?
+fi
+
+if [ "$LEASE_BACKEND" = "kubernetes" ]; then
+  log "Using Kubernetes Lease backend (no external Redis/PG dependency)"
+elif [ "$LEASE_BACKEND" = "redis" ]; then
+  log "Using Redis backend; ensure redis service and lease-store Secret are configured"
+else
+  echo "error: unsupported LEASE_BACKEND '$LEASE_BACKEND' (supported: kubernetes|redis)" >&2
+  exit 1
 fi
 
 apply_manifest() {
@@ -168,11 +254,17 @@ apply_manifest config/crd/bases/cubestore.io_cubestorerouters.yaml
 apply_manifest demo/k8s/namespace.yaml
 apply_manifest demo/k8s/operator-rbac.yaml
 
-cat <<'MSG'
+if [ "$LEASE_BACKEND" = "redis" ]; then
+  cat <<'MSG'
 [1.25/7] 部署 demo Redis（lease-agent 与 Operator 共用）
 MSG
-apply_manifest demo/k8s/redis.yaml
-$KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/redis --timeout=120s
+  apply_manifest demo/k8s/redis.yaml
+  $KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/redis --timeout=120s
+else
+  cat <<'MSG'
+[1.25/7] 跳过 demo Redis（默认使用 Kubernetes Lease 后端）
+MSG
+fi
 
 cat <<'MSG'
 [1.4/7] 部署共享 CubeStore 对象存储（MinIO）
@@ -244,13 +336,18 @@ TMP_ROUTER_MANIFEST="$(mktemp)"
 render_router_manifest demo/k8s/mock-routers.yaml "$TMP_ROUTER_MANIFEST"
 apply_manifest "$TMP_ROUTER_MANIFEST"
 rm -f "$TMP_ROUTER_MANIFEST"
-apply_redis_secret
+if [ "$LEASE_BACKEND" = "redis" ]; then
+  apply_redis_secret
+fi
 $KUBECTL -n "$ROUTER_NAMESPACE" rollout status deploy/"$ROUTER_DEPLOYMENT" --timeout=180s
 
 cat <<'MSG'
 [5/7] 创建 CubestoreRouter CR（主备控制）
 MSG
-apply_manifest demo/k8s/cubestore-router-cr.yaml
+TMP_CR_MANIFEST="$(mktemp)"
+render_router_cr_manifest "$TMP_CR_MANIFEST"
+apply_manifest "$TMP_CR_MANIFEST"
+rm -f "$TMP_CR_MANIFEST"
 
 cat <<'MSG'
 [6/7] 创建 Leader Service

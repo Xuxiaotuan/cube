@@ -438,11 +438,15 @@ func newExternalLeaseTestReconciler(t *testing.T, data map[string][]byte) *Cubes
 }
 
 func externalLeaseTestRouter() *v1alpha1.CubestoreRouter {
+	return externalLeaseTestRouterWithType("redis")
+}
+
+func externalLeaseTestRouterWithType(stateStoreType string) *v1alpha1.CubestoreRouter {
 	return &v1alpha1.CubestoreRouter{
 		ObjectMeta: metav1.ObjectMeta{Name: "router", Namespace: "router-ns"},
 		Spec: v1alpha1.CubestoreRouterSpec{
 			StateStore: &v1alpha1.StateStore{
-				Type: "redis",
+				Type:      stateStoreType,
 				SecretRef: corev1.SecretReference{Name: "lease-store", Namespace: "router-ns"},
 			},
 		},
@@ -477,5 +481,22 @@ func TestExternalLeaseConfigPreservesRedisDSNAuthentication(t *testing.T) {
 	}
 	if got != dsn {
 		t.Fatalf("Redis DSN with built-in authentication was changed")
+	}
+}
+
+func TestExternalLeaseConfigSupportsKubernetesBackendWithoutSecretReference(t *testing.T) {
+	reconciler := newExternalLeaseTestReconciler(t, map[string][]byte{
+		"dsn": []byte("ignored-when-kubernetes"),
+	})
+
+	backend, dsn, _, _, err := reconciler.externalLeaseConfig(context.Background(), externalLeaseTestRouterWithType("kubernetes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend != leaderStateBackendKubernetes {
+		t.Fatalf("backend = %q, want %q", backend, leaderStateBackendKubernetes)
+	}
+	if dsn != "" {
+		t.Fatalf("dsn = %q, want empty", dsn)
 	}
 }

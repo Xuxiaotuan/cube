@@ -16,7 +16,4 @@ spec:
   storage:
     dataPVC: worker-data
   stateStore:
-    type: redis
-    secretRef:
-      name: cube-router-demo-lease-store
-      namespace: cube-operator-demo
+    type: kubernetes
