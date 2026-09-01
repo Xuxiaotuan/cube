@@ -209,7 +209,7 @@ func (s *KubernetesStore) Get(ctx context.Context, clusterID string) (LeaseRecor
 
 	record, _, err := s.getLeaseObject(ctx, clusterID)
 	if err != nil {
-		if err == ErrLeaseUnknown || kmacErrors.IsNotFound(err) {
+		if kmacErrors.IsNotFound(err) {
 			return LeaseRecord{}, ErrLeaseNotFound
 		}
 		if kmacErrors.IsConflict(err) {

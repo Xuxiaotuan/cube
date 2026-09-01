@@ -1,0 +1,23 @@
+apiVersion: cubestore.io/v1alpha1
+kind: CubeCluster
+metadata:
+  name: analytics
+  namespace: cube-operator-demo
+spec:
+  images:
+    api: cube-studio-api:ha-local
+    router: cube-studio-router:ha-local
+    metaStore: cube-studio-router:ha-local
+    worker: cube-studio-router:ha-local
+    leaseAgent: cube-operator:dev
+  api: {replicas: 1}
+  router: {replicas: 2, highAvailability: true}
+  metaStore: {replicas: 1}
+  workers: {replicas: 2}
+  storage:
+    endpoint: http://cube-router-object-store.cube-operator-demo.svc.cluster.local:9000
+    bucket: cube-router-ha
+    subPath: cubecluster-analytics
+    objectStoreSecretRef:
+      name: cube-router-demo-object-store
+      namespace: cube-operator-demo

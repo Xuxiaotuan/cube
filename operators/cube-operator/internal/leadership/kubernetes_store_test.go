@@ -27,35 +27,35 @@ func TestKubernetesStoreAcquireRenewReleaseFlow(t *testing.T) {
 	)
 	ctx := context.Background()
 
-	first, acquired, err := store.Acquire(ctx, "cluster-a", "router-0", 20*time.Millisecond)
+	first, acquired, err := store.Acquire(ctx, "cluster-a", "router-0", 2*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("first acquire = (%#v, %t, %v)", first, acquired, err)
 	}
 
-	other, acquired, err := store.Acquire(ctx, "cluster-a", "router-1", 20*time.Millisecond)
+	other, acquired, err := store.Acquire(ctx, "cluster-a", "router-1", 2*time.Second)
 	if err != nil || acquired || other.Epoch != first.Epoch {
 		t.Fatalf("contended acquire = (%#v, %t, %v)", other, acquired, err)
 	}
 
-	clock.Advance(21 * time.Millisecond)
+	clock.Advance(2100 * time.Millisecond)
 	gone, err := store.Get(ctx, "cluster-a")
 	if !errors.Is(err, ErrLeaseNotFound) {
 		t.Fatalf("expired lease must be not found: lease=%#v err=%v", gone, err)
 	}
 
-	second, acquired, err := store.Acquire(ctx, "cluster-a", "router-1", 20*time.Millisecond)
+	second, acquired, err := store.Acquire(ctx, "cluster-a", "router-1", 2*time.Second)
 	if err != nil || !acquired || second.Epoch != first.Epoch+1 || second.Token == first.Token {
 		t.Fatalf("stale holder acquire = (%#v, %t, %v)", second, acquired, err)
 	}
 
-	renewed, ok, err := store.Renew(ctx, second, 20*time.Millisecond)
+	renewed, ok, err := store.Renew(ctx, second, 2*time.Second)
 	if err != nil || !ok || renewed.Token != second.Token || renewed.Epoch != second.Epoch {
 		t.Fatalf("renew = (%#v, %t, %v)", renewed, ok, err)
 	}
 
 	stale := second
 	stale.Token = "not-a-current-token"
-	if _, ok, err = store.Renew(ctx, stale, 20*time.Millisecond); err != nil || ok {
+	if _, ok, err = store.Renew(ctx, stale, 2*time.Second); err != nil || ok {
 		t.Fatalf("stale-token renew = (%t, %v)", ok, err)
 	}
 

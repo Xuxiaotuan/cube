@@ -52,6 +52,15 @@ type stateWriteClient struct {
 	configMap *corev1.ConfigMap
 }
 
+func (c *stateWriteClient) Update(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		return errors.New("expected configmap object")
+	}
+	*c.configMap = *cm.DeepCopy()
+	return nil
+}
+
 func (c *stateWriteClient) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
 	if key.Name != c.configMap.Name || key.Namespace != c.configMap.Namespace {
 		return errors.New("configmap not found")
@@ -447,7 +456,7 @@ func externalLeaseTestRouterWithType(stateStoreType string) *v1alpha1.CubestoreR
 		Spec: v1alpha1.CubestoreRouterSpec{
 			StateStore: &v1alpha1.StateStore{
 				Type:      stateStoreType,
-				SecretRef: corev1.SecretReference{Name: "lease-store", Namespace: "router-ns"},
+				SecretRef: &corev1.SecretReference{Name: "lease-store", Namespace: "router-ns"},
 			},
 		},
 	}

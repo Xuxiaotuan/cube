@@ -297,7 +297,9 @@ func (r *CubestoreRouterReconciler) externalLeaseConfig(ctx context.Context, cr 
 	var redisKey, pgTable string
 	if cr.Spec.StateStore != nil {
 		backend = leaderStateBackendType(strings.TrimSpace(strings.ToLower(cr.Spec.StateStore.Type)))
-		secretRef = cr.Spec.StateStore.SecretRef
+		if cr.Spec.StateStore.SecretRef != nil {
+			secretRef = *cr.Spec.StateStore.SecretRef
+		}
 	} else if cr.Spec.LeaderStateStore != nil {
 		backend = leaderStateBackendType(strings.TrimSpace(strings.ToLower(cr.Spec.LeaderStateStore.Type)))
 		if cr.Spec.LeaderStateStore.SecretRef != nil {
@@ -471,7 +473,13 @@ func isRoleStateStaleButRecoverable(cm *corev1.ConfigMap, lease leadership.Lease
 	if epochErr != nil {
 		return true
 	}
-	return currentEpoch > lease.Epoch
+	if currentEpoch <= lease.Epoch {
+		return false
+	}
+	// A complete fence from a newer epoch is authoritative and must never be
+	// rebuilt by an older writer. Recovery is only safe for a legacy or
+	// malformed marker that lacks a usable token.
+	return strings.TrimSpace(annotations[leaseTokenAnnotation]) == ""
 }
 
 func leaseFenceValues(lease leadership.LeaseRecord) map[string]string {

@@ -240,7 +240,7 @@ func validRouterSpec() v1alpha1.CubestoreRouterSpec {
 		RetryPeriodSeconds:   5,
 		StateStore: &v1alpha1.StateStore{
 			Type:      "redis",
-			SecretRef: corev1.SecretReference{Name: "router-state", Namespace: "router-system"},
+			SecretRef: &corev1.SecretReference{Name: "router-state", Namespace: "router-system"},
 		},
 		MetaStore: v1alpha1.MetaStore{Address: "http://metastore.router-system.svc:9090"},
 		Storage:   v1alpha1.Storage{DataPVC: "router-data"},

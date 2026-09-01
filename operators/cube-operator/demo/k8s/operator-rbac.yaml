@@ -11,7 +11,16 @@ metadata:
   namespace: cube-operator-demo
 rules:
   - apiGroups: ["" ]
-    resources: ["pods", "pods/status", "events", "configmaps", "services", "endpoints", "secrets"]
+    resources: ["pods", "pods/status", "events", "configmaps", "services", "endpoints", "secrets", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
@@ -20,7 +29,7 @@ rules:
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["cubestore.io"]
-    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers"]
+    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers", "cubeclusters", "cubeclusters/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

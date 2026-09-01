@@ -7,9 +7,12 @@ import (
 
 	"github.com/cube-js/cube-operator/api/v1alpha1"
 	"github.com/cube-js/cube-operator/controllers"
+	apps "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,8 +25,11 @@ var scheme = runtime.NewScheme()
 func init() {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(apps.AddToScheme(scheme))
 	utilruntime.Must(discoveryv1.AddToScheme(scheme))
 	utilruntime.Must(coordinationv1.AddToScheme(scheme))
+	utilruntime.Must(policyv1.AddToScheme(scheme))
+	utilruntime.Must(rbacv1.AddToScheme(scheme))
 }
 
 func main() {
@@ -57,6 +63,13 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		os.Exit(1)
+	}
+
+	if err = (&controllers.CubeClusterReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		os.Exit(1)
 	}

@@ -1,11 +1,11 @@
 # cube-operator（实验版）
 
-该目录给出一个最小化的 Go Operator，用于在 Kubernetes 内为 Cubestore Router 提供
-`leader/follower` 选举与标签化。
+该目录给出一个 Go Operator：顶层 `CubeCluster` CR 管理 Cube 的 API、Router、MetaStore、Worker
+和服务/PVC/RBAC；子 `CubestoreRouter` CR 负责 Router 的 `leader/follower` 选举与流量切换。
 
 ## 目录
-- `api/`：CRD 类型定义（`CubestoreRouter`）
-- `controllers/`：选主/降级控制器
+- `api/`：CRD 类型定义（`CubeCluster`、`CubestoreRouter`）
+- `controllers/`：整套 Cube 编排控制器与 Router 选主/降级控制器
 - `config/crd/`：CRD 清单
 - `config/manager/`：operator in-cluster 部署对象
 - `config/rbac/`：默认命名空间 RBAC（示例）
@@ -35,6 +35,41 @@ kubectl apply -f examples/cubestorerouter.yaml
 ```
 
 ## K8s 演示（推荐）
+
+### 一条 CubeCluster CR 部署整套 Cube
+
+先准备外部对象存储 Secret 和对象存储 endpoint，再安装两个 CRD、Operator RBAC 和 Operator：
+
+```bash
+kubectl apply -f config/crd/bases/cubestore.io_cubestorerouters.yaml
+kubectl apply -f config/crd/bases/cubestore.io_cubeclusters.yaml
+kubectl apply -f demo/k8s/operator-rbac.yaml
+kubectl apply -f examples/cubecluster.yaml
+```
+
+`CubeCluster` 会创建 API Deployment、Router 双副本 Deployment、MetaStore 单写 StatefulSet、
+Worker StatefulSet、Service、PDB、Router Lease RBAC 和一个子 `CubestoreRouter` CR。Router HA
+仍由 Kubernetes Lease/CAS、Router Controller 和 leader Service 三者共同完成。
+
+查看整体状态：
+
+```bash
+kubectl -n cube-operator-demo get cube analytics -o wide
+kubectl -n cube-operator-demo get deploy,sts,svc,pdb
+kubectl -n cube-operator-demo get cubestorerouter analytics-router -o yaml
+```
+
+演示环境也可以按固定顺序一键提交：
+
+```bash
+./demo/k8s/run-cubecluster.sh
+```
+
+该脚本中的 MinIO 只是本地演示依赖；生产环境应替换为已有的多副本对象存储，并修改
+`demo/k8s/cube-cluster-cr.yaml` 中的 endpoint、bucket 和 Secret。
+
+这个入口要求 `spec.storage.endpoint` 指向已经具备持久化能力的对象存储；Operator 不会默认
+创建一个单副本临时 MinIO 来冒充生产数据层。
 
 我们提供一套可直接跑的演示套件（含 2 个真实 Cubestore Router + Operator + Leader Service）：
 

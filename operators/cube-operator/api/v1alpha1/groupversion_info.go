@@ -14,7 +14,9 @@ var (
 )
 
 func addKnownTypes(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(SchemeGroupVersion, &CubestoreRouter{}, &CubestoreRouterList{})
+	scheme.AddKnownTypes(SchemeGroupVersion,
+		&CubestoreRouter{}, &CubestoreRouterList{}, &CubeCluster{}, &CubeClusterList{},
+	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
 }

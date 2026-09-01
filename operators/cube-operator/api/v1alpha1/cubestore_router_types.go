@@ -86,7 +86,7 @@ type StateStore struct {
 	// +kubebuilder:validation:Enum=redis;postgres;kubernetes
 	Type string `json:"type"`
 
-	SecretRef corev1.SecretReference `json:"secretRef"`
+	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
 }
 
 type MetaStore struct {
@@ -195,7 +195,10 @@ func (in *CubestoreRouterSpec) Validate() error {
 		if strings.EqualFold(strings.TrimSpace(in.StateStore.Type), "kubernetes") {
 			return nil
 		}
-		if err := validateSecretReference("stateStore.secretRef", in.StateStore.SecretRef); err != nil {
+		if in.StateStore.SecretRef == nil {
+			return fmt.Errorf("stateStore.secretRef is required for %s", in.StateStore.Type)
+		}
+		if err := validateSecretReference("stateStore.secretRef", *in.StateStore.SecretRef); err != nil {
 			return err
 		}
 	}
@@ -267,6 +270,10 @@ func (in *CubestoreRouter) DeepCopyInto(out *CubestoreRouter) {
 	}
 	if in.Spec.StateStore != nil {
 		store := *in.Spec.StateStore
+		if in.Spec.StateStore.SecretRef != nil {
+			secretRef := *in.Spec.StateStore.SecretRef
+			store.SecretRef = &secretRef
+		}
 		out.Spec.StateStore = &store
 	}
 	if in.Spec.LeaderStateStore != nil {
