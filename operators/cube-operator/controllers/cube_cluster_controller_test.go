@@ -28,3 +28,16 @@ func TestWorkerAddressesUsesStableStatefulSetDNS(t *testing.T) {
 		t.Fatalf("worker addresses = %q, want %q", got, want)
 	}
 }
+
+func TestRouterAntiAffinityPrefersDifferentNodes(t *testing.T) {
+	cluster := &v1alpha1.CubeCluster{}
+	cluster.Name = "analytics"
+	affinity := routerAntiAffinity(cluster)
+	terms := affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+	if len(terms) != 1 || terms[0].PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" {
+		t.Fatalf("router anti-affinity = %#v, want a hostname preference", affinity)
+	}
+	if terms[0].PodAffinityTerm.LabelSelector.MatchLabels[cubeClusterNameLabel] != "analytics" {
+		t.Fatalf("router anti-affinity selector = %#v", terms[0].PodAffinityTerm.LabelSelector)
+	}
+}

@@ -48,8 +48,12 @@ kubectl apply -f examples/cubecluster.yaml
 ```
 
 `CubeCluster` 会创建 API Deployment、Router 双副本 Deployment、MetaStore 单写 StatefulSet、
-Worker StatefulSet、Service、PDB、Router Lease RBAC 和一个子 `CubestoreRouter` CR。Router HA
+Worker StatefulSet、Service、PDB、Router Lease RBAC、随机生成并持久化的 API Secret 和一个子
+`CubestoreRouter` CR。Router HA
 仍由 Kubernetes Lease/CAS、Router Controller 和 leader Service 三者共同完成。
+
+Operator 启动并取得 leader 后，会对已有 `CubeCluster` 做一次全量 reconcile，避免控制器重启时
+已处于 `Running` 的集群因没有新的 spec 事件而遗漏新增加的 Secret、PDB 或其他受管资源。
 
 查看整体状态：
 

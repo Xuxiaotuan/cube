@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -36,7 +38,7 @@ const (
 // +kubebuilder:rbac:groups=cubestore.io,resources=cubeclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cubestore.io,resources=cubestorerouters,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups="",resources=configmaps;services;serviceaccounts,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=configmaps;services;serviceaccounts;secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch
 type CubeClusterReconciler struct {
@@ -45,14 +47,48 @@ type CubeClusterReconciler struct {
 }
 
 func (r *CubeClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.CubeCluster{}).
 		Owns(&apps.Deployment{}).
 		Owns(&apps.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
+		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&v1alpha1.CubestoreRouter{}).
-		Complete(r)
+		Complete(r); err != nil {
+		return err
+	}
+
+	// Reconcile existing CubeClusters once after leadership is acquired. This
+	// closes the restart gap where an already-Running cluster would otherwise
+	// not receive a new event for newly introduced owned resources.
+	return mgr.Add(&cubeClusterStartupSync{cache: mgr.GetCache(), reconciler: r})
+}
+
+type cubeClusterStartupSync struct {
+	cache      cache.Cache
+	reconciler *CubeClusterReconciler
+}
+
+func (s *cubeClusterStartupSync) NeedLeaderElection() bool { return true }
+
+func (s *cubeClusterStartupSync) Start(ctx context.Context) error {
+	if !s.cache.WaitForCacheSync(ctx) {
+		return nil
+	}
+
+	var clusters v1alpha1.CubeClusterList
+	if err := s.reconciler.List(ctx, &clusters); err != nil {
+		return fmt.Errorf("list CubeClusters for startup reconciliation: %w", err)
+	}
+	for i := range clusters.Items {
+		cluster := &clusters.Items[i]
+		if _, err := s.reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err != nil {
+			return fmt.Errorf("startup reconcile CubeCluster %s/%s: %w", cluster.Namespace, cluster.Name, err)
+		}
+	}
+	return nil
 }
 
 func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -79,6 +115,9 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileRouters(ctx, &cluster); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileAPISecret(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileAPI(ctx, &cluster); err != nil {
@@ -308,6 +347,8 @@ func (r *CubeClusterReconciler) reconcileRouters(ctx context.Context, c *v1alpha
 		router := corev1.Container{Name: "cube-studio-router", Image: c.Spec.Images.Router, ImagePullPolicy: corev1.PullIfNotPresent, Env: routerEnv, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 3030}, {Name: "mysql", ContainerPort: 3306}}, VolumeMounts: []corev1.VolumeMount{{Name: "leadership", MountPath: "/var/run/cubestore-ha", ReadOnly: true}, {Name: "promotion", MountPath: "/var/run/cubestore-promotion", ReadOnly: true}, {Name: "local-data", MountPath: "/cube/.cubestore/data"}}}
 		agent := corev1.Container{Name: "lease-agent", Image: c.Spec.Images.LeaseAgent, ImagePullPolicy: corev1.PullIfNotPresent, Command: []string{"/usr/local/bin/lease-agent"}, Args: []string{"--cluster-id=" + c.Namespace + "/" + name, "--holder-id=$(POD_NAME)", "--backend=kubernetes", "--retry-period=2s"}, Env: []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: podNameField()}, {Name: "POD_NAMESPACE", ValueFrom: namespaceField()}, {Name: "CUBESTORE_LEASE_K8S_NAMESPACE", Value: c.Namespace}, {Name: "CUBESTORE_LEASE_K8S_NAME", Value: name}}, VolumeMounts: []corev1.VolumeMount{{Name: "leadership", MountPath: "/var/run/cubestore-ha"}}}
 		set.Spec.Template = corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: clusterLabels(c, cubeComponentRouter)}, Spec: corev1.PodSpec{ServiceAccountName: name, TerminationGracePeriodSeconds: ptr64(30), Containers: []corev1.Container{agent, router}, Volumes: []corev1.Volume{{Name: "leadership", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}}, {Name: "promotion", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: roleConfig}, Optional: ptrBool(true), Items: []corev1.KeyToPath{{Key: "route-role.json", Path: "promotion.json"}}}}}, {Name: "local-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}}}
+		set.Spec.Template.Spec.Affinity = routerAntiAffinity(c)
+		set.Spec.Template.Spec.Containers[1].Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "sleep 10"}}}}
 		return nil
 	})
 	return err
@@ -335,7 +376,34 @@ func (r *CubeClusterReconciler) reconcileAPI(ctx context.Context, c *v1alpha1.Cu
 		set.Labels = clusterLabels(c, cubeComponentAPI)
 		set.Spec.Replicas = ptr32(clusterReplicas(c.Spec.API.Replicas, 1))
 		set.Spec.Selector = &metav1.LabelSelector{MatchLabels: clusterLabels(c, cubeComponentAPI)}
-		set.Spec.Template = podTemplate(clusterLabels(c, cubeComponentAPI), name, c.Spec.Images.API, name, []corev1.ContainerPort{{Name: "http", ContainerPort: 4000}}, []corev1.EnvVar{{Name: "CUBEJS_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_EXT_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_CUBESTORE_HOST", Value: fmt.Sprintf("%s.%s.svc.cluster.local", nameRouterLeader(c), c.Namespace)}, {Name: "CUBEJS_CUBESTORE_PORT", Value: "3030"}, {Name: "CUBEJS_API_SECRET", Value: c.Name + "-api-secret"}, {Name: "CUBEJS_SCHEMA_PATH", Value: "schema"}, {Name: "CUBEJS_PORT", Value: "4000"}}, nil)
+		set.Spec.Template = podTemplate(clusterLabels(c, cubeComponentAPI), name, c.Spec.Images.API, name, []corev1.ContainerPort{{Name: "http", ContainerPort: 4000}}, []corev1.EnvVar{{Name: "CUBEJS_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_EXT_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_CUBESTORE_HOST", Value: fmt.Sprintf("%s.%s.svc.cluster.local", nameRouterLeader(c), c.Namespace)}, {Name: "CUBEJS_CUBESTORE_PORT", Value: "3030"}, {Name: "CUBEJS_API_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: apiSecretName(c)}, Key: cubeAPISecretKey}}}, {Name: "CUBEJS_SCHEMA_PATH", Value: "schema"}, {Name: "CUBEJS_PORT", Value: "4000"}}, nil)
+		return nil
+	})
+	return err
+}
+
+const cubeAPISecretKey = "apiSecret"
+
+func apiSecretName(c *v1alpha1.CubeCluster) string { return c.Name + "-api-secret" }
+
+func (r *CubeClusterReconciler) reconcileAPISecret(ctx context.Context, c *v1alpha1.CubeCluster) error {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: apiSecretName(c), Namespace: c.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
+		if err := r.own(c, secret); err != nil {
+			return err
+		}
+		secret.Labels = clusterLabels(c, cubeComponentAPI)
+		secret.Type = corev1.SecretTypeOpaque
+		if len(secret.Data[cubeAPISecretKey]) == 0 {
+			value := make([]byte, 32)
+			if _, err := rand.Read(value); err != nil {
+				return err
+			}
+			if secret.Data == nil {
+				secret.Data = map[string][]byte{}
+			}
+			secret.Data[cubeAPISecretKey] = value
+		}
 		return nil
 	})
 	return err
@@ -345,8 +413,12 @@ func nameRouterLeader(c *v1alpha1.CubeCluster) string {
 	return clusterName(c, cubeComponentRouter) + "-leader"
 }
 
+func routerAntiAffinity(c *v1alpha1.CubeCluster) *corev1.Affinity {
+	return &corev1.Affinity{PodAntiAffinity: &corev1.PodAntiAffinity{PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{Weight: 100, PodAffinityTerm: corev1.PodAffinityTerm{TopologyKey: "kubernetes.io/hostname", LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{cubeClusterNameLabel: c.Name, cubeComponentLabel: cubeComponentRouter}}}}}}}
+}
+
 func (r *CubeClusterReconciler) reconcilePDBs(ctx context.Context, c *v1alpha1.CubeCluster) error {
-	for _, component := range []string{cubeComponentRouter, cubeComponentMeta, cubeComponentWorker} {
+	for _, component := range []string{cubeComponentAPI, cubeComponentRouter, cubeComponentMeta, cubeComponentWorker} {
 		obj := &policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: clusterName(c, component), Namespace: c.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 			if err := r.own(c, obj); err != nil {
