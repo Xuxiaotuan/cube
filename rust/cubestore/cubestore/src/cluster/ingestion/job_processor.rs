@@ -118,6 +118,13 @@ impl JobIsolatedProcessor {
     }
 
     pub async fn process_separate_job(&self, job: &Job) -> Result<JobProcessResult, CubeError> {
+        let attempt = job.attempt().cloned().ok_or_else(|| {
+            CubeError::user("Isolated job requires a persisted attempt".to_string())
+        })?;
+        crate::metastore::job::JOB_ATTEMPT.scope(Some(attempt), self.process_owned_job(job)).await
+    }
+
+    async fn process_owned_job(&self, job: &Job) -> Result<JobProcessResult, CubeError> {
         match job.job_type() {
             JobType::PartitionCompaction => {
                 if let RowKey::Table(TableId::Partitions, partition_id) = job.row_reference() {

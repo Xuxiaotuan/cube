@@ -1,6 +1,8 @@
 mod info_schema_columns;
 mod info_schema_schemata;
 mod info_schema_tables;
+#[cfg(test)]
+mod remote_tests;
 mod rocksdb_properties;
 mod system_cache;
 mod system_chunks;

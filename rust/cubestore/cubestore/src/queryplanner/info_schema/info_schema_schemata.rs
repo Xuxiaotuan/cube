@@ -1,4 +1,4 @@
-use crate::metastore::{IdRow, MetaStoreTable, Schema};
+use crate::metastore::{IdRow, Schema};
 use crate::queryplanner::{InfoSchemaTableDef, InfoSchemaTableDefContext};
 use crate::CubeError;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ impl InfoSchemaTableDef for SchemataInfoSchemaTableDef {
         ctx: InfoSchemaTableDefContext,
         _limit: Option<usize>,
     ) -> Result<Vec<Self::T>, CubeError> {
-        Ok(ctx.meta_store.schemas_table().all_rows().await?)
+        ctx.meta_store.get_schemas().await
     }
 
     fn schema(&self) -> Vec<Field> {

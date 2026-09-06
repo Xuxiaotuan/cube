@@ -1,0 +1,70 @@
+{
+  "origin": "Actual /tmp/cube-ha-runtime-r3203dbb2fbc324ea.jsonl read from the named API pod in cube-ha-remediation; only the three final external SELECT events retained. No credentials or query result rows included. Original field values retained; JSON key order normalized.",
+  "expected": {
+    "run": "r3203dbb2fbc324ea",
+    "buildId": "ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q",
+    "requestId": "ha-r3203dbb2fbc324ea-load"
+  },
+  "events": [
+    {
+      "kind": "cube-ha-runtime",
+      "role": "api",
+      "podName": "analytics-api-6b55dc5c67-5v7jr",
+      "processUid": "f33e4727-3e29-56ea-82a7-3de3b66eaef6",
+      "run": "r3203dbb2fbc324ea",
+      "time": "2026-09-06T19:00:09.452Z",
+      "message": "Performing query",
+      "params": {
+        "queueId": 0,
+        "queueSize": 0,
+        "queryKey": [
+          "SELECT `router_ha_rollup__bucket` `router_ha_rollup__bucket`, sum(`router_ha_rollup__row_count`) `router_ha_rollup__row_count`, sum(`router_ha_rollup__total_amount`) `router_ha_rollup__total_amount`, sum(`router_ha_rollup__id_checksum`) `router_ha_rollup__id_checksum` FROM ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q AS `router_ha_rollup__by_id`  GROUP BY 1 ORDER BY 1 ASC LIMIT 10000",
+          []
+        ],
+        "queuePrefix": "SQL_QUERY_EXT_r3203dbb2fbc324ea",
+        "requestId": "ha-r3203dbb2fbc324ea-load",
+        "timeInQueue": 0
+      }
+    },
+    {
+      "kind": "cube-ha-runtime",
+      "role": "api",
+      "podName": "analytics-api-6b55dc5c67-5v7jr",
+      "processUid": "f33e4727-3e29-56ea-82a7-3de3b66eaef6",
+      "run": "r3203dbb2fbc324ea",
+      "time": "2026-09-06T19:00:09.452Z",
+      "message": "Executing SQL",
+      "params": {
+        "queryKey": [
+          "SELECT `router_ha_rollup__bucket` `router_ha_rollup__bucket`, sum(`router_ha_rollup__row_count`) `router_ha_rollup__row_count`, sum(`router_ha_rollup__total_amount`) `router_ha_rollup__total_amount`, sum(`router_ha_rollup__id_checksum`) `router_ha_rollup__id_checksum` FROM ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q AS `router_ha_rollup__by_id`  GROUP BY 1 ORDER BY 1 ASC LIMIT 10000",
+          []
+        ],
+        "query": "SELECT `router_ha_rollup__bucket` `router_ha_rollup__bucket`, sum(`router_ha_rollup__row_count`) `router_ha_rollup__row_count`, sum(`router_ha_rollup__total_amount`) `router_ha_rollup__total_amount`, sum(`router_ha_rollup__id_checksum`) `router_ha_rollup__id_checksum` FROM ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q AS `router_ha_rollup__by_id`  GROUP BY 1 ORDER BY 1 ASC LIMIT 10000",
+        "values": [],
+        "requestId": "ha-r3203dbb2fbc324ea-load",
+        "inlineTables": []
+      }
+    },
+    {
+      "kind": "cube-ha-runtime",
+      "role": "api",
+      "podName": "analytics-api-6b55dc5c67-5v7jr",
+      "processUid": "f33e4727-3e29-56ea-82a7-3de3b66eaef6",
+      "run": "r3203dbb2fbc324ea",
+      "time": "2026-09-06T19:00:09.524Z",
+      "message": "Performing query completed",
+      "params": {
+        "queueId": 0,
+        "queueSize": 0,
+        "queryKey": [
+          "SELECT `router_ha_rollup__bucket` `router_ha_rollup__bucket`, sum(`router_ha_rollup__row_count`) `router_ha_rollup__row_count`, sum(`router_ha_rollup__total_amount`) `router_ha_rollup__total_amount`, sum(`router_ha_rollup__id_checksum`) `router_ha_rollup__id_checksum` FROM ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q AS `router_ha_rollup__by_id`  GROUP BY 1 ORDER BY 1 ASC LIMIT 10000",
+          []
+        ],
+        "queuePrefix": "SQL_QUERY_EXT_r3203dbb2fbc324ea",
+        "requestId": "ha-r3203dbb2fbc324ea-load",
+        "timeInQueue": 0,
+        "duration": 72
+      }
+    }
+  ]
+}

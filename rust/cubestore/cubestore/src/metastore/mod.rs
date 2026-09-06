@@ -1,6 +1,8 @@
 pub mod chunks;
 pub mod index;
 pub mod job;
+#[cfg(test)]
+mod job_attempt_tests;
 pub mod listener;
 pub mod multi_index;
 pub mod partition;
@@ -34,7 +36,8 @@ use crate::config::{Config, ConfigObj};
 use crate::metastore::chunks::{ChunkIndexKey, ChunkRocksIndex};
 use crate::metastore::index::IndexIndexKey;
 use crate::metastore::job::{
-    Job, JobIndexKey, JobRocksIndex, JobRocksTable, JobRunnerPool, JobStatus, JobType,
+    current_job_attempt, Job, JobAttempt, JobIndexKey, JobRocksIndex, JobRocksTable,
+    JobRunnerPool, JobStatus, JobType, JOB_ATTEMPT,
 };
 use crate::metastore::multi_index::{
     MultiIndexIndexKey, MultiPartition, MultiPartitionIndexKey, MultiPartitionRocksIndex,
@@ -760,6 +763,10 @@ pub struct Chunk {
     row_count: u64,
     uploaded: bool,
     active: bool,
+    #[serde(default)]
+    job_id: Option<u64>,
+    #[serde(default)]
+    job_generation: Option<u64>,
     /// Not used or updated anymore.
     #[serde(default)]
     last_used: Option<DateTime<Utc>>,
@@ -962,6 +969,8 @@ pub trait MetaStore: DIService + Send + Sync {
     ) -> Result<Vec<IdRow<Chunk>>, CubeError>;
 
     fn index_table(&self) -> IndexMetaStoreTable;
+    /// Full index inventory for remote metadata queries, including every table state.
+    async fn get_indexes(&self) -> Result<Vec<IdRow<Index>>, CubeError>;
     async fn create_index(
         &self,
         schema_name: String,
@@ -1147,6 +1156,10 @@ pub trait MetaStore: DIService + Send + Sync {
     async fn update_status(&self, job_id: u64, status: JobStatus) -> Result<IdRow<Job>, CubeError>;
     async fn update_heart_beat(&self, job_id: u64) -> Result<IdRow<Job>, CubeError>;
     async fn delete_all_jobs(&self) -> Result<Vec<IdRow<Job>>, CubeError>;
+    async fn heartbeat_job_attempt(&self, attempt: JobAttempt) -> Result<IdRow<Job>, CubeError>;
+    async fn finish_job_attempt(&self, attempt: JobAttempt, status: JobStatus) -> Result<IdRow<Job>, CubeError>;
+    async fn recover_job(&self, expected: IdRow<Job>, server_name: String, orphaned_timeout: Duration) -> Result<Option<IdRow<Job>>, CubeError>;
+    async fn publish_import_chunks(&self, attempt: JobAttempt, table_id: u64, location: String, uploaded_chunk_ids: Vec<(u64, Option<u64>)>) -> Result<(), CubeError>;
 
     async fn create_or_update_source(
         &self,
@@ -1749,8 +1762,17 @@ impl RocksMetaStore {
             + 'static,
         R: Send + Sync + 'static,
     {
+        // Capture before queueing: the RocksDB writer runs on another task/thread.
+        // Ownership validation and the actual publication share one serial write.
+        let attempt = current_job_attempt();
         self.store
-            .write_operation_impl(&self.store.rw_loop_default_cf, op_name, f, self.clone())
+            .write_operation_impl(&self.store.rw_loop_default_cf, op_name, move |db, pipe| {
+                if let Some(ref attempt) = attempt {
+                    JobRocksTable::new(db.clone()).get_row_or_not_found(attempt.job_id)?
+                        .get_row().check_owner(attempt)?;
+                }
+                JOB_ATTEMPT.sync_scope(attempt, || f(db, pipe))
+            }, self.clone())
             .await
     }
 
@@ -1781,6 +1803,15 @@ impl RocksMetaStore {
         }
         for index in indexes {
             RocksMetaStore::drop_index(db_ref.clone(), batch_pipe, index, true)?;
+        }
+        // Import receipts have the same lifetime as the table, not the router.
+        let jobs = JobRocksTable::new(db_ref.clone());
+        for job in jobs.all_rows()? {
+            if !matches!(job.get_row().job_type(), JobType::Unknown)
+                && job.get_row().row_reference() == &RowKey::Table(TableId::Tables, table_id)
+            {
+                jobs.delete(job.get_id(), batch_pipe)?;
+            }
         }
         Ok(tables_table.delete(table_id, batch_pipe)?)
     }
@@ -2081,6 +2112,18 @@ impl RocksMetaStore {
     }
 
     // Must be run under write_operation(). Returns activated row count.
+    fn chunk_has_live_job(db: DbTableRef, chunk: &Chunk) -> Result<bool, CubeError> {
+        match (chunk.job_id, chunk.job_generation) {
+            (Some(id), Some(generation)) => {
+                Ok(JobRocksTable::new(db).get_row(id)?.map_or(false, |j| {
+                    j.get_row().attempt().map_or(false, |a| a.generation == generation)
+                        && matches!(j.get_row().status(), JobStatus::ProcessingBy(_))
+                }))
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn activate_chunks_impl(
         db_ref: DbTableRef,
         batch_pipe: &mut BatchPipe<'_, RocksMetaStore>,
@@ -2092,6 +2135,9 @@ impl RocksMetaStore {
         let mut partitions = HashMap::new();
         for (id, file_size) in uploaded_chunk_ids {
             let chunk = table.get_row_or_not_found(*id)?.into_row();
+            if chunk.job_id.is_some() && !Self::chunk_has_live_job(db_ref.clone(), &chunk)? {
+                return Err(CubeError::user(format!("Stale job chunk publication: {}", id)));
+            }
             *partitions.entry(chunk.get_partition_id()).or_default() += chunk.get_row_count();
             activated_row_count += chunk.get_row_count();
             table.update_with_res_fn(
@@ -2543,6 +2589,30 @@ impl MetaStore for RocksMetaStore {
     async fn table_ready(&self, id: u64, is_ready: bool) -> Result<IdRow<Table>, CubeError> {
         self.write_operation("table_ready", move |db_ref, batch_pipe| {
             let rocks_table = TableRocksTable::new(db_ref.clone());
+            let table = rocks_table.get_row_or_not_found(id)?;
+            if is_ready {
+                if let Some(error) = table.get_row().import_error() {
+                    return Err(CubeError::user(format!("Table import failed: {}", error)));
+                }
+                let jobs = JobRocksTable::new(db_ref.clone());
+                for location in table.get_row().locations().unwrap_or_default() {
+                    if Table::is_stream_location(location) { continue; }
+                    let part = jobs.get_rows_by_index(
+                        &JobIndexKey::RowReference(RowKey::Table(TableId::Tables, id), JobType::TableImportCSV(location.clone())),
+                        &JobRocksIndex::RowReference,
+                    )?;
+                    let whole = jobs.get_rows_by_index(
+                        &JobIndexKey::RowReference(RowKey::Table(TableId::Tables, id), JobType::TableImport),
+                        &JobRocksIndex::RowReference,
+                    )?;
+                    if !part.iter().chain(whole.iter()).any(|j| {
+                        j.get_row().status() == &JobStatus::Completed
+                            && j.get_row().completed_imports().contains(location)
+                    }) {
+                        return Err(CubeError::user(format!("Import completion receipt missing for table {}, location {}", id, location)));
+                    }
+                }
+            }
             let entry =
                 rocks_table.update_with_fn(id, |r| r.update_is_ready(is_ready), batch_pipe)?;
 
@@ -3538,6 +3608,12 @@ impl MetaStore for RocksMetaStore {
         }
     }
 
+    async fn get_indexes(&self) -> Result<Vec<IdRow<Index>>, CubeError> {
+        self.read_operation("get_indexes", move |db_ref| {
+            IndexRocksTable::new(db_ref).all_rows()
+        }).await
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     async fn create_index(
         &self,
@@ -4041,6 +4117,21 @@ impl MetaStore for RocksMetaStore {
             uploaded_chunk_ids.iter().map(|(id, _)| id).join(", ")
         );
         self.write_operation("activate_chunks", move |db, pipe| {
+            // During a rolling upgrade an old worker can deserialize the new
+            // Job while ignoring its attempt field. It must not append untagged
+            // CSV batches and later be mistaken for a safely staged new worker.
+            let target = TableRocksTable::new(db.clone()).get_row_or_not_found(table_id)?;
+            let jobs = JobRocksTable::new(db.clone());
+            if let Some(attempt) = current_job_attempt() {
+                if jobs.get_row_or_not_found(attempt.job_id)?.get_row().is_file_import() {
+                    return Err(CubeError::user("File imports require atomic publish_import_chunks receipts".to_string()));
+                }
+            } else if !target.get_row().is_ready() && jobs.all_rows()?.iter().any(|j| {
+                j.get_row().row_reference() == &RowKey::Table(TableId::Tables, table_id)
+                    && j.get_row().is_file_import() && j.get_row().attempt().is_some()
+            }) {
+                return Err(CubeError::user("Unowned append to an attempt-managed import is forbidden".to_string()));
+            }
             TableRocksTable::new(db.clone()).update_with_fn(
                 table_id,
                 |t| t.update_has_data(true),
@@ -4164,6 +4255,11 @@ impl MetaStore for RocksMetaStore {
         self.write_operation("delete_chunks_without_checks", move |db_ref, batch_pipe| {
             let chunks = ChunkRocksTable::new(db_ref.clone());
             for id in chunk_ids {
+                // GC was enqueued from a snapshot. Publication may have won since.
+                let Some(chunk) = chunks.get_row(id)? else { continue; };
+                if chunk.get_row().active() || Self::chunk_has_live_job(db_ref.clone(), chunk.get_row())? {
+                    continue;
+                }
                 chunks.delete(id, batch_pipe)?;
             }
 
@@ -4191,13 +4287,14 @@ impl MetaStore for RocksMetaStore {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn all_inactive_not_uploaded_chunks(&self) -> Result<Vec<IdRow<Chunk>>, CubeError> {
         self.read_operation_out_of_queue("read_operation_out_of_queue", move |db_ref| {
-            let table = ChunkRocksTable::new(db_ref);
+            let table = ChunkRocksTable::new(db_ref.clone());
 
             let mut res = Vec::new();
 
             for c in table.scan_all_rows()? {
                 let c = c?;
-                if !c.get_row().active() && !c.get_row().uploaded() {
+                if !c.get_row().active() && !c.get_row().uploaded()
+                    && !Self::chunk_has_live_job(db_ref.clone(), c.get_row())? {
                     res.push(c);
                 }
             }
@@ -4323,6 +4420,13 @@ impl MetaStore for RocksMetaStore {
                 return Ok(None);
             }
 
+            if job.is_file_import() {
+                if let (RowKey::Table(TableId::Tables, id), JobStatus::Error(error)) = (job.row_reference(), job.status()) {
+                    TableRocksTable::new(db_ref.clone()).update_with_fn(
+                        *id, |t| t.update_import_error(Some(error.clone())), batch_pipe,
+                    )?;
+                }
+            }
             let id_row = table.insert(job, batch_pipe)?;
 
             Ok(Some(id_row))
@@ -4368,7 +4472,14 @@ impl MetaStore for RocksMetaStore {
                 .all_rows()?
                 .into_iter()
                 .filter(|j| {
-                    if let JobStatus::Scheduled(_) = j.get_row().status() {
+                    let recoverable = match j.get_row().status() {
+                        JobStatus::ProcessingBy(_) => true,
+                        JobStatus::Error(_) | JobStatus::Timeout | JobStatus::Orphaned => {
+                            !j.get_row().is_file_import() && !j.get_row().is_long_term()
+                        }
+                        _ => false,
+                    };
+                    if !recoverable || matches!(j.get_row().job_type(), JobType::Unknown) {
                         return false;
                     }
                     let duration1 =
@@ -4397,8 +4508,9 @@ impl MetaStore for RocksMetaStore {
                 .all_rows()?
                 .into_iter()
                 .filter(|j| match j.get_row().status() {
-                    JobStatus::Scheduled(node) | JobStatus::ProcessingBy(node) => {
-                        !nodes.contains(node)
+                    // Configuration/router changes must not evict healthy workers.
+                    JobStatus::Scheduled(node) => {
+                        !nodes.contains(node) && !matches!(j.get_row().job_type(), JobType::Unknown)
                     }
                     _ => false,
                 })
@@ -4411,6 +4523,10 @@ impl MetaStore for RocksMetaStore {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn delete_job(&self, job_id: u64) -> Result<IdRow<Job>, CubeError> {
         self.write_operation("delete_job", move |db_ref, batch_pipe| {
+            let job = JobRocksTable::new(db_ref.clone()).get_row_or_not_found(job_id)?;
+            if job.get_row().attempt().is_some() || matches!(job.get_row().job_type(), JobType::Unknown) {
+                return Err(CubeError::user("Owned jobs require attempt-checked completion/recovery".to_string()));
+            }
             Ok(JobRocksTable::new(db_ref.clone()).delete(job_id, batch_pipe)?)
         })
         .await
@@ -4418,49 +4534,9 @@ impl MetaStore for RocksMetaStore {
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn delete_unknown_jobs(&self) -> Result<u64, CubeError> {
-        // Cheap gate so the common steady state (no unknown jobs) doesn't take the
-        // single-writer queue every reconcile tick: scan out of queue first.
-        let has_unknown = self
-            .read_operation_out_of_queue("scan_unknown_jobs", move |db_ref| {
-                Ok(JobRocksTable::new(db_ref)
-                    .all_rows()?
-                    .into_iter()
-                    .any(|j| matches!(j.get_row().job_type(), JobType::Unknown)))
-            })
-            .await?;
-        if !has_unknown {
-            return Ok(0);
-        }
-
-        self.write_operation("delete_unknown_jobs", move |db_ref, batch_pipe| {
-            let table = JobRocksTable::new(db_ref);
-            let unknown = table
-                .all_rows()?
-                .into_iter()
-                .filter(|j| matches!(j.get_row().job_type(), JobType::Unknown))
-                .collect::<Vec<_>>();
-            if unknown.is_empty() {
-                return Ok(0);
-            }
-            for job in unknown.iter() {
-                log::warn!(
-                    "Removing job {} with an unknown type (written by a newer CubeStore version): {:?}",
-                    job.get_id(),
-                    job.get_row()
-                );
-                table.delete(job.get_id(), batch_pipe)?;
-            }
-            // delete() recomputes the RowReference index key from the row's job_type,
-            // which we read as Unknown — but the stored key was written by a newer
-            // binary over the real variant, so that delete leaves the original
-            // (unique) index entry dangling. Rebuild it in the same write so the
-            // cleanup commits atomically and a later upgrade never sees a phantom job.
-            let index: Box<dyn BaseRocksSecondaryIndex<Job>> =
-                Box::new(JobRocksIndex::RowReference);
-            table.rebuild_index(&index)?;
-            Ok(unknown.len() as u64)
-        })
-        .await
+        // Kept on the RPC surface for older callers, but downgrade/HA recovery
+        // must preserve unknown bytes and their original unique index keys.
+        Ok(0)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -4470,7 +4546,7 @@ impl MetaStore for RocksMetaStore {
         pool: JobRunnerPool,
     ) -> Result<Option<IdRow<Job>>, CubeError> {
         self.write_operation("start_processing_job", move |db_ref, batch_pipe| {
-            let table = JobRocksTable::new(db_ref);
+            let table = JobRocksTable::new(db_ref.clone());
             let next_job = table
                 .get_rows_by_index(
                     &JobIndexKey::ScheduledByShard(Some(server_name.to_string())),
@@ -4478,8 +4554,7 @@ impl MetaStore for RocksMetaStore {
                 )?
                 .into_iter()
                 // Jobs with an unknown type were written by a newer binary; this
-                // worker can't run them. Skip silently here — they are reported and
-                // removed by the scheduler's cleanup_unknown_jobs sweep.
+                // worker can't run them. Preserve them for a compatible worker.
                 .filter(|j| !matches!(j.get_row().job_type(), JobType::Unknown))
                 .filter(|j| j.get_row().matches_pool(pool))
                 //We use min_by instead of the max_by because of min_by returns the first element
@@ -4493,9 +4568,30 @@ impl MetaStore for RocksMetaStore {
                         job, node
                     )));
                 }
-                Ok(Some(table.update_with_fn(
+                if job.get_row().is_file_import() {
+                    if let RowKey::Table(TableId::Tables, table_id) = job.get_row().row_reference() {
+                        let tables = TableRocksTable::new(db_ref.clone());
+                        if tables.get_row(*table_id)?.is_some() {
+                            // Retrying this location cannot clear another location's
+                            // terminal failure on a multi-file table.
+                            let other_failure = table.all_rows()?.into_iter().find_map(|other| {
+                                if other.get_id() == job.get_id() || !other.get_row().is_file_import()
+                                    || other.get_row().row_reference() != job.get_row().row_reference() {
+                                    return None;
+                                }
+                                match other.get_row().status() {
+                                    JobStatus::Error(e) => Some(e.clone()),
+                                    JobStatus::Timeout => Some("Import job timed out or was cancelled".to_string()),
+                                    _ => None,
+                                }
+                            });
+                            tables.update_with_fn(*table_id, |t| t.update_import_error(other_failure), batch_pipe)?;
+                        }
+                    }
+                }
+                Ok(Some(table.update_with_res_fn(
                     job.get_id(),
-                    |row| row.start_processing(server_name),
+                    |row| row.start_processing(job.get_id(), server_name),
                     batch_pipe,
                 )?))
             } else {
@@ -4508,6 +4604,9 @@ impl MetaStore for RocksMetaStore {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn update_heart_beat(&self, job_id: u64) -> Result<IdRow<Job>, CubeError> {
         self.write_operation("update_heart_beat", move |db_ref, batch_pipe| {
+            if JobRocksTable::new(db_ref.clone()).get_row_or_not_found(job_id)?.get_row().attempt().is_some() {
+                return Err(CubeError::user("Heartbeat requires JobAttempt".to_string()));
+            }
             Ok(JobRocksTable::new(db_ref).update_with_fn(
                 job_id,
                 |row| row.update_heart_beat(),
@@ -4520,6 +4619,9 @@ impl MetaStore for RocksMetaStore {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn update_status(&self, job_id: u64, status: JobStatus) -> Result<IdRow<Job>, CubeError> {
         self.write_operation("update_status", move |db_ref, batch_pipe| {
+            if JobRocksTable::new(db_ref.clone()).get_row_or_not_found(job_id)?.get_row().attempt().is_some() {
+                return Err(CubeError::user("Status update requires JobAttempt".to_string()));
+            }
             Ok(JobRocksTable::new(db_ref).update_with_fn(
                 job_id,
                 |row| row.update_status(status),
@@ -4540,6 +4642,154 @@ impl MetaStore for RocksMetaStore {
             Ok(all_jobs)
         })
         .await
+    }
+
+    async fn heartbeat_job_attempt(&self, attempt: JobAttempt) -> Result<IdRow<Job>, CubeError> {
+        self.write_operation("heartbeat_job_attempt", move |db, pipe| {
+            let jobs = JobRocksTable::new(db);
+            jobs.get_row_or_not_found(attempt.job_id)?.get_row().check_owner(&attempt)?;
+            jobs.update_with_fn(attempt.job_id, |j| j.update_heart_beat(), pipe)
+        }).await
+    }
+
+    async fn finish_job_attempt(&self, attempt: JobAttempt, status: JobStatus) -> Result<IdRow<Job>, CubeError> {
+        self.write_operation("finish_job_attempt", move |db, pipe| {
+            let jobs = JobRocksTable::new(db.clone());
+            let job = jobs.get_row_or_not_found(attempt.job_id)?;
+            if !matches!(status, JobStatus::Completed | JobStatus::Timeout | JobStatus::Error(_)) {
+                return Err(CubeError::user("Invalid job completion status".to_string()));
+            }
+            // Idempotent retry after a lost completion response. A newer attempt
+            // (even on the same worker) cannot use this path.
+            if job.get_row().attempt() == Some(&attempt) && job.get_row().status() == &status {
+                return Ok(job);
+            }
+            job.get_row().check_owner(&attempt)?;
+            if job.get_row().is_file_import() {
+                if let RowKey::Table(TableId::Tables, table_id) = job.get_row().row_reference() {
+                    let tables = TableRocksTable::new(db.clone());
+                    let table = tables.get_row_or_not_found(*table_id)?;
+                    if status == JobStatus::Completed {
+                        let required = match job.get_row().job_type() {
+                            JobType::TableImportCSV(location) => vec![location],
+                            _ => table.get_row().locations().unwrap_or_default(),
+                        };
+                        if required.iter().any(|l| !job.get_row().completed_imports().contains(l)) {
+                            return Err(CubeError::user("Cannot complete import without durable location receipts".to_string()));
+                        }
+                    } else {
+                        let error = match &status {
+                            JobStatus::Error(e) => e.clone(),
+                            _ => "Import job timed out or was cancelled".to_string(),
+                        };
+                        tables.update_with_fn(*table_id, |t| t.update_import_error(Some(error)), pipe)?;
+                    }
+                }
+            }
+            let completed = jobs.update_with_fn(attempt.job_id, |j| j.update_status(status.clone()), pipe)?;
+            // Durable import receipts remain queryable after router death. Other
+            // jobs release their dedupe key atomically with successful completion.
+            if status == JobStatus::Completed && !job.get_row().is_file_import() {
+                jobs.delete(attempt.job_id, pipe)?;
+            }
+            Ok(completed)
+        }).await
+    }
+
+    async fn recover_job(&self, expected: IdRow<Job>, server_name: String, orphaned_timeout: Duration) -> Result<Option<IdRow<Job>>, CubeError> {
+        let timeout = chrono::Duration::from_std(orphaned_timeout)
+            .map_err(|e| CubeError::internal(e.to_string()))?;
+        self.write_operation("recover_job", move |db, pipe| {
+            let jobs = JobRocksTable::new(db.clone());
+            let Some(current) = jobs.get_row(expected.get_id())? else { return Ok(None); };
+            let row = current.get_row();
+            if matches!(row.job_type(), JobType::Unknown)
+                || row.attempt() != expected.get_row().attempt()
+                || row.status() != expected.get_row().status()
+                || row.last_heart_beat() != expected.get_row().last_heart_beat()
+            {
+                return Ok(None);
+            }
+            match row.status() {
+                JobStatus::ProcessingBy(_) => {
+                    if Utc::now().signed_duration_since(*row.last_heart_beat()) <= timeout {
+                        return Ok(None);
+                    }
+                }
+                JobStatus::Scheduled(node) if node != &server_name => {}
+                JobStatus::Error(_) | JobStatus::Timeout | JobStatus::Orphaned => {}
+                _ => return Ok(None),
+            }
+            // Old binaries activated CSV batches without receipts. Replaying one
+            // with visible data would duplicate appends; quarantine rather than guess.
+            if row.is_file_import() && row.attempt().is_none() {
+                if let RowKey::Table(TableId::Tables, id) = row.row_reference() {
+                    let tables = TableRocksTable::new(db.clone());
+                    if let Some(table) = tables.get_row(*id)? {
+                        if *table.get_row().has_data() {
+                            let error = "Legacy partial import has no durable receipts; explicit rebuild required".to_string();
+                            tables.update_with_fn(*id, |t| t.update_import_error(Some(error.clone())), pipe)?;
+                            jobs.update_with_fn(current.get_id(), |j| j.update_status(JobStatus::Error(error)), pipe)?;
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+            Ok(Some(jobs.update_with_fn(current.get_id(), |j| j.update_status(JobStatus::Scheduled(server_name)), pipe)?))
+        }).await
+    }
+
+    async fn publish_import_chunks(&self, attempt: JobAttempt, table_id: u64, location: String, uploaded_chunk_ids: Vec<(u64, Option<u64>)>) -> Result<(), CubeError> {
+        self.write_operation("publish_import_chunks", move |db, pipe| {
+            let jobs = JobRocksTable::new(db.clone());
+            let job = jobs.get_row_or_not_found(attempt.job_id)?;
+            job.get_row().check_owner(&attempt)?;
+            if job.get_row().row_reference() != &RowKey::Table(TableId::Tables, table_id)
+                || !match job.get_row().job_type() {
+                    JobType::TableImport => true,
+                    JobType::TableImportCSV(l) => l == &location && !Table::is_stream_location(l),
+                    _ => false,
+                }
+            {
+                return Err(CubeError::user("Import receipt does not belong to this job".to_string()));
+            }
+            // A lost ACK or a recovered attempt must not append a location again.
+            if job.get_row().completed_imports().contains(&location) { return Ok(()); }
+            let tables = TableRocksTable::new(db.clone());
+            let table = tables.get_row_or_not_found(table_id)?;
+            if table.get_row().is_ready() || !table.get_row().locations().unwrap_or_default().contains(&&location) {
+                return Err(CubeError::user("Cannot publish an import into a ready or unrelated table".to_string()));
+            }
+            let chunks = ChunkRocksTable::new(db.clone());
+            let mut unique = HashSet::new();
+            for (id, _) in &uploaded_chunk_ids {
+                let c = chunks.get_row_or_not_found(*id)?;
+                let c = c.get_row();
+                if !unique.insert(*id) || c.active() || c.uploaded() || c.in_memory()
+                    || c.job_id != Some(attempt.job_id) || c.job_generation != Some(attempt.generation)
+                {
+                    return Err(CubeError::user(format!("Invalid attempt-staged import chunk {}", id)));
+                }
+                let p = PartitionRocksTable::new(db.clone()).get_row_or_not_found(c.get_partition_id())?;
+                let index = IndexRocksTable::new(db.clone()).get_row_or_not_found(p.get_row().get_index_id())?;
+                if index.get_row().table_id() != table_id {
+                    return Err(CubeError::user("Import chunk belongs to another table".to_string()));
+                }
+            }
+            let (_, partition_rows) = Self::activate_chunks_impl(db.clone(), pipe, &uploaded_chunk_ids, None)?;
+            let partitions = PartitionRocksTable::new(db.clone());
+            let mut multi_rows = HashMap::new();
+            for (id, rows) in partition_rows {
+                if let Some(mp) = partitions.get_row_or_not_found(id)?.get_row().multi_partition_id() {
+                    *multi_rows.entry(mp).or_insert(0) += rows;
+                }
+            }
+            let multi = MultiPartitionRocksTable::new(db.clone());
+            for (id, rows) in multi_rows { multi.update_with_fn(id, |p| p.add_rows(rows), pipe)?; }
+            tables.update_with_fn(table_id, |t| t.update_has_data(true), pipe)?;
+            jobs.update_with_fn(attempt.job_id, |j| j.with_import_receipt(location), pipe)?;
+            Ok(())
+        }).await
     }
 
     #[tracing::instrument(level = "trace", skip(self, credentials))]
@@ -7889,16 +8139,13 @@ mod tests {
                 .await
                 .is_ok());
 
-            // The cleanup sweep removes the unknown job and leaves the known one.
-            assert_eq!(meta_store.delete_unknown_jobs().await?, 1);
+            // HA/downgrade reconciliation must preserve unknown payloads and keys.
+            assert_eq!(meta_store.delete_unknown_jobs().await?, 0);
             assert_eq!(meta_store.delete_unknown_jobs().await?, 0);
 
             let remaining = meta_store.all_jobs().await?;
-            assert_eq!(remaining.len(), 1);
-            assert_eq!(
-                remaining[0].get_row().job_type(),
-                &JobType::PartitionCompaction
-            );
+            assert_eq!(remaining.len(), 2);
+            assert!(remaining.iter().any(|j| j.get_row().job_type() == &JobType::Unknown));
 
             // The RowReference index is consistent after the cleanup-time rebuild:
             // re-adding a job for the freed reference works (no phantom dedup hit).

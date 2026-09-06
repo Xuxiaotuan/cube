@@ -1,0 +1,7 @@
+Pinned API pod: cube-ha-remediation/analytics-api-7bdb6cd684-2tw49; evidence directory: /tmp/cube-ha-drain-final-evidence
+drain-failover: start real rollup ra552a74642ac663f (leader=analytics-router-69457448dc-fs56m, epoch=16)
+Injecting drain-failover: delete pinned test leader cube-ha-remediation/analytics-router-69457448dc-fs56m uid=9cca0504-01ba-4e8d-9a58-b9e56dfcba57
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "analytics-router-69457448dc-fs56m" force deleted
+PASS drain-failover (ra552a74642ac663f): /tmp/cube-ha-drain-final-evidence/ra552a74642ac663f-drain-failover.json
+Evidence: /tmp/cube-ha-drain-final-evidence/ra552a74642ac663f-drain-failover.json

@@ -455,6 +455,12 @@ impl CacheEvictionManager {
                 let mut skipped: u32 = 0;
 
                 for (id, raw_size) in batch {
+                    // Recheck in the write operation: selection and deletion use
+                    // different snapshots. Explicit CACHE REMOVE/wipe bypass this.
+                    if Self::is_recovery_row(&cache_schema, id)? {
+                        skipped += 1;
+                        continue;
+                    }
                     if let Some(_) = cache_schema.try_delete(id, pipe)? {
                         deleted_count += 1;
                         deleted_size += raw_size as u64;
@@ -652,6 +658,10 @@ impl CacheEvictionManager {
                     stats_total_keys += 1;
                     stats_total_raw_size += row_size as u64;
 
+                    if Self::is_recovery_row(&cache_schema, item.row_id)? {
+                        continue;
+                    }
+
                     if let Some(ttl) = item.ttl {
                         if ttl < now {
                             expired.push((item.row_id, row_size));
@@ -705,6 +715,10 @@ impl CacheEvictionManager {
                     // We need to count expired keys too for correct stats!
                     stats_total_keys += 1;
                     stats_total_raw_size += raw_size as u64;
+
+                    if Self::is_recovery_row(&cache_schema, item.row_id)? {
+                        continue;
+                    }
 
                     if let Some(ttl) = item.ttl {
                         let ready_to_delete = if ttl <= now_at_start {
@@ -844,6 +858,10 @@ impl CacheEvictionManager {
                 for item in cache_schema.scan_index_values(&CacheItemRocksIndex::ByPath)? {
                     let item = item?;
 
+                    if Self::is_recovery_row(&cache_schema, item.row_id)? {
+                        continue;
+                    }
+
                     let (weight, raw_size) =
                         Self::get_weight_and_size_by_criteria(&item, &criteria, lfu_decay_time)?;
 
@@ -972,6 +990,13 @@ impl CacheEvictionManager {
                 .await
             }
         };
+    }
+
+    fn is_recovery_row(table: &CacheItemRocksTable<'_>, row_id: u64) -> Result<bool, CubeError> {
+        Ok(table
+            .get_row(row_id)?
+            .map(|row| row.get_row().is_pre_aggregation_recovery())
+            .unwrap_or(false))
     }
 
     pub async fn run_persist(&self, store: &Arc<RocksStore>) -> Result<(), CubeError> {
@@ -1239,6 +1264,85 @@ pub struct TruncationBlockGuard<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cachestore::cache_item::PRE_AGG_RECOVERY_PREFIXES;
+    use crate::cachestore::cache_rocksstore::{CacheStore, RocksCacheStore};
+    use crate::config::{init_test_logger, Config};
+
+    #[tokio::test]
+    async fn test_pre_aggregation_recovery_survives_all_eviction_policies() -> Result<(), CubeError>
+    {
+        init_test_logger().await;
+        for policy in [
+            CacheEvictionPolicy::AllKeysLru,
+            CacheEvictionPolicy::AllKeysLfu,
+            CacheEvictionPolicy::AllKeysTtl,
+            CacheEvictionPolicy::SampledLru,
+            CacheEvictionPolicy::SampledLfu,
+            CacheEvictionPolicy::SampledTtl,
+        ] {
+            let name = format!("preagg-protocol-eviction-{}", policy as u8);
+            let config = Config::test(&name).update_config(|mut config| {
+                config.cachestore_cache_policy = policy;
+                config.cachestore_cache_max_keys = 10;
+                // Do not trigger background forced eviction during fixture setup.
+                config.cachestore_cache_threshold_to_force_eviction = 255;
+                config
+            });
+            let (_, store) = RocksCacheStore::prepare_test_cachestore(&name, config);
+            for prefix in PRE_AGG_RECOVERY_PREFIXES {
+                store
+                    .cache_set(
+                        CacheItem::new(
+                            format!("{}table:ready", prefix),
+                            Some(0),
+                            "intent".to_string(),
+                        ),
+                        true,
+                    )
+                    .await?;
+            }
+            for i in 0..24 {
+                store
+                    .cache_set(
+                        CacheItem::new(format!("ordinary:{}", i), None, "cache".to_string()),
+                        false,
+                    )
+                    .await?;
+            }
+            // First pass loads stats; second pass applies the selected policy.
+            store.eviction().await?;
+            store.eviction().await?;
+            for prefix in PRE_AGG_RECOVERY_PREFIXES {
+                assert!(
+                    store
+                        .cache_get(format!("{}table:ready", prefix))
+                        .await?
+                        .is_some(),
+                    "{:?}: {}",
+                    policy,
+                    prefix
+                );
+            }
+            assert!(
+                store.cache_all(None).await?.len() < 29,
+                "ordinary entries must still be evicted: {:?}",
+                policy
+            );
+            // Protection is only automatic: explicit removal and wipe still work.
+            store
+                .cache_delete("PRE_AGG_BUILD_V1:table:ready".to_string())
+                .await?;
+            assert!(store
+                .cache_get("PRE_AGG_BUILD_V1:table:ready".to_string())
+                .await?
+                .is_none());
+            store.truncate().await?;
+            assert!(store.cache_all(None).await?.is_empty());
+            drop(store);
+            RocksCacheStore::cleanup_test_cachestore(&name);
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_lfu_decay_no_time() {

@@ -154,7 +154,7 @@ impl CompactionServiceImpl {
             .map(|c| {
                 let chunk_store = self.chunk_store.clone();
                 let partition = partition.clone();
-                cube_ext::spawn(async move {
+                crate::metastore::job::spawn_job(async move {
                     let has_in_memory_chunk = chunk_store
                         .has_in_memory_chunk(c.clone(), partition)
                         .await?;
@@ -1184,7 +1184,7 @@ async fn download_files(
         for f in &mut remote_files {
             let (f, size) = take(f);
             let fs = fs.clone();
-            tasks.push(cube_ext::spawn(
+            tasks.push(crate::metastore::job::spawn_job(
                 async move { fs.download_file(f, size).await },
             ))
         }
@@ -3126,7 +3126,7 @@ impl MultiSplit {
             let fs = self.fs.clone();
             let local_path = out_files[i].to_string();
             let remote_path = out_files[i].to_string();
-            uploads.push(cube_ext::spawn(async move {
+            uploads.push(crate::metastore::job::spawn_job(async move {
                 fs.upload_file(local_path, remote_path).await
             }));
         }

@@ -1109,7 +1109,7 @@ impl ChunkStore {
                 let file_size = chunk.get_row().file_size();
                 let remote_path = ChunkStore::chunk_file_name(chunk.clone());
                 let remote_fs = self.remote_fs.clone();
-                downloads.push(cube_ext::spawn(async move {
+                downloads.push(crate::metastore::job::spawn_job(async move {
                     // Warm the cache; a genuine error surfaces later in chunk_exec.
                     let _ = remote_fs.download_file(remote_path, file_size).await;
                 }));
@@ -2939,7 +2939,7 @@ impl ChunkStore {
             let cluster = self.cluster.clone();
 
             let chunk_name = chunk_file_name(chunk.get_id(), chunk.get_row().suffix());
-            Ok(cube_ext::spawn(async move {
+            Ok(crate::metastore::job::spawn_job(async move {
                 cluster
                     .add_memory_chunk(&node_name, chunk_name, batch)
                     .await?;
@@ -2968,7 +2968,7 @@ impl ChunkStore {
             .await??;
 
             let fs = self.remote_fs.clone();
-            Ok(cube_ext::spawn(async move {
+            Ok(crate::metastore::job::spawn_job(async move {
                 let file_size = fs
                     .upload_file(local_file.to_string(), remote_path.clone())
                     .await?;

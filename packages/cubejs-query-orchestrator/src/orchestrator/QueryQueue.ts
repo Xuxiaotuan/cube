@@ -240,7 +240,12 @@ export class QueryQueue {
       // query (initialized by the /cubejs-system/v1/pre-aggregations/jobs
       // endpoint).
       let result = !query.forceBuild && await queueConnection.getResult(queryKey, options.externalId);
-      if (result && !result.streamResult) {
+      // Only a durable pre-aggregation can resume after a cached connection
+      // failure. This does not enable replay of arbitrary queued SQL mutations.
+      const resumableBuildError = query.preAggregationBuildId && result && (
+        ['MUTATION_UNKNOWN', 'PRE_AGG_REBUILD_REQUIRED'].includes(result.errorCode) || result.errorName === 'ConnectionError'
+      );
+      if (result && !result.streamResult && !resumableBuildError) {
         return this.parseResult(result);
       }
 
@@ -387,7 +392,10 @@ export class QueryQueue {
       return result;
     }
     if (result.error) {
-      throw new Error(result.error); // TODO
+      const error = new Error(result.error);
+      error.name = result.errorName || 'Error';
+      (error as any).code = result.errorCode;
+      throw error;
     } else {
       // eslint-disable-next-line consistent-return
       return result.result;
@@ -708,7 +716,9 @@ export class QueryQueue {
       });
     } catch (e: any) {
       executionResult = {
-        error: (e.message || e).toString() // TODO error handling
+        error: (e.message || e).toString(),
+        errorCode: e.code,
+        errorName: e.name,
       };
       this.logger('Error while querying', {
         queueId,
@@ -913,7 +923,9 @@ export class QueryQueue {
           });
         } catch (e: any) {
           executionResult = {
-            error: (e.message || e).toString() // TODO error handling
+            error: (e.message || e).toString(),
+            errorCode: e.code,
+            errorName: e.name,
           };
           this.logger('Error while querying', {
             queueId,

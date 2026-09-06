@@ -256,6 +256,8 @@ class ApiGateway {
 
     app.get('/readyz', guestMiddlewares, cachedHandler(this.readiness));
     app.get('/livez', guestMiddlewares, cachedHandler(this.liveness));
+    // Process probes must not wait for dependencies during router failover.
+    app.get('/livez/process', (_req, res) => this.healthResponse(res, 'HEALTH'));
 
     /** **************************************************************
      * graphql scope                                                 *

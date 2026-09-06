@@ -1,0 +1,424 @@
+{
+  "controllerExit": 1,
+  "status": "FAIL",
+  "workflow": "scheduled-refresher-warmup-then-api-consumption",
+  "apiPod": "analytics-api-8d47d47-52mxd",
+  "apiUid": "40ff853a-59c0-413b-a760-66e47ef35817",
+  "builderPod": "analytics-refresher-7d4bfb9b78-mqhfg",
+  "builderUid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+  "apiRuntimeEvidence": "/tmp/cube-ha-refresher-ready-evidence/rcf69aef1b00c653b-api-runtime.jsonl",
+  "events": [
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:04.553Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "effective_budgets",
+      "budgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:04.616Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "readiness_observed",
+      "readinessBefore": {
+        "api": {
+          "health": "HEALTH",
+          "recoveryCapabilities": {
+            "fileImportBuildScheduling": false
+          }
+        },
+        "refresher": {
+          "health": "HEALTH",
+          "recoveryCapabilities": {
+            "fileImportBuildScheduling": true
+          }
+        }
+      },
+      "apiPod": "analytics-api-8d47d47-52mxd",
+      "apiUid": "40ff853a-59c0-413b-a760-66e47ef35817",
+      "executorPod": "analytics-refresher-7d4bfb9b78-mqhfg",
+      "executorUid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+      "trigger": "scheduled-refresh-warmup"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:05.160Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "source_ready",
+      "sourceTable": "ha_rcf69aef1b00c653b_source.events",
+      "rollupSchema": "ha_rcf69aef1b00c653b_rollups",
+      "rows": 4096,
+      "transfer": "rows",
+      "expectedHash": "c9608cf754eeef054d3dba04ac843e30bcbe5d873ca6c11563d0e73f23f9d572",
+      "cache": "cubestore"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:05.170Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "scheduled_context_registered",
+      "registrationKey": "HA_DEMO_CONTEXT_V1:rcf69aef1b00c653b",
+      "registration": {
+        "context": {
+          "securityContext": {
+            "haRun": "rcf69aef1b00c653b",
+            "haTransfer": "rows",
+            "haScheduled": true
+          },
+          "requestId": "ha-rcf69aef1b00c653b"
+        },
+        "expiresAt": 1788724264552,
+        "sourceTable": "ha_rcf69aef1b00c653b_source.events",
+        "expectedHash": "c9608cf754eeef054d3dba04ac843e30bcbe5d873ca6c11563d0e73f23f9d572"
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:05.994Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "fault_ready",
+      "upload": {
+        "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+        "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+        "size": 41058,
+        "bytesForwarded": 41057,
+        "blockedLastByte": true
+      },
+      "manifest": {
+        "buildId": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+        "versionEntry": {
+          "table_name": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+          "structure_version": "onwhan4n",
+          "content_version": "1wmbn020",
+          "last_updated_at": 1788723965801,
+          "naming_version": 2
+        },
+        "protectedTables": [],
+        "phase": "uploading",
+        "uploads": [
+          {
+            "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+            "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+            "size": 41058,
+            "path": "/tmp/4abd17e1502feb4535ac382bfd4de587"
+          }
+        ],
+        "manifestHash": "92ae2b63556f786c05fcea07c72d6a49c13b54ba3865802e9be85a8f4c2a9cc5",
+        "create": {
+          "sql": "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+          "params": [
+            "temp://735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz"
+          ]
+        }
+      },
+      "key": "PRE_AGG_BUILD_V1:ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+      "buildStatus": {
+        "state": "absent"
+      },
+      "queryCompleted": false,
+      "trigger": "scheduled-refresh-warmup",
+      "apiLoadStarted": false,
+      "executorPod": "analytics-refresher-7d4bfb9b78-mqhfg",
+      "executorUid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+      "queueEvidence": {
+        "kind": "cube-ha-runtime",
+        "time": "2026-09-06T19:46:05.845Z",
+        "role": "refresher",
+        "podName": "analytics-refresher-7d4bfb9b78-mqhfg",
+        "podUid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+        "processUid": "22b3f86e-78fb-5096-9dd6-2b73cdc604e0",
+        "message": "Performing query",
+        "params": {
+          "queueId": 52,
+          "processingId": 52,
+          "queueSize": 0,
+          "queryKey": [
+            [
+              "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id AS SELECT\n      `router_ha_rollup`.bucket `router_ha_rollup__bucket`, `router_ha_rollup`.id `router_ha_rollup__id`, sum(`router_ha_rollup`.checksum) `router_ha_rollup__id_checksum`, count(`router_ha_rollup`.id) `router_ha_rollup__row_count`, sum(`router_ha_rollup`.amount) `router_ha_rollup__total_amount`\n    FROM\n      (SELECT id, amount, bucket, checksum FROM ha_rcf69aef1b00c653b_source.events) AS `router_ha_rollup`  GROUP BY 1, 2",
+              []
+            ],
+            [
+              [
+                {
+                  "Int64(1)": "1"
+                }
+              ]
+            ]
+          ],
+          "queuePrefix": "SQL_PRE_AGGREGATIONS_rcf69aef1b00c653b_default",
+          "requestId": "scheduler-ha-rcf69aef1b00c653b",
+          "timeInQueue": 6,
+          "preAggregationId": "RouterHaRollup.byId",
+          "newVersionEntry": {
+            "table_name": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+            "structure_version": "onwhan4n",
+            "content_version": "1wmbn020",
+            "last_updated_at": 1788723965801,
+            "naming_version": 2
+          },
+          "preAggregation": {
+            "preAggregationId": "RouterHaRollup.byId",
+            "timezone": "UTC",
+            "timestampFormat": "YYYY-MM-DDTHH:mm:ss.SSS",
+            "timestampPrecision": 3,
+            "tableName": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+            "invalidateKeyQueries": [
+              [
+                "SELECT 1",
+                [],
+                {
+                  "external": false,
+                  "renewalThreshold": 10
+                }
+              ]
+            ],
+            "type": "rollup",
+            "external": true,
+            "previewSql": [
+              "SELECT * FROM ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id LIMIT 1000",
+              []
+            ],
+            "preAggregationsSchema": "ha_rcf69aef1b00c653b_rollups",
+            "loadSql": [
+              "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id AS SELECT\n      `router_ha_rollup`.bucket `router_ha_rollup__bucket`, `router_ha_rollup`.id `router_ha_rollup__id`, sum(`router_ha_rollup`.checksum) `router_ha_rollup__id_checksum`, count(`router_ha_rollup`.id) `router_ha_rollup__row_count`, sum(`router_ha_rollup`.amount) `router_ha_rollup__total_amount`\n    FROM\n      (SELECT id, amount, bucket, checksum FROM ha_rcf69aef1b00c653b_source.events) AS `router_ha_rollup`  GROUP BY 1, 2",
+              []
+            ],
+            "sql": [
+              "SELECT\n      `router_ha_rollup`.bucket `router_ha_rollup__bucket`, `router_ha_rollup`.id `router_ha_rollup__id`, sum(`router_ha_rollup`.checksum) `router_ha_rollup__id_checksum`, count(`router_ha_rollup`.id) `router_ha_rollup__row_count`, sum(`router_ha_rollup`.amount) `router_ha_rollup__total_amount`\n    FROM\n      (SELECT id, amount, bucket, checksum FROM ha_rcf69aef1b00c653b_source.events) AS `router_ha_rollup`  GROUP BY 1, 2",
+              []
+            ],
+            "outputColumnTypes": null,
+            "uniqueKeyColumns": [
+              "`router_ha_rollup__bucket`",
+              "`router_ha_rollup__id`"
+            ],
+            "aggregationsColumns": [
+              "sum(`router_ha_rollup__id_checksum`)",
+              "sum(`router_ha_rollup__row_count`)",
+              "sum(`router_ha_rollup__total_amount`)"
+            ],
+            "dataSource": "default",
+            "updateWindowSeconds": false,
+            "indexesSql": [],
+            "createTableIndexes": [],
+            "readOnly": true,
+            "expandedPartition": true,
+            "priority": -1
+          },
+          "addedToQueueTime": 1788723965839
+        },
+        "run": "rcf69aef1b00c653b"
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:06.718Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "failure",
+      "status": "evidence_incomplete",
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining\n    at WebSocket.<anonymous> (/cube/packages/cubejs-cubestore-driver/dist/src/WebSocketConnection.js:175:45)\n    at WebSocket.emit (node:events:509:28)\n    at Receiver.receiverOnMessage (/cube/node_modules/ws/lib/websocket.js:1070:20)\n    at Receiver.emit (node:events:509:28)\n    at Receiver.dataMessage (/cube/node_modules/ws/lib/receiver.js:502:14)\n    at Receiver.getData (/cube/node_modules/ws/lib/receiver.js:435:17)\n    at Receiver.startLoop (/cube/node_modules/ws/lib/receiver.js:143:22)\n    at Receiver._write (/cube/node_modules/ws/lib/receiver.js:78:10)\n    at writeOrBuffer (node:internal/streams/writable:570:12)\n    at _write (node:internal/streams/writable:499:10)",
+      "manifestBefore": [
+        {
+          "key": "PRE_AGG_BUILD_V1:ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+          "buildIdentity": {
+            "buildId": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+            "versionEntry": {
+              "table_name": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+              "structure_version": "onwhan4n",
+              "content_version": "1wmbn020",
+              "last_updated_at": 1788723965801,
+              "naming_version": 2
+            },
+            "protectedTables": [],
+            "phase": "selected"
+          },
+          "immutableManifest": {
+            "create": {
+              "sql": "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+              "params": [
+                "temp://735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz"
+              ]
+            },
+            "uploads": [
+              {
+                "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+                "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+                "size": 41058
+              }
+            ],
+            "manifestHash": "92ae2b63556f786c05fcea07c72d6a49c13b54ba3865802e9be85a8f4c2a9cc5"
+          },
+          "markers": {
+            "uploading": {
+              "buildId": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+              "versionEntry": {
+                "table_name": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+                "structure_version": "onwhan4n",
+                "content_version": "1wmbn020",
+                "last_updated_at": 1788723965801,
+                "naming_version": 2
+              },
+              "protectedTables": [],
+              "phase": "uploading",
+              "uploads": [
+                {
+                  "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+                  "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+                  "size": 41058,
+                  "path": "/tmp/4abd17e1502feb4535ac382bfd4de587"
+                }
+              ],
+              "manifestHash": "92ae2b63556f786c05fcea07c72d6a49c13b54ba3865802e9be85a8f4c2a9cc5",
+              "create": {
+                "sql": "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+                "params": [
+                  "temp://735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz"
+                ]
+              }
+            }
+          },
+          "tableIdentity": null,
+          "record": {
+            "buildId": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+            "versionEntry": {
+              "table_name": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id",
+              "structure_version": "onwhan4n",
+              "content_version": "1wmbn020",
+              "last_updated_at": 1788723965801,
+              "naming_version": 2
+            },
+            "protectedTables": [],
+            "phase": "uploading",
+            "uploads": [
+              {
+                "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+                "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+                "size": 41058,
+                "path": "/tmp/4abd17e1502feb4535ac382bfd4de587"
+              }
+            ],
+            "manifestHash": "92ae2b63556f786c05fcea07c72d6a49c13b54ba3865802e9be85a8f4c2a9cc5",
+            "create": {
+              "sql": "CREATE TABLE ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+              "params": [
+                "temp://735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz"
+              ]
+            }
+          }
+        }
+      ],
+      "transport": {
+        "mode": "refresher-failover",
+        "uploads": [
+          {
+            "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+            "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+            "size": 41058,
+            "afterFault": false
+          }
+        ],
+        "receipts": [
+          {
+            "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+            "state": "missing",
+            "afterFault": false
+          }
+        ],
+        "builds": [
+          {
+            "table": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+            "state": "absent",
+            "afterFault": false
+          }
+        ],
+        "fault": {
+          "name": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24.csv.gz",
+          "sha256": "735741a44e5d9c442f7bb63e544c00d28d56561289be805aab15c6c716f02d24",
+          "size": 41058,
+          "bytesForwarded": 41057,
+          "blockedLastByte": true
+        },
+        "released": false
+      },
+      "apiAvailability": {
+        "count": 0,
+        "firstAt": null,
+        "lastAt": null,
+        "recoveredAt": null,
+        "windowMs": 0
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:06.718Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "context_cleanup_incomplete",
+      "registrationKey": "HA_DEMO_CONTEXT_V1:rcf69aef1b00c653b",
+      "error": "CubeStore connection closed after sending a non-idempotent request; mutation outcome is unknown",
+      "expiresAt": 1788724264552
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:46:06.719Z",
+      "run": "rcf69aef1b00c653b",
+      "mode": "refresher-failover",
+      "event": "result",
+      "status": "FAIL",
+      "evidence": "evidence_incomplete",
+      "effectiveBudgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    }
+  ]
+}

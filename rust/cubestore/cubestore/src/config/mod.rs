@@ -3,8 +3,8 @@ pub mod injection;
 pub mod processing_loop;
 
 use crate::cachestore::{
-    CacheEvictionPolicy, CacheStore, CacheStoreSchedulerImpl, ClusterCacheStoreClient,
-    LazyRocksCacheStore,
+    CacheEvictionPolicy, CacheStore, CacheStoreSchedulerImpl, CacheStoreRpcClient,
+    LazyRocksCacheStore, RemoteCacheStoreTransport,
 };
 use crate::cluster::ingestion::job_processor::{JobProcessor, JobProcessorImpl};
 use crate::cluster::rate_limiter::{BasicProcessRateLimiter, ProcessRateLimiter};
@@ -152,10 +152,10 @@ impl CubeServices {
                 futures.extend(scheduler.spawn_processing_loops());
             }
 
-            if self.cluster.is_select_worker()
+            if self.rocks_cache_store.is_some()
                 && self
-                .injector
-                .has_service_typed::<CacheStoreSchedulerImpl>()
+                    .injector
+                    .has_service_typed::<CacheStoreSchedulerImpl>()
                 .await
             {
                 let scheduler = self
@@ -244,10 +244,12 @@ impl CubeServices {
             cleanup.stop();
         }
 
-        if self
-            .injector
-            .has_service_typed::<CacheStoreSchedulerImpl>()
-            .await
+        if !self.cluster.is_select_worker()
+            && self.rocks_cache_store.is_some()
+            && self
+                .injector
+                .has_service_typed::<CacheStoreSchedulerImpl>()
+                .await
         {
             let scheduler = self
                 .injector
@@ -2522,8 +2524,10 @@ impl Config {
 
         if uses_remote_metastore(&self.injector).await {
             self.injector
-                .register_typed::<dyn CacheStore, _, _, _>(async move |_| {
-                    Arc::new(ClusterCacheStoreClient {})
+                .register_typed::<dyn CacheStore, _, _, _>(async move |i| {
+                    Arc::new(CacheStoreRpcClient::new(RemoteCacheStoreTransport::new(
+                        i.get_service_typed().await,
+                    )))
                 })
                 .await;
         } else {

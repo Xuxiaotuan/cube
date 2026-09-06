@@ -726,7 +726,7 @@ export class PreAggregations {
               ),
               { requestId, externalRefresh: this.externalRefresh, buildRangeEnd }
             );
-            return loader.refresh(newVersionEntry, invalidationKeys, client);
+            return loader.refresh(newVersionEntry, invalidationKeys, client, q.preAggregationBuildId);
           },
           {
             concurrency: 1,

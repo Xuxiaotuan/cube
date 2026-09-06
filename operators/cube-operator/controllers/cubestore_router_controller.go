@@ -131,9 +131,6 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			log.Error(promotionErr, "promotion reconciliation failed", "phase", promotionPhase, "epoch", lease.Epoch)
 		}
 	}
-	promotionReady := promotionLeader != nil && promotionPhase == promotionPhaseServing
-	nextStatus.Conditions = r.withLeaderCondition(candidates, promotionLeader, leaderCandidates, nextStatus.Conditions, int64(cr.Generation))
-	nextStatus = withRecoveryStatus(nextStatus, promotionReady)
 
 	syncStateErr := promotionErr
 	if syncStateErr == nil {
@@ -154,6 +151,13 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			promotionPhase = promotionPhaseFenced
 		}
 	}
+	// Publication failure invalidates readiness as well as the serving label.
+	if syncStateErr != nil {
+		promotionLeader = nil
+		promotionPhase = promotionPhaseFenced
+	}
+	nextStatus = withRecoveryStatus(nextStatus, promotionLeader != nil && promotionPhase == promotionPhaseServing, promotionLeader)
+	nextStatus.Conditions = r.withLeaderCondition(candidates, promotionLeader, leaderCandidates, nil, int64(cr.Generation))
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
 	nextStatus.Conditions = r.withRecoveryConditions(nextStatus.Conditions, nextStatus.Recovery, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
@@ -175,19 +179,35 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		nextStatus.LastSwitchedAt = cr.Status.LastSwitchedAt
 	}
 
-	if !statusEqual(cr.Status, nextStatus) && lease.Epoch > 0 {
-		if err := r.updateRouterStatusWithFence(ctx, &cr, nextStatus, lease); err != nil {
+	if !statusEqual(cr.Status, nextStatus) {
+		var err error
+		if lease.Epoch > 0 && leaseErr == nil {
+			err = r.updateRouterStatusWithFence(ctx, &cr, nextStatus, lease)
+		} else {
+			// Only publish an unavailable status without a lease. Kubernetes RV
+			// concurrency rejects a stale observer racing a newer controller.
+			unavailable := cr.DeepCopy()
+			unavailable.Status = nextStatus
+			err = r.Status().Update(ctx, unavailable)
+		}
+		if err != nil {
 			log.Error(err, "update status failed")
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 		}
 	}
 
 	if syncStateErr != nil {
+		if errors.Is(syncStateErr, errPromotionPending) {
+			// Expected propagation waits must use the fixed poll interval. A
+			// non-nil error makes controller-runtime ignore RequeueAfter and
+			// accumulate exponential backoff, delaying the next acknowledgement.
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		log.Error(syncStateErr, "role state synchronization failed", "phase", promotionPhase, "epoch", lease.Epoch)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, syncStateErr
 	}
 
-	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
 func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *v1alpha1.CubestoreRouter, candidates []candidate) (*candidate, leadership.LeaseRecord, error) {
@@ -655,19 +675,20 @@ func maxInt64(a, b int64) int64 {
 }
 
 type candidate struct {
-	Name           string
-	Namespace      string
-	PodIP          string
-	Role           string
-	Ready          bool
-	LastProbe      metav1.Time
-	CreatedAt      time.Time
-	StatusContract bool
-	IsLeader       bool
-	LeaderEpoch    int64
-	LeaseEpoch     int64
-	LeaseTokenHash string
-	MetaStoreReady bool
+	Name                 string
+	Namespace            string
+	PodIP                string
+	Role                 string
+	Ready                bool
+	LastProbe            metav1.Time
+	CreatedAt            time.Time
+	StatusContract       bool
+	IsLeader             bool
+	LeaderEpoch          int64
+	LeaseEpoch           int64
+	LeaseTokenHash       string
+	MetaStoreReady       bool
+	RecoveryCapabilities *runtimeRecoveryCapabilities
 }
 
 type routerLeaderState struct {
@@ -724,113 +745,53 @@ func (r *CubestoreRouterReconciler) probeCandidates(ctx context.Context, pods []
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-
-	httpClient := &http.Client{Timeout: 2 * time.Second}
+	h := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	out := make([]candidate, 0, len(pods))
-
 	for _, p := range pods {
-		cand := candidate{
-			Name:      p.Name,
-			Namespace: p.Namespace,
-			PodIP:     p.Status.PodIP,
-			Ready:     isPodReady(&p),
-			LastProbe: metav1.Now(),
-			Role:      labelFollower,
-			CreatedAt: p.CreationTimestamp.Time,
-		}
-
-		if cand.PodIP == "" || !cand.Ready {
+		cand := candidate{Name: p.Name, Namespace: p.Namespace, PodIP: p.Status.PodIP, LastProbe: metav1.Now(), Role: labelFollower, CreatedAt: p.CreationTimestamp.Time}
+		if cand.PodIP == "" || !isPodReady(&p) || !p.DeletionTimestamp.IsZero() {
 			out = append(out, cand)
 			continue
 		}
-
-		endpoint := fmt.Sprintf("http://%s%s?detail=1", net.JoinHostPort(cand.PodIP, fmt.Sprintf("%d", port)), path)
+		endpoint := "http://" + net.JoinHostPort(cand.PodIP, fmt.Sprintf("%d", port)) + path
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			out = append(out, cand)
 			continue
 		}
-
-		resp, err := httpClient.Do(req)
+		resp, err := h.Do(req)
 		if err == nil {
 			if resp.StatusCode == http.StatusOK {
 				var body struct {
-					NodeName     string `json:"node_name"`
-					Role         string `json:"role"`
-					Mode         string `json:"mode"`
-					ActiveLeader string `json:"activeLeader"`
-					LeaderState  struct {
-						ActiveLeader string `json:"activeLeader"`
-					} `json:"leaderState"`
-					IsLeader       bool   `json:"isLeader"`
-					LeaderEpoch    int64  `json:"leaderEpoch"`
-					LeaseEpoch     int64  `json:"leaseEpoch"`
-					LeaseTokenHash string `json:"leaseTokenHash"`
-					MetaStoreReady bool   `json:"metaStoreReady"`
+					IsLeader             bool                         `json:"isLeader"`
+					LeaderEpoch          int64                        `json:"leaderEpoch"`
+					LeaseEpoch           int64                        `json:"leaseEpoch"`
+					LeaseTokenHash       string                       `json:"leaseTokenHash"`
+					MetaStoreReady       bool                         `json:"metaStoreReady"`
+					Draining             bool                         `json:"draining"`
+					RecoveryCapabilities *runtimeRecoveryCapabilities `json:"recoveryCapabilities"`
 				}
 				if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-					nodeName := strings.ToLower(strings.TrimSpace(body.NodeName))
-					activeLeader := strings.ToLower(strings.TrimSpace(body.ActiveLeader))
-					if activeLeader == "" {
-						activeLeader = strings.ToLower(strings.TrimSpace(body.LeaderState.ActiveLeader))
-					}
-					r := strings.ToLower(strings.TrimSpace(body.Role))
-					m := strings.ToLower(strings.TrimSpace(body.Mode))
-					if activeLeader != "" && nodeName != "" {
-						if activeLeader == nodeName {
-							cand.Role = labelLeader
-							cand.IsLeader = true
-						}
-					} else if r == "leader" || r == "primary" || m == "primary" {
+					// A follower can be a healthy candidate without any leadership marker.
+					// /router/lease.writeReady only validates local files: it MUST NOT
+					// overwrite the actual asynchronous MetaStore probe in /router/status.
+					cand.Ready = body.MetaStoreReady && !body.Draining
+					cand.IsLeader = body.IsLeader && !body.Draining
+					if cand.IsLeader {
 						cand.Role = labelLeader
-						cand.IsLeader = true
 					}
 					cand.LeaderEpoch = body.LeaderEpoch
 					cand.LeaseEpoch = body.LeaseEpoch
 					cand.LeaseTokenHash = strings.TrimSpace(body.LeaseTokenHash)
 					cand.MetaStoreReady = body.MetaStoreReady
-					cand.StatusContract = cand.IsLeader && cand.LeaderEpoch > 0 && cand.LeaseEpoch > 0 && cand.LeaseTokenHash != ""
+					cand.RecoveryCapabilities = body.RecoveryCapabilities
+					cand.StatusContract = cand.IsLeader && cand.LeaderEpoch > 0 && cand.LeaseEpoch > 0 && cand.LeaseTokenHash != "" && cand.MetaStoreReady
 				}
 			}
 			_ = resp.Body.Close()
 		}
-
-		leaseReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/router/lease", net.JoinHostPort(cand.PodIP, fmt.Sprintf("%d", port))), nil)
-		if err == nil {
-			leaseResp, leaseErr := httpClient.Do(leaseReq)
-			if leaseErr == nil {
-				if leaseResp.StatusCode == http.StatusOK {
-					var leaseBody struct {
-						Epoch           int64  `json:"epoch"`
-						TokenHash       string `json:"tokenHash"`
-						WriteReady      bool   `json:"writeReady"`
-						PromotionMarker *struct {
-							LeaseEpoch     int64  `json:"leaseEpoch"`
-							LeaseTokenHash string `json:"leaseTokenHash"`
-						} `json:"promotionMarker"`
-					}
-					if err := json.NewDecoder(leaseResp.Body).Decode(&leaseBody); err == nil {
-						cand.LeaseEpoch = leaseBody.Epoch
-						cand.LeaseTokenHash = strings.TrimSpace(leaseBody.TokenHash)
-						cand.MetaStoreReady = leaseBody.WriteReady
-						if leaseBody.PromotionMarker != nil {
-							if leaseBody.PromotionMarker.LeaseEpoch > 0 {
-								cand.LeaseEpoch = leaseBody.PromotionMarker.LeaseEpoch
-							}
-							if strings.TrimSpace(leaseBody.PromotionMarker.LeaseTokenHash) != "" {
-								cand.LeaseTokenHash = strings.TrimSpace(leaseBody.PromotionMarker.LeaseTokenHash)
-							}
-						}
-						cand.StatusContract = cand.IsLeader && cand.LeaderEpoch > 0 && cand.LeaseEpoch > 0 && cand.LeaseTokenHash != "" && cand.MetaStoreReady
-					}
-				}
-				_ = leaseResp.Body.Close()
-			}
-		}
-
 		out = append(out, cand)
 	}
-
 	return out
 }
 
@@ -948,7 +909,7 @@ func promotionAcknowledged(candidate candidate, lease leadership.LeaseRecord) bo
 		strings.TrimSpace(candidate.LeaseTokenHash) == hashLeaseToken(lease.Token)
 }
 
-func withRecoveryStatus(status v1alpha1.CubestoreRouterStatus, promotionReady bool) v1alpha1.CubestoreRouterStatus {
+func withRecoveryStatus(status v1alpha1.CubestoreRouterStatus, promotionReady bool, promoted ...*candidate) v1alpha1.CubestoreRouterStatus {
 	if promotionReady {
 		status.Recovery.Promotion = v1alpha1.RecoveryGateStatus{
 			State: v1alpha1.RecoveryStateReady, Reason: "PromotionAcknowledged",
@@ -960,18 +921,13 @@ func withRecoveryStatus(status v1alpha1.CubestoreRouterStatus, promotionReady bo
 			Message: "Router status must expose isLeader, leaderEpoch, leaseEpoch, leaseTokenHash, and metaStoreReady before promotion can route traffic.",
 		}
 	}
-	status.Recovery.JobRecovery = v1alpha1.RecoveryGateStatus{
-		State: v1alpha1.RecoveryStateBlocked, Reason: "Blocked",
-		Message: "No Rust Router leadership guard is wired into Job assignment, heartbeat, or completion commits.",
+	var capabilities *runtimeRecoveryCapabilities
+	if promotionReady && len(promoted) > 0 && promoted[0] != nil {
+		capabilities = promoted[0].RecoveryCapabilities
 	}
-	status.Recovery.MutationReconcile = v1alpha1.RecoveryGateStatus{
-		State: v1alpha1.RecoveryStateNeedsContext, Reason: "NeedsContext",
-		Message: "No authoritative Job/upload/pre-aggregation mutation reconciliation endpoint is available for UNKNOWN outcomes.",
-	}
-	status.Recovery.Refresher = v1alpha1.RecoveryGateStatus{
-		State: v1alpha1.RecoveryStateNeedsContext, Reason: "NeedsContext",
-		Message: "No Refresher CRD/controller or durable active/standby refresh ownership entry point exists.",
-	}
+	status.Recovery.JobRecovery = capabilityGate(capabilities, "jobs")
+	status.Recovery.MutationReconcile = capabilityGate(capabilities, "mutations")
+	status.Recovery.Refresher = v1alpha1.RecoveryGateStatus{State: v1alpha1.RecoveryStateNeedsContext, Reason: "ManagedByCubeCluster", Message: "Rust Router does not own scheduled refresh processes; shared queue attempt recovery and scheduler ownership require separate evidence."}
 	return status
 }
 
@@ -1612,6 +1568,9 @@ func (r *CubestoreRouterReconciler) withRecoveryConditions(conditions []metav1.C
 	}
 	for _, item := range gates {
 		conditionStatus := metav1.ConditionFalse
+		if item.gate.State == v1alpha1.RecoveryStateNeedsContext {
+			conditionStatus = metav1.ConditionUnknown
+		}
 		if item.gate.State == v1alpha1.RecoveryStateReady {
 			conditionStatus = metav1.ConditionTrue
 		}

@@ -34,9 +34,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::env;
 use std::fs;
-use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
@@ -89,6 +89,13 @@ fn is_rate_limit_error(e: &CubeError) -> bool {
 #[derive(Deserialize)]
 pub struct UploadQuery {
     name: String,
+    #[serde(default)]
+    sha256: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BuildStatusQuery {
+    table: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,12 +123,8 @@ struct PromotionMarker {
     lease_epoch: i64,
     #[serde(rename = "leaseToken", default)]
     lease_token: String,
-    #[serde(rename = "metaStoreReady", default = "default_meta_store_ready")]
+    #[serde(rename = "metaStoreReady", default)]
     meta_store_ready: bool,
-}
-
-fn default_meta_store_ready() -> bool {
-    true
 }
 
 impl Reject for CubeRejection {}
@@ -293,6 +296,7 @@ impl HttpServer {
         let promotion_file = self.promotion_file.clone();
 
         let upload_route = warp::path!("upload-temp-file")
+            .and(warp::post())
             .and(auth_filter_to_move)
             .and(warp::query::query::<UploadQuery>())
             .and(warp::body::stream())
@@ -309,27 +313,127 @@ impl HttpServer {
 
         let router_status_leadership_file = self.leadership_file.clone();
         let router_status_promotion_file = self.promotion_file.clone();
-        let router_status_route = warp::path!("router" / "status").map(move || {
-            warp::reply::json(&Self::router_status_payload(
-                &router_status_leadership_file,
-                &router_status_promotion_file,
-            ))
+        let status_service = self.sql_service.clone();
+        let router_status_route =
+            warp::path!("router" / "status")
+                .and(warp::get())
+                .and_then(move || {
+                    let service = status_service.clone();
+                    let leadership = router_status_leadership_file.clone();
+                    let promotion = router_status_promotion_file.clone();
+                    async move {
+                        Ok::<_, Rejection>(warp::reply::json(
+                            &Self::router_status_payload(&leadership, &promotion, service).await,
+                        ))
+                    }
+                });
+        let live_route = warp::path!("livez").and(warp::get()).map(|| StatusCode::OK);
+        let health_service = self.sql_service.clone();
+        let health_route = warp::path!("healthz").and(warp::get()).and_then(move || {
+            let service = health_service.clone();
+            async move { status::status_probe_reply("health", service.meta_store_health().await) }
         });
+        let ready_service = self.sql_service.clone();
+        let ready_route = warp::path!("readyz").and(warp::get()).and_then(move || {
+            let service = ready_service.clone();
+            async move {
+                let result = if service
+                    .mutation_gate()
+                    .map(|g| g.status().draining)
+                    .unwrap_or(false)
+                {
+                    Err(CubeError::internal("Router is draining".into()))
+                } else {
+                    service.meta_store_health().await
+                };
+                status::status_probe_reply("readiness", result)
+            }
+        });
+        // Internal shutdown hook, POST only, same authentication as SQL/upload.
+        // Keep this route off public gateways; stock SqlAuthDefaultImpl has no password.
+        let drain_service = self.sql_service.clone();
+        let drain_route = warp::path!("router" / "drain")
+            .and(warp::post())
+            .and(auth_filter.clone())
+            .and_then(move |_context: SqlQueryContext| {
+                let service = drain_service.clone();
+                async move {
+                    let gate = service.mutation_gate().ok_or_else(|| {
+                        warp::reject::custom(CubeRejection::Internal(
+                            "Mutation drain is unavailable".into(),
+                        ))
+                    })?;
+                    let result = gate.drain(Duration::from_secs(25)).await;
+                    let code = if result.drained {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::SERVICE_UNAVAILABLE
+                    };
+                    Ok::<_, Rejection>(warp::reply::with_status(warp::reply::json(&result), code))
+                }
+            });
+        let build_service = self.sql_service.clone();
+        let build_route = warp::path!("router" / "build-status")
+            .and(warp::get())
+            .and(auth_filter.clone())
+            .and(warp::query::<BuildStatusQuery>())
+            .and_then(move |_context: SqlQueryContext, query: BuildStatusQuery| {
+                let service = build_service.clone();
+                async move {
+                    let status = service.router_build_status(query.table).await?;
+                    Ok::<_, Rejection>(warp::reply::json(&status))
+                }
+            });
+        let upload_status_service = self.sql_service.clone();
+        let upload_status_route = warp::path!("upload-temp-file-status")
+            .and(warp::get())
+            .and(auth_filter.clone())
+            .and(warp::query::<UploadQuery>())
+            .and_then(move |_context: SqlQueryContext, query: UploadQuery| {
+                let service = upload_status_service.clone();
+                async move {
+                    let sha256 = query.sha256.ok_or_else(|| {
+                        warp::reject::custom(CubeRejection::Internal("sha256 is required".into()))
+                    })?;
+                    let status = service.upload_temp_file_status(query.name, sha256).await?;
+                    Ok::<_, Rejection>(warp::reply::json(&status))
+                }
+            });
 
         let leadership_file = self.leadership_file.clone();
         let promotion_file = self.promotion_file.clone();
-        let router_lease_route = warp::path!("router" / "lease")
-            .and(warp::get())
-            .map(move || match Self::local_lease_payload(&leadership_file, &promotion_file) {
-                Ok(payload) => warp::reply::with_status(
-                    warp::reply::json(&payload),
-                    StatusCode::OK,
-                ),
-                Err(error) => warp::reply::with_status(
-                    warp::reply::json(&json!({ "error": error })),
-                    StatusCode::SERVICE_UNAVAILABLE,
-                ),
-            });
+        let lease_service = self.sql_service.clone();
+        let router_lease_route =
+            warp::path!("router" / "lease")
+                .and(warp::get())
+                .and_then(move || {
+                    let leadership_file = leadership_file.clone();
+                    let promotion_file = promotion_file.clone();
+                    let service = lease_service.clone();
+                    async move {
+                        let healthy = service.meta_store_health().await.is_ok();
+                        let (payload, code) =
+                            match Self::local_lease_payload(&leadership_file, &promotion_file) {
+                                Ok(mut payload) => {
+                                    let draining = service
+                                        .mutation_gate()
+                                        .map(|g| g.status().draining)
+                                        .unwrap_or(false);
+                                    payload["writeReady"] = json!(
+                                        payload["leadershipReady"] == true && healthy && !draining
+                                    );
+                                    (payload, StatusCode::OK)
+                                }
+                                Err(error) => {
+                                    (json!({"error": error}), StatusCode::SERVICE_UNAVAILABLE)
+                                }
+                            };
+                        Ok::<_, Rejection>(warp::reply::with_status(
+                            warp::reply::json(&payload),
+                            code,
+                        ))
+                    }
+                });
 
         let sql_service = self.sql_service.clone();
 
@@ -612,47 +716,51 @@ impl HttpServer {
         let (_, server_future) = warp::serve(
             query_route
                 .or(upload_route)
+                .or(live_route)
+                .or(health_route)
+                .or(ready_route)
+                .or(drain_route)
+                .or(build_route)
+                .or(upload_status_route)
                 .or(router_status_route)
                 .or(router_lease_route)
-                .recover(
-            |err: Rejection| async move {
-                let mut obj = HashMap::new();
-                if let Some(ws_error) = err.find::<CubeRejection>() {
-                    match ws_error {
-                        CubeRejection::NotAuthorized => {
-                            obj.insert("error".to_string(), "Not authorized".to_string());
-                            Ok(warp::reply::with_status(
-                                warp::reply::json(&obj),
-                                StatusCode::FORBIDDEN,
-                            ))
+                .recover(|err: Rejection| async move {
+                    let mut obj = HashMap::new();
+                    if let Some(ws_error) = err.find::<CubeRejection>() {
+                        match ws_error {
+                            CubeRejection::NotAuthorized => {
+                                obj.insert("error".to_string(), "Not authorized".to_string());
+                                Ok(warp::reply::with_status(
+                                    warp::reply::json(&obj),
+                                    StatusCode::FORBIDDEN,
+                                ))
+                            }
+                            CubeRejection::NotLeader => {
+                                obj.insert("error".to_string(), "Router not leader".to_string());
+                                Ok(warp::reply::with_status(
+                                    warp::reply::json(&obj),
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                ))
+                            }
+                            CubeRejection::LeaseFenced(e) => {
+                                obj.insert("error".to_string(), e.to_string());
+                                Ok(warp::reply::with_status(
+                                    warp::reply::json(&obj),
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                ))
+                            }
+                            CubeRejection::Internal(e) => {
+                                obj.insert("error".to_string(), e.to_string());
+                                Ok(warp::reply::with_status(
+                                    warp::reply::json(&obj),
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                ))
+                            }
                         }
-                        CubeRejection::NotLeader => {
-                            obj.insert("error".to_string(), "Router not leader".to_string());
-                            Ok(warp::reply::with_status(
-                                warp::reply::json(&obj),
-                                StatusCode::SERVICE_UNAVAILABLE,
-                            ))
-                        }
-                        CubeRejection::LeaseFenced(e) => {
-                            obj.insert("error".to_string(), e.to_string());
-                            Ok(warp::reply::with_status(
-                                warp::reply::json(&obj),
-                                StatusCode::SERVICE_UNAVAILABLE,
-                            ))
-                        }
-                        CubeRejection::Internal(e) => {
-                            obj.insert("error".to_string(), e.to_string());
-                            Ok(warp::reply::with_status(
-                                warp::reply::json(&obj),
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                            ))
-                        }
+                    } else {
+                        Err(err)
                     }
-                } else {
-                    Err(err)
-                }
-            },
-                ),
+                }),
         )
         .bind_with_graceful_shutdown(addr, async move { cancel_token.cancelled().await });
         let _ = tokio::join!(process_loop, server_future, drop_orphaned_messages_loop);
@@ -668,8 +776,26 @@ impl HttpServer {
         promotion_file: String,
         mut body: impl Stream<Item = Result<impl warp::Buf, warp::Error>> + Unpin,
     ) -> Result<impl Reply, Rejection> {
-        if let Err(error) = Self::ensure_write_fence(&leadership_file, &promotion_file) {
-            return Err(warp::reject::custom(CubeRejection::LeaseFenced(error)));
+        let guard = if let Some(gate) = sql_service.mutation_gate() {
+            Some(
+                gate.begin()
+                    .map_err(|e| warp::reject::custom(CubeRejection::LeaseFenced(e.to_string())))?,
+            )
+        } else {
+            Self::ensure_write_fence(&leadership_file, &promotion_file)
+                .map_err(|e| warp::reject::custom(CubeRejection::LeaseFenced(e)))?;
+            None
+        };
+        if let Some(sha256) = upload_query.sha256.as_ref() {
+            crate::sql::upload::validate_name(&upload_query.name, sha256)?;
+        } else if sql_service
+            .mutation_gate()
+            .map(|g| g.strict)
+            .unwrap_or(true)
+        {
+            return Err(warp::reject::custom(CubeRejection::Internal(
+                "sha256 is required for HA uploads".into(),
+            )));
         }
 
         let temp_file = NamedTempFile::new_in(
@@ -684,10 +810,19 @@ impl HttpServer {
                 .await
                 .map_err(|e| CubeRejection::Internal(e.to_string()))?;
             while let Some(item) = body.next().await {
-                let item = item.map_err(|e| CubeRejection::Internal(e.to_string()))?;
-                file.write_all(item.chunk())
-                    .await
-                    .map_err(|e| CubeRejection::Internal(e.to_string()))?;
+                if let Some(guard) = &guard {
+                    guard.check()?;
+                }
+                let mut item = item.map_err(|e| CubeRejection::Internal(e.to_string()))?;
+                // Buf may contain several non-contiguous chunks; persist all bytes.
+                while item.has_remaining() {
+                    let chunk = item.chunk();
+                    let len = chunk.len();
+                    file.write_all(chunk)
+                        .await
+                        .map_err(|e| CubeRejection::Internal(e.to_string()))?;
+                    item.advance(len);
+                }
             }
             file.flush()
                 .await
@@ -697,12 +832,33 @@ impl HttpServer {
                 .map_err(|e| CubeRejection::Internal(e.to_string()))?;
         }
 
-        sql_service
-            .upload_temp_file(sql_query_context, upload_query.name, temp_file.path())
-            .await
-            .map_err(|e| CubeRejection::Internal(e.to_string()))?;
-
-        Ok(warp::reply())
+        if let Some(guard) = &guard {
+            guard.check()?;
+        }
+        let publication = async {
+            if let Some(sha256) = upload_query.sha256 {
+                let result = sql_service
+                    .upload_temp_file_checked(
+                        sql_query_context,
+                        upload_query.name,
+                        sha256,
+                        temp_file.path(),
+                    )
+                    .await?;
+                Ok(serde_json::to_value(result)?)
+            } else {
+                sql_service
+                    .upload_temp_file(sql_query_context, upload_query.name, temp_file.path())
+                    .await?;
+                Ok(json!({}))
+            }
+        };
+        let result: Result<Value, CubeError> = if let Some(guard) = &guard {
+            guard.run(publication).await
+        } else {
+            publication.await
+        };
+        Ok(warp::reply::json(&result?))
     }
 
     pub async fn process_command(
@@ -720,7 +876,7 @@ impl HttpServer {
                 parameters,
                 response_format,
             } => {
-                if !Self::is_read_query(&query) {
+                if sql_service.mutation_gate().is_none() && !Self::is_read_query(&query) {
                     Self::ensure_write_fence(leadership_file, promotion_file)
                         .map_err(CubeError::wrong_connection)?;
                 }
@@ -760,13 +916,17 @@ impl HttpServer {
     }
 
     fn is_read_query(query: &str) -> bool {
-        matches!(
-            query.trim_start().split_whitespace().next().map(|keyword| keyword.to_ascii_uppercase()),
-            Some(keyword) if matches!(keyword.as_str(), "SELECT" | "SHOW" | "DESCRIBE" | "DESC" | "EXPLAIN")
-        )
+        crate::sql::ha::is_read_query(query)
     }
 
     fn ensure_write_fence(leadership_file: &str, promotion_file: &str) -> Result<(), String> {
+        Self::write_fence_identity(leadership_file, promotion_file).map(|_| ())
+    }
+
+    pub(crate) fn write_fence_identity(
+        leadership_file: &str,
+        promotion_file: &str,
+    ) -> Result<String, String> {
         let lease = Self::read_local_lease(leadership_file)?;
         let marker = Self::read_promotion_marker(promotion_file)?;
         let node = Self::current_node_name()
@@ -774,14 +934,16 @@ impl HttpServer {
         if !Self::promotion_matches(&lease, &marker, &node) {
             return Err("lease epoch, token, or promotion marker mismatch".to_string());
         }
-        Ok(())
+        Ok(format!(
+            "{}:{}:{}:{}",
+            marker.lease_cluster_id, lease.holder_id, lease.epoch, lease.token_hash
+        ))
     }
 
     fn read_local_lease(path: &str) -> Result<LocalLeaseFile, String> {
-        let raw = fs::read_to_string(path)
-            .map_err(|e| format!("lease-agent unavailable: {e}"))?;
-        let lease: LocalLeaseFile = serde_json::from_str(&raw)
-            .map_err(|e| format!("invalid lease-agent contract: {e}"))?;
+        let raw = fs::read_to_string(path).map_err(|e| format!("lease-agent unavailable: {e}"))?;
+        let lease: LocalLeaseFile =
+            serde_json::from_str(&raw).map_err(|e| format!("invalid lease-agent contract: {e}"))?;
         if lease.holder_id.trim().is_empty()
             || lease.epoch <= 0
             || lease.token_hash.trim().is_empty()
@@ -803,8 +965,8 @@ impl HttpServer {
     }
 
     fn read_promotion_marker(path: &str) -> Result<PromotionMarker, String> {
-        let raw = fs::read_to_string(path)
-            .map_err(|e| format!("promotion marker unavailable: {e}"))?;
+        let raw =
+            fs::read_to_string(path).map_err(|e| format!("promotion marker unavailable: {e}"))?;
         let marker: PromotionMarker = serde_json::from_str(raw.trim())
             .map_err(|e| format!("invalid promotion marker: {e}"))?;
         if marker.active_leader.trim().is_empty()
@@ -832,7 +994,6 @@ impl HttpServer {
             && lease.holder_id == node
             && marker.leader_epoch == lease.epoch
             && marker.lease_epoch == lease.epoch
-            && marker.meta_store_ready
             && !marker.lease_cluster_id.trim().is_empty()
             && !marker.lease_token.trim().is_empty()
             && Self::hash_lease_token(&marker.lease_token) == lease.token_hash
@@ -865,11 +1026,22 @@ impl HttpServer {
             "issuedAt": lease.issued_at,
             "expiresAt": lease.expires_at,
             "promotionMarker": promotion,
-            "writeReady": write_ready,
+            "leadershipReady": write_ready,
+            "writeReady": false,
         }))
     }
 
-    fn router_status_payload(leadership_file: &str, promotion_file: &str) -> Value {
+    async fn router_status_payload(
+        leadership_file: &str,
+        promotion_file: &str,
+        service: Arc<dyn SqlService>,
+    ) -> Value {
+        // Probe first, then read lease identity so a slow health read cannot return stale leadership.
+        let health = service.meta_store_health().await;
+        let meta_store_ready = health.is_ok();
+        let gate = service.mutation_gate();
+        let draining = gate.as_ref().map(|g| g.status().draining).unwrap_or(false);
+        let in_flight = gate.as_ref().map(|g| g.status().in_flight).unwrap_or(0);
         let node_name = Self::current_node_name().unwrap_or_else(|| "unknown".to_string());
         let lease = Self::read_local_lease(leadership_file).ok();
         let marker = Self::read_promotion_marker(promotion_file).ok();
@@ -909,7 +1081,12 @@ impl HttpServer {
             "leaderEpoch": leader_epoch,
             "leaseEpoch": lease_epoch,
             "leaseTokenHash": lease_token_hash,
-            "metaStoreReady": marker.as_ref().map(|marker| marker.meta_store_ready).unwrap_or(false),
+            "metaStoreReady": meta_store_ready,
+            "metaStoreError": health.err().map(|e| e.to_string()),
+            "writeReady": is_leader && meta_store_ready && !draining,
+            "draining": draining,
+            "inFlight": in_flight,
+            "recoveryCapabilities": service.recovery_capabilities(),
             "timestampUnixSecs": timestamp,
         })
     }
@@ -1765,6 +1942,20 @@ mod tests {
             meta_store_ready: true,
         };
         assert!(HttpServer::promotion_matches(&lease, &marker, "router-a"));
+        let identity_only: PromotionMarker = serde_json::from_value(serde_json::json!({
+            "activeLeader": "router-a", "leaderEpoch": 7,
+            "leaseClusterID": "cube-router", "leaseEpoch": 7,
+            "leaseToken": "current-token"
+        }))
+        .unwrap();
+        assert!(
+            !identity_only.meta_store_ready,
+            "absent health must default false"
+        );
+        assert!(
+            HttpServer::promotion_matches(&lease, &identity_only, "router-a"),
+            "leadership proof must not depend on marker health feedback"
+        );
 
         let cases = vec![
             (
@@ -1823,17 +2014,6 @@ mod tests {
                     }
                 },
             ),
-            (
-                "metastore not ready",
-                PromotionMarker {
-                    active_leader: marker.active_leader.clone(),
-                    leader_epoch: marker.leader_epoch,
-                    lease_cluster_id: marker.lease_cluster_id.clone(),
-                    lease_epoch: marker.lease_epoch,
-                    lease_token: marker.lease_token.clone(),
-                    meta_store_ready: false,
-                },
-            ),
         ];
         for (name, stale) in cases {
             assert!(
@@ -1865,6 +2045,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn marker_health_claim_is_ignored_when_service_cannot_read_metastore() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("promotion.json");
+        std::fs::write(
+            &marker,
+            serde_json::json!({
+                "activeLeader": "router-a", "leaderEpoch": 7,
+                "leaseClusterID": "cube-router", "leaseEpoch": 7,
+                "leaseToken": "current-token", "metaStoreReady": true
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let payload = HttpServer::router_status_payload(
+            "/missing/lease",
+            marker.to_str().unwrap(),
+            Arc::new(StubService(Arc::new(DataFrame::empty()))),
+        )
+        .await;
+        assert_eq!(payload["metaStoreReady"], false);
+        assert_eq!(payload["writeReady"], false);
+        assert!(payload["metaStoreError"].is_string());
+        assert_eq!(payload["recoveryCapabilities"]["uploadReceipts"], false);
+    }
+
+    #[tokio::test]
+    async fn real_metastore_probe_is_healthy_without_promotion() -> Result<(), CubeError> {
+        Config::test("real_metastore_probe_is_healthy_without_promotion")
+            .start_test(async move |services| {
+                let payload = HttpServer::router_status_payload(
+                    "/missing/lease",
+                    "/missing/promotion",
+                    services.sql_service,
+                )
+                .await;
+                assert_eq!(payload["metaStoreReady"], true);
+                assert_eq!(payload["isLeader"], false);
+                assert_eq!(payload["writeReady"], false);
+                assert!(payload["metaStoreError"].is_null());
+                let capabilities = &payload["recoveryCapabilities"];
+                assert_eq!(capabilities["uploadReceipts"], true);
+                assert_eq!(capabilities["preAggregationStatus"], true);
+                assert_eq!(capabilities["jobAttemptFencing"], true);
+                assert_eq!(capabilities["fileImportRecovery"], true);
+                assert_eq!(capabilities["requiresUpgradedJobProtocol"], true);
+                assert_eq!(capabilities["arbitraryInsertReplay"], false);
+                Ok::<(), CubeError>(())
+            })
+            .await;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn upload_temp_file_is_fenced_when_lease_agent_is_unreachable() {
         let body = futures::stream::iter(vec![Ok::<Bytes, warp::Error>(Bytes::from_static(
             b"payload",
@@ -1874,6 +2107,7 @@ mod tests {
             SqlQueryContext::default(),
             UploadQuery {
                 name: "upload.csv".to_string(),
+                sha256: None,
             },
             "/missing/lease-agent".to_string(),
             "/missing/promotion".to_string(),
@@ -1985,9 +2219,7 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         async fn connect(url: &str) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
-            let (socket, _) = connect_async(Url::parse(url).unwrap())
-                .await
-                .unwrap();
+            let (socket, _) = connect_async(Url::parse(url).unwrap()).await.unwrap();
             socket
         }
 

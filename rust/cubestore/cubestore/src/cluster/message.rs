@@ -1,4 +1,5 @@
 use crate::metastore::{MetaStoreRpcMethodCall, MetaStoreRpcMethodResult};
+use crate::cachestore::{CacheStoreRpcMethodCall, CacheStoreRpcMethodResult};
 use crate::queryplanner::query_executor::SerializedRecordBatchStream;
 use crate::queryplanner::serialized_plan::SerializedPlan;
 use crate::trace::{MainTrace, WorkerTrace};
@@ -62,7 +63,11 @@ pub enum NetworkMessage {
     FreeDeletedMemoryChunksResult(Result<(), CubeError>),
 
     MetaStoreCall(MetaStoreRpcMethodCall),
+    /// Separate envelope: never silently downgrade a fenced write to a legacy call.
+    MetaStoreCallWithAttempt(crate::metastore::job::JobAttempt, MetaStoreRpcMethodCall),
     MetaStoreCallResult(MetaStoreRpcMethodResult),
+    CacheStoreCall(CacheStoreRpcMethodCall),
+    CacheStoreCallResult(CacheStoreRpcMethodResult),
 
     NotifyJobListeners,
     NotifyJobListenersSuccess,

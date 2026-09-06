@@ -1,0 +1,17 @@
+Pinned API pod: cube-ha-remediation/analytics-api-8576fcf9b-knjzn; evidence directory: /tmp/cube-ha-preagg-acceptance-evidence
+upload-failover: start real rollup r14bc37b4bfa7e982 (leader=analytics-router-69457448dc-tz4jj, epoch=11)
+Injecting upload-failover: delete pinned test leader cube-ha-remediation/analytics-router-69457448dc-tz4jj uid=fdf336a1-a4b4-4290-ba1b-ea0a2b03c148
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "analytics-router-69457448dc-tz4jj" force deleted
+PASS upload-failover (r14bc37b4bfa7e982): /tmp/cube-ha-preagg-acceptance-evidence/r14bc37b4bfa7e982-upload-failover.json
+receipt-loss: start real rollup rf07dd05657f38faa (leader=analytics-router-69457448dc-5zxmx, epoch=12)
+PASS receipt-loss (rf07dd05657f38faa): /tmp/cube-ha-preagg-acceptance-evidence/rf07dd05657f38faa-receipt-loss.json
+receipt-failover: start real rollup r881fce58f7d219a2 (leader=analytics-router-69457448dc-5zxmx, epoch=12)
+Injecting receipt-failover: delete pinned test leader cube-ha-remediation/analytics-router-69457448dc-5zxmx uid=de31e62f-fc48-4bb4-9a41-341b28a54f3e
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "analytics-router-69457448dc-5zxmx" force deleted
+PASS receipt-failover (r881fce58f7d219a2): /tmp/cube-ha-preagg-acceptance-evidence/r881fce58f7d219a2-receipt-failover.json
+drain-failover: start real rollup r87c5ef93cff35d88 (leader=analytics-router-69457448dc-jcrk4, epoch=13)
+Router drain failed: HTTP status server error (503 Service Unavailable) for url (http://127.0.0.1:3030/router/drain)
+command terminated with exit code 1
+Evidence: /tmp/cube-ha-preagg-acceptance-evidence/r87c5ef93cff35d88-drain-failover.json

@@ -1,0 +1,4 @@
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "analytics-router-69457448dc-7ntz7" force deleted
+PASS real scheduled refresher -> upload fault -> ready rollup -> API consumption: rf8f47788f4d404f8
+Refresher evidence: /tmp/cube-ha-refresher-observed-evidence/rf8f47788f4d404f8-refresher-failover.json

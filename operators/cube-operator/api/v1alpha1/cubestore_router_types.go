@@ -2,7 +2,6 @@ package v1alpha1
 
 import (
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -192,14 +191,13 @@ func (in *CubestoreRouterSpec) Validate() error {
 		if err := validateBackendType("stateStore.type", in.StateStore.Type); err != nil {
 			return err
 		}
-		if strings.EqualFold(strings.TrimSpace(in.StateStore.Type), "kubernetes") {
-			return nil
-		}
-		if in.StateStore.SecretRef == nil {
+		if in.StateStore.Type != "kubernetes" && in.StateStore.SecretRef == nil {
 			return fmt.Errorf("stateStore.secretRef is required for %s", in.StateStore.Type)
 		}
-		if err := validateSecretReference("stateStore.secretRef", *in.StateStore.SecretRef); err != nil {
-			return err
+		if in.StateStore.SecretRef != nil {
+			if err := validateSecretReference("stateStore.secretRef", *in.StateStore.SecretRef); err != nil {
+				return err
+			}
 		}
 	}
 	if in.LeaderStateStore != nil {

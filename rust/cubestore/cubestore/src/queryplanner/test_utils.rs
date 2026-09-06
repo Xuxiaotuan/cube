@@ -306,6 +306,10 @@ impl MetaStore for MetaStoreMock {
         panic!("MetaStore mock!")
     }
 
+    async fn get_indexes(&self) -> Result<Vec<IdRow<Index>>, CubeError> {
+        Err(CubeError::internal("MetaStoreMock index inventory is not configured".to_string()))
+    }
+
     async fn create_index(
         &self,
         _schema_name: String,
@@ -670,6 +674,22 @@ impl MetaStore for MetaStoreMock {
     }
 
     async fn delete_all_jobs(&self) -> Result<Vec<IdRow<Job>>, CubeError> {
+        panic!("MetaStore mock!")
+    }
+
+    async fn heartbeat_job_attempt(&self, _attempt: crate::metastore::job::JobAttempt) -> Result<IdRow<Job>, CubeError> {
+        panic!("MetaStore mock!")
+    }
+
+    async fn finish_job_attempt(&self, _attempt: crate::metastore::job::JobAttempt, _status: JobStatus) -> Result<IdRow<Job>, CubeError> {
+        panic!("MetaStore mock!")
+    }
+
+    async fn recover_job(&self, _expected: IdRow<Job>, _server_name: String, _orphaned_timeout: Duration) -> Result<Option<IdRow<Job>>, CubeError> {
+        panic!("MetaStore mock!")
+    }
+
+    async fn publish_import_chunks(&self, _attempt: crate::metastore::job::JobAttempt, _table_id: u64, _location: String, _uploaded_chunk_ids: Vec<(u64, Option<u64>)>) -> Result<(), CubeError> {
         panic!("MetaStore mock!")
     }
 

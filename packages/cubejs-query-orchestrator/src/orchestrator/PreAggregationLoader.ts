@@ -100,6 +100,8 @@ export class PreAggregationLoader {
 
   private readonly externalRefresh: boolean;
 
+  private preAggregationBuildId?: string;
+
   public constructor(
     private readonly driverFactory: DriverFactory,
     private readonly logger: LoggerFn,
@@ -429,6 +431,22 @@ export class PreAggregationLoader {
   }
 
   protected async executeInQueue(invalidationKeys: InvalidationKeys, priority: number, newVersionEntry: VersionEntry) {
+    if (this.preAggregation.external) {
+      const driver = await this.externalDriverFactory() as any;
+      if (driver.resolvePreAggregationBuild) {
+        const versions = await this.loadCache.getVersionEntries(this.preAggregation);
+        const build = await driver.resolvePreAggregationBuild(
+          JSON.stringify([this.preAggregation.dataSource, this.preAggregation.tableName, newVersionEntry.content_version, newVersionEntry.structure_version]),
+          newVersionEntry,
+          versions.versionEntries.map(entry => this.targetTableName(entry)),
+          this.forceBuild
+        );
+        if (build) {
+          Object.assign(newVersionEntry, build.versionEntry);
+          this.preAggregationBuildId = build.buildId;
+        }
+      }
+    }
     const queue = await this.preAggregations.getQueue(this.preAggregation.dataSource);
     return queue.executeInQueue(
       'query',
@@ -444,6 +462,7 @@ export class PreAggregationLoader {
         isJob: this.isJob,
         metadata: this.metadata,
         orphanedTimeout: this.orphanedTimeout,
+        preAggregationBuildId: this.preAggregationBuildId,
       },
       priority,
       // eslint-disable-next-line no-use-before-define
@@ -462,7 +481,8 @@ export class PreAggregationLoader {
     return PreAggregations.targetTableName(versionEntry);
   }
 
-  public refresh(newVersionEntry: VersionEntry, invalidationKeys: InvalidationKeys, client) {
+  public refresh(newVersionEntry: VersionEntry, invalidationKeys: InvalidationKeys, client, preAggregationBuildId?: string) {
+    this.preAggregationBuildId = preAggregationBuildId;
     const targetTableName = this.targetTableName(newVersionEntry);
     this.updateLastTouch(targetTableName);
 
@@ -487,13 +507,39 @@ export class PreAggregationLoader {
     return cancelCombinator(
       async saveCancelFn => {
         try {
+          if (this.preAggregationBuildId && this.preAggregation.external) {
+            const driver = await this.externalDriverFactory() as any;
+            if (await driver.resumePreAggregationBuild(this.preAggregationBuildId)) {
+              await this.loadCache.fetchTables(this.preAggregation);
+              return;
+            }
+          }
           return await refreshStrategy.bind(this)(
             client,
             newVersionEntry,
             saveCancelFn,
             invalidationKeys
           );
-        } catch (e) {
+        } catch (e: any) {
+          if (this.preAggregationBuildId && this.preAggregation.external && e?.name === 'ConnectionError') {
+            // A transport failure while reading/writing the ledger says nothing
+            // about the import outcome. Resume the same manifest on the next run.
+            e = Object.assign(new Error(e.message), { code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError' });
+          }
+          if (e?.code === 'MUTATION_UNKNOWN' || e?.name === 'MutationUnknownError') {
+            // A failed response is not a failed build. Durable intent and touch
+            // markers protect both the pending target and the last usable rollup.
+            try {
+              await this.preAggregations.updateLastTouch(targetTableName);
+            } catch (touchError: any) {
+              // Durable pending-build protection survives a failed touch update.
+              // Do not replace UNKNOWN with the draining cache connection error.
+              this.logger('Error on touching unresolved pre-aggregation build', {
+                error: (touchError.stack || touchError), preAggregation: this.preAggregation, requestId: this.requestId,
+              });
+            }
+            throw e;
+          }
           // It's required to remove touch keys, because they are unique per run/table, and it causes
           // a large number of touch keys in the cache store
           try {
@@ -535,6 +581,7 @@ export class PreAggregationLoader {
       requestId: this.requestId,
       newVersionEntry,
       buildRangeEnd: this.preAggregation.buildRangeEnd,
+      preAggregationBuildId: this.preAggregationBuildId,
     };
   }
 
@@ -666,6 +713,9 @@ export class PreAggregationLoader {
     dropSourceTempTable: boolean,
   ) {
     if (withTempTable && dropSourceTempTable) {
+      const externalDriver = await this.externalDriverFactory() as any;
+      const protectedTables = externalDriver.getProtectedPreAggregationTables ? await externalDriver.getProtectedPreAggregationTables() : [];
+      if (protectedTables.includes(targetTableName)) return;
       await this.withDropLock(`drop-temp-table:${this.preAggregation.dataSource}:${targetTableName}`, async () => {
         this.logger('Dropping source temp table', queryOptions);
 
@@ -1077,12 +1127,17 @@ export class PreAggregationLoader {
       const toDrop = actualTables
         .map(t => `${this.preAggregation.preAggregationsSchema}.${t.table_name || t.TABLE_NAME}`)
         .filter(t => toSave.indexOf(t) === -1);
-
-      await Promise.all(toDrop.map(table => saveCancelFn(client.dropTable(table))));
+      // Queue/touch TTLs are not a build lifecycle. A pending durable intent
+      // survives both router failover and a dead refresh worker's queue entry.
+      const protectionDriver = this.preAggregation.external ? await this.externalDriverFactory() : client;
+      const protectedTables = (protectionDriver as any).getProtectedPreAggregationTables
+        ? await (protectionDriver as any).getProtectedPreAggregationTables() : [];
+      const safeToDrop = toDrop.filter(table => !protectedTables.includes(table));
+      await Promise.all(safeToDrop.map(table => saveCancelFn(client.dropTable(table))));
       this.logger('Dropping orphaned tables completed', {
         ...queryOptions,
         external,
-        tablesToDrop: JSON.stringify(toDrop),
+        tablesToDrop: JSON.stringify(safeToDrop),
       });
     });
   }

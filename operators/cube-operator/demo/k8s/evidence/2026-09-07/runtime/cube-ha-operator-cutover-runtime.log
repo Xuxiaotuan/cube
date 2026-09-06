@@ -1,0 +1,115 @@
+2026-09-06T19:11:41.114806482Z 2026-09-06T19:11:41Z	INFO	controller-runtime.metrics	Starting metrics server
+2026-09-06T19:11:41.136213032Z I0906 19:11:41.136164       1 leaderelection.go:250] attempting to acquire leader lease cube-ha-remediation/cube-operator...
+2026-09-06T19:11:41.138134259Z 2026-09-06T19:11:41Z	INFO	controller-runtime.metrics	Serving metrics server	{"bindAddress": ":8080", "secure": false}
+2026-09-06T19:11:57.545811297Z I0906 19:11:57.545637       1 leaderelection.go:260] successfully acquired lease cube-ha-remediation/cube-operator
+2026-09-06T19:11:57.546077681Z 2026-09-06T19:11:57Z	DEBUG	events	cube-operator-68bfcb67b7-7hg4p_96a09a5e-b979-4a76-b191-254784d11084 became leader	{"type": "Normal", "object": {"kind":"Lease","namespace":"cube-ha-remediation","name":"cube-operator","uid":"72d5ac1f-549b-45d4-9263-d598bf18f1a4","apiVersion":"coordination.k8s.io/v1","resourceVersion":"3290590"}, "reason": "LeaderElection"}
+2026-09-06T19:11:57.554219854Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1alpha1.CubeCluster"}
+2026-09-06T19:11:57.554274648Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.Deployment"}
+2026-09-06T19:11:57.554280064Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.StatefulSet"}
+2026-09-06T19:11:57.554282148Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.Service"}
+2026-09-06T19:11:57.554283523Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.ServiceAccount"}
+2026-09-06T19:11:57.554287356Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.Role"}
+2026-09-06T19:11:57.554288565Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.RoleBinding"}
+2026-09-06T19:11:57.554289773Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.PodDisruptionBudget"}
+2026-09-06T19:11:57.554291065Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1alpha1.CubestoreRouter"}
+2026-09-06T19:11:57.554292231Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.Secret"}
+2026-09-06T19:11:57.554295648Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "source": "kind source: *v1.ConfigMap"}
+2026-09-06T19:11:57.554306940Z 2026-09-06T19:11:57Z	INFO	Starting Controller	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster"}
+2026-09-06T19:11:57.561388164Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "source": "kind source: *v1alpha1.CubestoreRouter"}
+2026-09-06T19:11:57.561399872Z 2026-09-06T19:11:57Z	INFO	Starting EventSource	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "source": "kind source: *v1.Pod"}
+2026-09-06T19:11:57.561403497Z 2026-09-06T19:11:57Z	INFO	Starting Controller	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter"}
+2026-09-06T19:11:57.857357496Z 2026-09-06T19:11:57Z	INFO	Starting workers	{"controller": "cubestorerouter", "controllerGroup": "cubestore.io", "controllerKind": "CubestoreRouter", "worker count": 1}
+2026-09-06T19:11:58.162840004Z 2026-09-06T19:11:58Z	INFO	Starting workers	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "worker count": 1}
+2026-09-06T19:12:11.398463645Z 2026-09-06T19:12:11Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "e6cfb0cf-fd06-482a-86c9-9962d2955a19", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:12:11.398505979Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:12:11.398509188Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:12:11.398510438Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:12:11.398511480Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:12:11.398512480Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:12:11.398513396Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:13:15.115039962Z 2026-09-06T19:13:15Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "7be1fb6e-52be-4753-ba2f-0894e414de6a", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:13:15.115098255Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:13:15.115102214Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:13:15.115103422Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:13:15.115104422Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:13:15.115105381Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:13:15.115106381Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:13:24.161051348Z 2026-09-06T19:13:24Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "2bb5ffdb-2998-4997-9ab4-f22b427cdfd5"}
+2026-09-06T19:13:24.161095058Z 2026-09-06T19:13:24Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "2bb5ffdb-2998-4997-9ab4-f22b427cdfd5", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:13:24.161101058Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:13:24.161102224Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:13:24.161103308Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:13:24.161104224Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:13:24.161105183Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:13:24.161107600Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:13:54.429999171Z 2026-09-06T19:13:54Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "593dbe79-b1bf-4f13-9c72-452f87eff255", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:13:54.430063381Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:13:54.430071465Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:13:54.430094298Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:13:54.430096923Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:13:54.430097924Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:13:54.430098924Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:14:40.914119567Z 2026-09-06T19:14:40Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "6d645170-4139-4628-8290-2cd916bf209c", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:14:40.914165443Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:14:40.914169568Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:14:40.914170901Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:14:40.914171943Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:14:40.914172901Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:14:40.914173860Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:15:09.679427066Z 2026-09-06T19:15:09Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "f64ef159-823a-43cd-b750-885524343840", "error": "Operation cannot be fulfilled on cubestorerouters.cubestore.io \"analytics-router\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:15:09.679486441Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:15:09.679490108Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:15:09.679491316Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:15:09.679492358Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:15:09.679493316Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:15:09.679494275Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:15:09.758686257Z 2026-09-06T19:15:09Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "3931d78f-8624-4943-8500-25b29e3358b7", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:15:09.758709715Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:15:09.758731882Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:15:09.758734091Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:15:09.758735091Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:15:09.758736091Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:15:09.758737049Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:15:59.932389598Z 2026-09-06T19:15:59Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "bb8fa1a5-f5a9-4806-90b8-db50e80436ae", "error": "Operation cannot be fulfilled on cubestorerouters.cubestore.io \"analytics-router\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:15:59.932461932Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:15:59.932464598Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:15:59.932465765Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:15:59.932466807Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:15:59.932467807Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:15:59.932468723Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:16:05.022674058Z 2026-09-06T19:16:05Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "912e8d28-ca04-4f9e-a2fa-7d69628e814a", "error": "Operation cannot be fulfilled on cubestorerouters.cubestore.io \"analytics-router\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:16:05.022865019Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:16:05.022868977Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:16:05.022873852Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:16:05.022887311Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:16:05.022889602Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:16:05.022890602Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:21:11.220475544Z 2026-09-06T19:21:11Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "c5bd589b-2af4-4ec5-9e4d-31a5362ca6ab", "error": "Operation cannot be fulfilled on cubestorerouters.cubestore.io \"analytics-router\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:21:11.220525424Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:21:11.220529049Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:21:11.220530216Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:21:11.220531758Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:21:11.220534216Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:21:11.220535175Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:21:39.632024798Z 2026-09-06T19:21:39Z	INFO	Warning: Reconciler returned both a non-zero result and a non-nil error. The result will always be ignored if the error is non-nil and the non-nil error causes reqeueuing with exponential backoff. For more details, see: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile#Reconciler	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "b497c0e8-1000-4aa1-aeba-804d91b50dda"}
+2026-09-06T19:21:39.632130434Z 2026-09-06T19:21:39Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "b497c0e8-1000-4aa1-aeba-804d91b50dda", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:21:39.632135976Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:21:39.632137101Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:21:39.632138143Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:21:39.632141685Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:21:39.632144810Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:21:39.632146019Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:21:45.814500441Z 2026-09-06T19:21:45Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "9b155792-a703-4159-a6d6-3dc860073cbc", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:21:45.814523860Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:21:45.814526027Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:21:45.814527360Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:21:45.814528485Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:21:45.814529527Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:21:45.814530652Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222
+2026-09-06T19:22:11.551185037Z 2026-09-06T19:22:11Z	ERROR	Reconciler error	{"controller": "cubecluster", "controllerGroup": "cubestore.io", "controllerKind": "CubeCluster", "CubeCluster": {"name":"analytics","namespace":"cube-ha-remediation"}, "namespace": "cube-ha-remediation", "name": "analytics", "reconcileID": "2aa010f0-67c7-4124-8afa-412358b835fc", "error": "Operation cannot be fulfilled on cubeclusters.cubestore.io \"analytics\": the object has been modified; please apply your changes to the latest version and try again"}
+2026-09-06T19:22:11.551261837Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).reconcileHandler
+2026-09-06T19:22:11.551266504Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:324
+2026-09-06T19:22:11.551275588Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).processNextWorkItem
+2026-09-06T19:22:11.551278714Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:261
+2026-09-06T19:22:11.551280381Z sigs.k8s.io/controller-runtime/pkg/internal/controller.(*Controller).Start.func2.2
+2026-09-06T19:22:11.551281339Z 	/go/pkg/mod/sigs.k8s.io/controller-runtime@v0.18.4/pkg/internal/controller/controller.go:222

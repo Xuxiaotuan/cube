@@ -11,7 +11,6 @@ use async_std::task::{Context, Poll};
 use async_trait::async_trait;
 use bigdecimal::{BigDecimal, Num};
 use datafusion::arrow::array::{ArrayBuilder, ArrayRef};
-use datafusion::cube_ext;
 use futures::future::join_all;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
@@ -21,7 +20,6 @@ use pin_project_lite::pin_project;
 use tempfile::TempPath;
 use tokio::fs::File;
 use tokio::io::{AsyncBufRead, AsyncSeekExt, AsyncWriteExt, BufReader};
-use tokio::task::JoinHandle;
 
 use cubehll::HllSketch;
 
@@ -30,6 +28,7 @@ use crate::config::ConfigObj;
 use crate::cube_ext::ordfloat::OrdF64;
 use crate::import::limits::ConcurrencyLimits;
 use crate::metastore::table::Table;
+use crate::metastore::job::{current_job_attempt, JobAttempt};
 use crate::metastore::{is_valid_plain_binary_hll, HllFlavour, IdRow};
 use crate::metastore::{Column, ColumnType, ImportFormat, MetaStore};
 use crate::queryplanner::trace_data_loaded::DataLoadedSize;
@@ -760,6 +759,13 @@ impl ImportServiceImpl {
         location: &str,
         data_loaded_size: Option<Arc<DataLoadedSize>>,
     ) -> Result<(), CubeError> {
+        if let Some(attempt) = current_job_attempt() {
+            let job = self.meta_store.get_job(attempt.job_id).await?;
+            job.get_row().check_owner(&attempt)?;
+            if job.get_row().completed_imports().iter().any(|l| l == location) {
+                return Ok(());
+            }
+        }
         let temp_dir = self.config_obj.data_dir().join("tmp");
         tokio::fs::create_dir_all(temp_dir.clone())
             .await
@@ -784,7 +790,7 @@ impl ImportServiceImpl {
             self.chunk_store.clone(),
             self.limits.clone(),
             table.clone(),
-        );
+        ).for_import(location.to_string());
 
         let finish = |builders: Vec<Box<dyn ArrayBuilder>>| {
             builders.into_iter().map(|mut b| b.finish()).collect_vec()
@@ -885,7 +891,10 @@ impl ImportService for ImportServiceImpl {
         }
 
         for location in locations.iter() {
-            self.drop_temp_uploads(location).await?;
+            // A committed location receipt must survive an upload-cleanup failure.
+            if let Err(e) = self.drop_temp_uploads(location).await {
+                log::warn!("Completed import temporary upload cleanup failed: {}", e);
+            }
         }
 
         Ok(())
@@ -925,7 +934,9 @@ impl ImportService for ImportServiceImpl {
         } else {
             self.do_import(&table, *format, location, data_loaded_size.clone())
                 .await?;
-            self.drop_temp_uploads(&location).await?;
+            if let Err(e) = self.drop_temp_uploads(&location).await {
+                log::warn!("Completed import temporary upload cleanup failed: {}", e);
+            }
         }
 
         Ok(())
@@ -1020,7 +1031,9 @@ pub struct Ingestion {
     limits: Arc<ConcurrencyLimits>,
     table: IdRow<Table>,
 
-    partition_jobs: Vec<JoinHandle<Result<(), CubeError>>>,
+    partition_jobs: Vec<crate::util::aborting_join_handle::AbortingJoinHandle<Result<Vec<(u64, Option<u64>)>, CubeError>>>,
+    import_attempt: Option<JobAttempt>,
+    import_location: Option<String>,
 }
 
 impl Ingestion {
@@ -1036,7 +1049,15 @@ impl Ingestion {
             limits,
             table,
             partition_jobs: Vec::new(),
+            import_attempt: None,
+            import_location: None,
         }
+    }
+
+    fn for_import(mut self, location: String) -> Self {
+        self.import_attempt = current_job_attempt();
+        self.import_location = Some(location);
+        self
     }
 
     pub async fn queue_data_frame(&mut self, rows: Vec<ArrayRef>) -> Result<(), CubeError> {
@@ -1047,8 +1068,10 @@ impl Ingestion {
         let columns = self.table.get_row().get_columns().clone().clone();
         let table_id = self.table.get_id();
         // TODO In fact it should be only for inserts. Batch imports should still go straight to disk.
-        let in_memory = self.table.get_row().in_memory_ingest();
-        self.partition_jobs.push(cube_ext::spawn(async move {
+        let staged = self.import_attempt.is_some();
+        // File receipts cannot refer to worker-local memory that dies with its owner.
+        let in_memory = !staged && self.table.get_row().in_memory_ingest();
+        self.partition_jobs.push(crate::util::aborting_join_handle::AbortingJoinHandle::new(crate::metastore::job::spawn_job(async move {
             let new_chunks = chunk_store
                 .partition_data(table_id, rows, &columns, in_memory)
                 .await?;
@@ -1064,17 +1087,25 @@ impl Ingestion {
                     Ok((c.get_id(), file_size))
                 })
                 .collect();
-            meta_store
-                .activate_chunks(table_id, new_chunk_ids?, None)
-                .await
-        }));
+            let new_chunk_ids = new_chunk_ids?;
+            if staged {
+                Ok(new_chunk_ids)
+            } else {
+                meta_store.activate_chunks(table_id, new_chunk_ids, None).await?;
+                Ok(Vec::new())
+            }
+        })));
 
         Ok(())
     }
 
     pub async fn wait_completion(self) -> Result<(), CubeError> {
+        let mut uploaded_chunks = Vec::new();
         for j in self.partition_jobs {
-            j.await??;
+            uploaded_chunks.extend(j.await??);
+        }
+        if let (Some(attempt), Some(location)) = (self.import_attempt, self.import_location) {
+            self.meta_store.publish_import_chunks(attempt, self.table.get_id(), location, uploaded_chunks).await?;
         }
 
         Ok(())

@@ -1,0 +1,8 @@
+Pinned API pod: cube-ha-remediation/analytics-api-8576fcf9b-knjzn; evidence directory: /tmp/cube-ha-stream-acceptance-evidence
+upload-failover: start real rollup r3facc45531b67310 (leader=analytics-router-69457448dc-7wwkh, epoch=14)
+Injecting upload-failover: delete pinned test leader cube-ha-remediation/analytics-router-69457448dc-7wwkh uid=d1e6e929-54c9-4f6b-be0f-6a9186802386
+Warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.
+pod "analytics-router-69457448dc-7wwkh" force deleted
+PASS upload-failover (r3facc45531b67310): /tmp/cube-ha-stream-acceptance-evidence/r3facc45531b67310-upload-failover.json
+operators/cube-operator/demo/k8s/preagg-fault-check.sh: line 154: unexpected EOF while looking for matching ``'
+Evidence: /tmp/cube-ha-stream-acceptance-evidence/r3facc45531b67310-upload-failover.json

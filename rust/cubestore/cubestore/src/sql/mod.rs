@@ -76,11 +76,15 @@ use data::create_array_builder;
 use datafusion::cube_ext::catch_unwind::async_try_with_catch_unwind;
 use deepsize::DeepSizeOf;
 
+pub mod build_status;
 pub mod cache;
 pub mod cachestore;
 mod explain_detailed;
+pub mod ha;
+mod ha_admission;
 pub mod parser;
 mod table_creator;
+pub mod upload;
 
 use crate::cluster::rate_limiter::ProcessRateLimiter;
 use crate::sql::cachestore::CacheStoreSqlService;
@@ -245,6 +249,55 @@ pub trait SqlService: DIService + Send + Sync {
     ) -> Result<(), CubeError>;
 
     async fn temp_uploads_dir(&self, context: SqlQueryContext) -> Result<String, CubeError>;
+
+    fn mutation_gate(&self) -> Option<Arc<ha::MutationGate>> {
+        None
+    }
+
+    fn recovery_capabilities(&self) -> serde_json::Value {
+        serde_json::json!({
+            "uploadReceipts": false, "preAggregationStatus": false,
+            "fileImportRecovery": false, "arbitraryInsertReplay": false,
+            "jobAttemptFencing": false
+        })
+    }
+
+    async fn meta_store_health(&self) -> Result<(), CubeError> {
+        Err(CubeError::internal(
+            "MetaStore health is not supported by this SQL service".into(),
+        ))
+    }
+
+    async fn router_build_status(
+        &self,
+        _table: String,
+    ) -> Result<build_status::BuildStatus, CubeError> {
+        Err(CubeError::internal(
+            "Build status is not supported by this SQL service".into(),
+        ))
+    }
+
+    async fn upload_temp_file_status(
+        &self,
+        _name: String,
+        _sha256: String,
+    ) -> Result<upload::UploadStatus, CubeError> {
+        Err(CubeError::internal(
+            "Durable upload status is not supported by this SQL service".into(),
+        ))
+    }
+
+    async fn upload_temp_file_checked(
+        &self,
+        _context: SqlQueryContext,
+        _name: String,
+        _sha256: String,
+        _file_path: &Path,
+    ) -> Result<upload::UploadStatus, CubeError> {
+        Err(CubeError::internal(
+            "Checked upload is not supported by this SQL service".into(),
+        ))
+    }
 }
 
 pub struct QueryPlans {
@@ -357,6 +410,7 @@ pub struct SqlServiceImpl {
     query_timeout: Duration,
     cache: Arc<SqlResultCache>,
     table_creator: Arc<TableCreator>,
+    mutation_gate: Arc<ha::MutationGate>,
 }
 
 crate::di_service!(SqlServiceImpl, [SqlService]);
@@ -381,7 +435,12 @@ impl SqlServiceImpl {
         cache: Arc<SqlResultCache>,
         process_rate_limiter: Arc<dyn ProcessRateLimiter>,
     ) -> Arc<SqlServiceImpl> {
+        let mutation_gate = ha::MutationGate::new(
+            config_obj.router_leadership_file().clone(),
+            config_obj.router_promotion_file().clone(),
+        );
         Arc::new(SqlServiceImpl {
+            mutation_gate,
             cachestore: CacheStoreSqlService::new(
                 cachestore,
                 query_planner.clone(),
@@ -770,15 +829,9 @@ impl Dialect for MySqlDialectWithBackTicks {
     }
 }
 
-#[async_trait]
-impl SqlService for SqlServiceImpl {
-    async fn exec_query(&self, q: &str) -> Result<QueryResult, CubeError> {
-        self.exec_query_with_context(SqlQueryContext::default(), q)
-            .await
-    }
-
+impl SqlServiceImpl {
     #[instrument(level = "trace", skip(self))]
-    async fn exec_query_with_context(
+    async fn exec_query_unfenced(
         &self,
         mut context: SqlQueryContext,
         query: &str,
@@ -798,6 +851,20 @@ impl SqlService for SqlServiceImpl {
         };
         // trace!("AST is: {:?}", ast);
         match ast {
+            CubeStoreStatement::Statement(Statement::ShowSchemas { terse, history, show_options }) => {
+                // Current sqlparser emits a dedicated AST for SHOW SCHEMAS,
+                // rather than the legacy ShowVariable handled below. Do not
+                // silently discard modifiers that CubeStore never supported.
+                if terse || history || show_options.show_in.is_some()
+                    || show_options.starts_with.is_some() || show_options.limit.is_some()
+                    || show_options.limit_from.is_some() || show_options.filter_position.is_some()
+                {
+                    return Err(CubeError::user(
+                        "SHOW SCHEMAS modifiers are not supported; query information_schema.schemata to filter schemas".into(),
+                    ));
+                }
+                Ok(DataFrame::from(self.db.get_schemas().await?).into())
+            }
             CubeStoreStatement::Statement(Statement::ShowVariable { variable }) => {
                 if variable.len() != 1 {
                     return Err(CubeError::user(format!(
@@ -809,13 +876,15 @@ impl SqlService for SqlServiceImpl {
                     s if s == "schemas" => Ok(DataFrame::from(self.db.get_schemas().await?).into()),
                     s if s == "tables" => Ok(DataFrame::from(self.db.get_tables().await?).into()),
                     s if s == "chunks" => {
-                        Ok(DataFrame::from(self.db.chunks_table().all_rows().await?).into())
+                        let (_, chunks) = self.db.get_all_partitions_and_chunks_out_of_queue().await?;
+                        Ok(DataFrame::from(chunks).into())
                     }
                     s if s == "indexes" => {
-                        Ok(DataFrame::from(self.db.index_table().all_rows().await?).into())
+                        Ok(DataFrame::from(self.db.get_indexes().await?).into())
                     }
                     s if s == "partitions" => {
-                        Ok(DataFrame::from(self.db.partition_table().all_rows().await?).into())
+                        let (partitions, _) = self.db.get_all_partitions_and_chunks_out_of_queue().await?;
+                        Ok(DataFrame::from(partitions).into())
                     }
                     x => Err(CubeError::user(format!("Unknown SHOW: {}", x))),
                 }
@@ -1415,6 +1484,92 @@ impl SqlService for SqlServiceImpl {
             _ => Err(CubeError::user(format!("Unsupported SQL: '{}'", query))),
         }
     }
+}
+
+#[async_trait]
+impl SqlService for SqlServiceImpl {
+    async fn exec_query(&self, q: &str) -> Result<QueryResult, CubeError> {
+        self.exec_query_with_context(SqlQueryContext::default(), q)
+            .await
+    }
+
+    async fn exec_query_with_context(
+        &self,
+        context: SqlQueryContext,
+        query: &str,
+    ) -> Result<QueryResult, CubeError> {
+        if ha::is_read_query(query) {
+            return self.exec_query_unfenced(context, query).await;
+        }
+        let guard = self.mutation_gate.begin()?;
+        guard
+            .run(async {
+                self.meta_store_health().await?;
+                guard.check()?;
+                let result = self.exec_query_unfenced(context, query).await?;
+                // Do not release admission while a lazy mutation result is still running.
+                Ok(QueryResult::Frame(result.collect().await?))
+            })
+            .await
+    }
+
+    fn mutation_gate(&self) -> Option<Arc<ha::MutationGate>> {
+        Some(self.mutation_gate.clone())
+    }
+
+    fn recovery_capabilities(&self) -> serde_json::Value {
+        // File-import recovery requires routers, workers and MetaStore to use
+        // the upgraded attempt/receipt protocol; this is not arbitrary SQL replay.
+        serde_json::json!({
+            "uploadReceipts": true, "preAggregationStatus": true,
+            "fileImportRecovery": true, "arbitraryInsertReplay": false,
+            "jobAttemptFencing": true, "requiresUpgradedJobProtocol": true
+        })
+    }
+
+    async fn meta_store_health(&self) -> Result<(), CubeError> {
+        crate::http::status::check_meta_store(self.db.as_ref()).await
+    }
+
+    async fn router_build_status(
+        &self,
+        table: String,
+    ) -> Result<build_status::BuildStatus, CubeError> {
+        let guard = self.mutation_gate.begin()?;
+        guard
+            .run(build_status::lookup(self.db.as_ref(), &table))
+            .await
+    }
+
+    async fn upload_temp_file_status(
+        &self,
+        name: String,
+        sha256: String,
+    ) -> Result<upload::UploadStatus, CubeError> {
+        let guard = self.mutation_gate.begin()?;
+        guard
+            .run(upload::status(self.remote_fs.as_ref(), &name, &sha256))
+            .await
+    }
+
+    async fn upload_temp_file_checked(
+        &self,
+        _context: SqlQueryContext,
+        name: String,
+        sha256: String,
+        file_path: &Path,
+    ) -> Result<upload::UploadStatus, CubeError> {
+        let guard = self.mutation_gate.begin()?;
+        guard
+            .run(upload::publish(
+                self.remote_fs.as_ref(),
+                &guard,
+                &name,
+                &sha256,
+                file_path,
+            ))
+            .await
+    }
 
     async fn plan_query(&self, q: &str) -> Result<QueryPlans, CubeError> {
         self.plan_query_with_context(SqlQueryContext::default(), q)
@@ -1514,14 +1669,31 @@ impl SqlService for SqlServiceImpl {
         name: String,
         file_path: &Path,
     ) -> Result<(), CubeError> {
-        // TODO persist file size
-        self.remote_fs
-            .upload_file(
-                file_path.to_string_lossy().to_string(),
-                format!("temp-uploads/{}", name),
-            )
-            .await?;
-        Ok(())
+        if self.mutation_gate.strict {
+            return Err(CubeError::user(
+                "HA uploads require sha256 and an immutable content-addressed name".into(),
+            ));
+        }
+        if name.is_empty()
+            || name.contains('/')
+            || name.contains('\\')
+            || name == "."
+            || name == ".."
+        {
+            return Err(CubeError::user("Invalid upload file name".into()));
+        }
+        let guard = self.mutation_gate.begin()?;
+        guard
+            .run(async {
+                self.remote_fs
+                    .upload_file(
+                        file_path.to_string_lossy().to_string(),
+                        format!("temp-uploads/{}", name),
+                    )
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     async fn temp_uploads_dir(&self, _context: SqlQueryContext) -> Result<String, CubeError> {
@@ -2478,6 +2650,16 @@ mod tests {
             expected_file_size: Option<u64>,
         ) -> Result<String, CubeError> {
             self.0.download_file(remote_path, expected_file_size).await
+        }
+
+        async fn download_file_uncached(
+            &self,
+            remote_path: String,
+            expected_file_size: Option<u64>,
+        ) -> Result<String, CubeError> {
+            self.0
+                .download_file_uncached(remote_path, expected_file_size)
+                .await
         }
 
         async fn delete_file(&self, remote_path: String) -> Result<(), CubeError> {

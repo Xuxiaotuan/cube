@@ -9,6 +9,8 @@ COPY rust ./rust
 COPY node_modules ./node_modules
 
 COPY cube.js /cube/conf/cube.js
+COPY ha-fault-proxy.js /cube/conf/ha-fault-proxy.js
+COPY ha-scheduled-contexts.js /cube/conf/ha-scheduled-contexts.js
 COPY schema /cube/conf/schema
 
 ENV NODE_PATH=/cube/conf/node_modules:/cube/node_modules

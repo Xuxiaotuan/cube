@@ -45,8 +45,8 @@ func TestRecoveryStatusDoesNotClaimMissingRuntimeEntries(t *testing.T) {
 	if status.Recovery.Promotion.State != v1alpha1.RecoveryStateNeedsContext {
 		t.Fatalf("promotion state = %q, want NeedsContext", status.Recovery.Promotion.State)
 	}
-	if status.Recovery.JobRecovery.State != v1alpha1.RecoveryStateBlocked {
-		t.Fatalf("job recovery state = %q, want Blocked", status.Recovery.JobRecovery.State)
+	if status.Recovery.JobRecovery.State != v1alpha1.RecoveryStateNeedsContext {
+		t.Fatalf("job recovery state = %q, want NeedsContext", status.Recovery.JobRecovery.State)
 	}
 	if status.Recovery.MutationReconcile.State != v1alpha1.RecoveryStateNeedsContext {
 		t.Fatalf("mutation reconcile state = %q, want NeedsContext", status.Recovery.MutationReconcile.State)

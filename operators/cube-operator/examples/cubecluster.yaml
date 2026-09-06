@@ -27,3 +27,18 @@ spec:
     objectStoreSecretRef:
       name: cube-router-demo-object-store
       namespace: cube-operator-demo
+# Optional business configuration (place these fields under spec):
+# apiSecretRef: {name: analytics-api-auth, key: apiSecret}
+# api:
+#   pod:
+#     env: [{name: CUBEJS_DB_TYPE, value: postgres}]
+#     envFrom: [{secretRef: {name: analytics-datasource}}]
+#     volumes: [{name: model, configMap: {name: analytics-model}}]
+#     volumeMounts: [{name: model, mountPath: /cube/conf/model, readOnly: true}]
+#     resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {memory: 1Gi}}
+# refresher: {replicas: 1} # inherits API business config; NOT refresher HA
+# router:
+#   drainCommand: [/cube/cubestored, --drain] # requires a drain-capable image
+#   pod: {terminationGracePeriodSeconds: 60}
+# storage:
+#   storageClassName: fast # immutable after StatefulSet creation

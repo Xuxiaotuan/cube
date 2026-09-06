@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
-import { pipeline, Writable } from 'stream';
+import { pipeline, Readable, Writable } from 'stream';
 import { createGzip } from 'zlib';
 import { createReadStream, createWriteStream } from 'fs';
+import { access } from 'fs/promises';
 import { unlink } from 'fs-extra';
 import tempy from 'tempy';
 import csvWriter from 'csv-write-stream';
@@ -36,6 +37,7 @@ import {
   SerializedError,
 } from './IdempotencyStore';
 import { QueryResultFormat } from '../codegen';
+import { BuildUpload, PreAggregationBuild, PreAggregationBuildStore } from './PreAggregationBuildStore';
 
 const CubeStoreCapabilityMinVersion = {
   queueExclusive: '1.6.22',
@@ -81,6 +83,7 @@ type CubeStoreQueryOptions = QueryOptions & {
   responseFormat?: QueryResultFormat,
   retryable?: boolean,
   mutationId?: string,
+  preAggregationBuildId?: string,
 };
 
 type RouterStatusPayload = {
@@ -98,6 +101,10 @@ type RouterRoleStatePayload = {
 };
 
 export class CubeStoreDriver extends BaseDriver implements DriverInterface {
+  private readonly preAggregationBuilds = new PreAggregationBuildStore((sql, values) => this.query(sql, values));
+
+  protected readonly preAggregationReconcileTimeoutMs = Number(process.env.CUBE_STORE_PRE_AGGREGATION_RECONCILE_TIMEOUT_MS) || 120000;
+
   protected readonly config: any;
 
   protected readonly connections: WebSocketConnection[];
@@ -648,6 +655,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     }
 
     const head = normalized.split(/\s+/)[0];
+    if (/^CACHE\s+(GET|KEYS)\s/.test(normalized)) return true;
     const retryableHeads = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'PRAGMA'];
     return retryableHeads.includes(head);
   }
@@ -714,9 +722,9 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         const result = await action(connection);
         this.activeConnectionIndex = index;
         return result;
-      } catch (e) {
+      } catch (e: any) {
         lastError = e;
-        if (!options.retryable || !(e instanceof ConnectionError) || offset + 1 >= maxAttempts) {
+        if ((!options.retryable && e?.code !== 'MUTATION_NOT_DISPATCHED') || !(e instanceof ConnectionError) || offset + 1 >= maxAttempts) {
           throw e;
         }
 
@@ -943,7 +951,20 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
       params.push(...options.files);
     }
 
-    return this.query(sql, params, queryTracingObj).catch(e => {
+    const execute = async () => {
+      if (queryTracingObj?.preAggregationBuildId && options.files?.every(file => !file.startsWith('stream://'))) {
+        const record = await this.preAggregationBuilds.read(tableName);
+        if (!record) throw new MutationUnknownError(`Missing durable build identity for ${tableName}`);
+        const create = { sql, params };
+        if (record.create && JSON.stringify(record.create) !== JSON.stringify(create)) {
+          throw new MutationUnknownError(`Build manifest conflict for ${tableName}`);
+        }
+        await this.preAggregationBuilds.save({ ...record, phase: 'create', create });
+        return this.executePreAggregationCreate({ ...record, phase: 'create', create }, queryTracingObj);
+      }
+      return this.query(sql, params, queryTracingObj);
+    };
+    return execute().catch(e => {
       e.message = `Error during create table: ${sql}: ${e.message}`;
       throw e;
     });
@@ -951,19 +972,47 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   @AsyncDebounce()
   public async getTablesQuery(schemaName) {
-    return this.query(
+    const tables = await this.query(
       `SELECT table_name, build_range_end FROM information_schema.tables WHERE table_schema = ${this.param(0)}`,
       [schemaName]
     );
+    return this.readyPreAggregationTables(schemaName, tables);
   }
 
   @AsyncDebounce()
   public async getPrefixTablesQuery(schemaName, tablePrefixes) {
     const prefixWhere = tablePrefixes.map(_ => 'table_name LIKE CONCAT(?, \'%\')').join(' OR ');
-    return this.query(
+    const tables = await this.query(
       `SELECT table_name, build_range_end FROM information_schema.tables WHERE table_schema = ${this.param(0)} AND (${prefixWhere})`,
       [schemaName].concat(tablePrefixes)
     );
+    return this.readyPreAggregationTables(schemaName, tables);
+  }
+
+  private async readyPreAggregationTables(schema: string, tables: any[]): Promise<any[]> {
+    const ready: any[] = [];
+    for (const table of tables) {
+      const name = `${schema}.${table.table_name}`;
+      const status = await this.getPreAggregationBuildStatus(name);
+      if (status === null || status.state === 'ready') {
+        const build = await this.preAggregationBuilds.read(name);
+        if (build && (!build.create || !status || ['failed', 'retired'].includes(build.phase))) continue;
+        if (build?.create?.params.length && JSON.stringify(status?.locations) !== JSON.stringify(build.create.params)) continue;
+        if (build?.tableId != null && String(status?.tableId) !== String(build.tableId)) continue;
+        if (build && build.phase !== 'ready') {
+          // A retried /load can discover an imported table before its original
+          // CREATE call returns. Publish only after the same immutable build's
+          // authoritative terminal state is durable, not just its physical table.
+          await this.preAggregationBuilds.save({ ...build, phase: 'ready', tableId: status!.tableId });
+          const completed = await this.preAggregationBuilds.read(name);
+          if (completed?.phase !== 'ready' || String(completed.tableId) !== String(status!.tableId)) {
+            throw new MutationUnknownError(`Ready build publication was not confirmed: ${name}`);
+          }
+        }
+        ready.push(table);
+      }
+    }
+    return ready;
   }
 
   public async tableColumnTypes(table: string): Promise<TableStructure> {
@@ -1018,7 +1067,11 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
     const aggregations = hasAggregatingIndexes && aggregationsColumns?.length ? ` AGGREGATIONS (${aggregationsColumns.join(', ')})` : '';
 
-    if (tableData.rowStream) {
+    if (tableData.rows && queryTracingObj?.preAggregationBuildId) {
+      // File-import CREATE publishes only after the complete import. An empty
+      // CREATE followed by INSERT batches publishes a partially loaded table.
+      await this.importStream(columns, { ...tableData, rowStream: Readable.from(tableData.rows) }, table, indexes, aggregations, queryTracingObj);
+    } else if (tableData.rowStream) {
       await this.importStream(columns, tableData, table, indexes, aggregations, queryTracingObj);
     } else if (tableData.csvFile) {
       await this.importCsvFile(tableData, table, columns, indexes, aggregations, queryTracingObj);
@@ -1061,11 +1114,11 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         (${columns.map(c => this.quoteIdentifier(c.name)).join(', ')})
         VALUES ${valueParamPlaceholders}`,
           params,
-          queryTracingObj
+          { ...queryTracingObj, mutationId: `${table}:insert:${j}:${this.createIdempotencyFingerprintWithCanonicalQuery('', params)}` }
         );
       }
-    } catch (e) {
-      await this.dropTable(table);
+    } catch (e: any) {
+      if (!(e instanceof ConnectionError) && e?.code !== 'MUTATION_UNKNOWN') await this.dropTable(table);
       throw e;
     }
   }
@@ -1101,9 +1154,10 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     }
 
     const tempFiles: string[] = [];
+    const pipelinePromises: Promise<any>[] = [];
+    const fileWriters: any[] = [];
+    let completed = false;
     try {
-      const pipelinePromises: Promise<any>[] = [];
-      const filePromises: Promise<string>[] = [];
       let currentFileStream: { stream: NodeJS.WritableStream, tempFile: string } | null = null;
 
       const options: CreateTableOptions = {
@@ -1112,16 +1166,10 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         aggregations
       };
 
-      const baseUrl = this.uploadBaseUrl(this.activeRouterBaseUrl());
-      let fileCounter = 0;
-
-      this.createTableSql(table, columns);
-      // eslint-disable-next-line no-unused-vars
-      const createTableSqlWithoutLocation = this.createTableSqlWithOptions(table, columns, options);
-
       const getFileStream = () => {
         if (!currentFileStream) {
           const writer = csvWriter({ headers: columns.map(c => c.name) });
+          fileWriters.push(writer);
           const tempFile = tempy.file();
           tempFiles.push(tempFile);
           const gzipStream = createGzip();
@@ -1129,24 +1177,15 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
             pipeline(writer, gzipStream, createWriteStream(tempFile), (err) => {
               if (err) {
                 reject(err);
+                return;
               }
-
-              const fileName = `${table}-${fileCounter++}.csv.gz`;
-              filePromises.push(fetch(`${baseUrl.replace(/^ws/, 'http')}/upload-temp-file?name=${fileName}`, {
-                method: 'POST',
-                body: createReadStream(tempFile),
-              }).then(async res => {
-                if (res.status !== 200) {
-                  const error = await res.json();
-                  throw new Error(`Error during upload of ${fileName} create table: ${createTableSqlWithoutLocation}: ${error.error}`);
-                }
-                return fileName;
-              }));
-
               resolve(null);
             });
             currentFileStream = { stream: writer, tempFile };
           }));
+          // Keep rejection observable below without an unhandled rejection while
+          // the source pipeline is still producing other batches.
+          pipelinePromises[pipelinePromises.length - 1].catch(() => undefined);
         }
         if (!currentFileStream) {
           throw new Error('Stream init error');
@@ -1155,6 +1194,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
       };
 
       let rowCount = 0;
+      let totalRowCount = 0;
 
       const endStream = (chunk, encoding, callback) => {
         const { stream } = getFileStream();
@@ -1163,6 +1203,12 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         if (chunk) {
           stream.end(chunk, encoding, callback);
         } else {
+          if (totalRowCount === 0) {
+            // csv-write-stream emits its header on the first data row only.
+            // An empty rollup still needs a valid CSV file and LOCATION import.
+            const header = columns.map(({ name }) => /[",\r\n]/.test(name) ? `"${name.replace(/"/g, '""')}"` : name).join(',');
+            (stream as any).push(`${header}\n`);
+          }
           stream.end(callback);
         }
       };
@@ -1172,6 +1218,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
       const outputStream = new Writable({
         write(chunk, encoding, callback) {
           rowCount++;
+          totalRowCount++;
           if (rowCount >= batchingRowSplitCount) {
             endStream(chunk, encoding, callback);
           } else {
@@ -1179,6 +1226,10 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
           }
         },
         final(callback: (error?: (Error | null)) => void) {
+          if (!currentFileStream && totalRowCount > 0) {
+            callback();
+            return;
+          }
           endStream(null, null, callback);
         },
         objectMode: true
@@ -1191,16 +1242,243 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
       );
 
       await Promise.all(pipelinePromises);
-
-      const files = await Promise.all(filePromises);
+      const uploads: BuildUpload[] = [];
+      for (const path of tempFiles) {
+        const hash = createHash('sha256');
+        let size = 0;
+        for await (const chunk of createReadStream(path)) {
+          hash.update(chunk);
+          size += chunk.length;
+        }
+        const sha256 = hash.digest('hex');
+        uploads.push({ name: `${sha256}.csv.gz`, sha256, size, path });
+      }
+      if (queryTracingObj?.preAggregationBuildId) {
+        const record = await this.preAggregationBuilds.read(table);
+        if (!record) throw new MutationUnknownError(`Missing durable build identity for ${table}`);
+        const manifestHash = createHash('sha256').update(JSON.stringify(uploads.map(({ name, sha256, size }) => ({ name, sha256, size })))).digest('hex');
+        if (record.manifestHash && record.manifestHash !== manifestHash) {
+          const status = await this.getPreAggregationBuildStatus(table);
+          if (status?.state !== 'absent' || record.tableId != null) throw new MutationUnknownError(`Regenerated input changed but target outcome is unresolved: ${table}`);
+          const error = Object.assign(new Error(`Regenerated input differs from immutable build manifest; a new build attempt is required: ${table}`), { code: 'PRE_AGG_REBUILD_REQUIRED' });
+          await this.preAggregationBuilds.save({ ...record, phase: 'failed', error: error.message });
+          throw error;
+        }
+        // Persist the complete, ordered manifest before dispatching any upload.
+        options.files = uploads.map(upload => `temp://${upload.name}`);
+        await this.preAggregationBuilds.save({ ...record, phase: 'uploading', uploads, manifestHash,
+          create: { sql: this.createTableSqlWithOptions(table, columns, options), params: options.files } });
+      }
+      const files: string[] = [];
+      for (const upload of uploads) files.push(await this.uploadTempFile(upload, !!queryTracingObj?.preAggregationBuildId));
+      if (queryTracingObj?.preAggregationBuildId) {
+        const record = await this.preAggregationBuilds.read(table);
+        if (!record) throw new MutationUnknownError(`Missing durable build identity for ${table}`);
+        await this.preAggregationBuilds.save({ ...record, phase: 'uploaded' });
+      }
       if (files.length > 0) {
         options.files = files.map(fileName => `temp://${fileName}`);
       }
 
-      return this.createTableWithOptions(table, columns, options, queryTracingObj);
+      const result = await this.createTableWithOptions(table, columns, options, queryTracingObj);
+      completed = true;
+      return result;
+    } catch (error: any) {
+      fileWriters.forEach(writer => writer.destroy());
+      error.tempFiles = tempFiles;
+      throw error;
     } finally {
-      await Promise.all(tempFiles.map(tempFile => unlink(tempFile)));
+      // No unlink while a compressor still owns the file, and no loss of the
+      // only resumable source when upload/CREATE has an unknown outcome.
+      await Promise.allSettled(pipelinePromises);
+      if (completed) await Promise.all(tempFiles.map(tempFile => unlink(tempFile)));
     }
+  }
+
+  protected async routerRecoveryJson(path: string): Promise<any | null> {
+    let lastError: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const leader = await this.detectLeaderIndex(attempt > 0);
+        if (leader !== null) this.activeConnectionIndex = leader;
+        const res = await fetch(`${this.uploadBaseUrl(this.activeRouterBaseUrl())}${path}`, { timeout: this.leaderProbeTimeoutMs, headers: this.recoveryHeaders() });
+        if (res.status === 404 || res.status === 405) return null; // old router, no capability
+        if (!res.ok) throw new Error(`Recovery metadata unavailable: HTTP ${res.status}`);
+        return await res.json();
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await this.sleep(100 * (attempt + 1));
+      }
+    }
+    throw lastError;
+  }
+
+  public async getPreAggregationBuildStatus(table: string): Promise<{ state: string; tableId?: string | number; error?: string; locations?: string[] } | null> {
+    const status = await this.routerRecoveryJson(`/router/build-status?table=${encodeURIComponent(table)}`);
+    if (status === null) return null;
+    if (!['absent', 'building', 'ready', 'failed', 'unknown'].includes(status.state) ||
+        (['building', 'ready', 'failed'].includes(status.state) && status.tableId == null)) {
+      throw new Error('Invalid authoritative pre-aggregation build status');
+    }
+    return status;
+  }
+
+  public async resolvePreAggregationBuild(key: string, versionEntry: any, protectedTables: string[], force = false) {
+    const timestamp = versionEntry.naming_version === 2 ? Math.floor(versionEntry.last_updated_at / 1000).toString(32) : versionEntry.last_updated_at;
+    const buildId = `${versionEntry.table_name}_${versionEntry.content_version}_${versionEntry.structure_version}_${timestamp}`;
+    const initialStatus = await this.getPreAggregationBuildStatus(buildId);
+    if (initialStatus === null) return null;
+    if (initialStatus.state !== 'absent' && !(await this.preAggregationBuilds.read(buildId))) {
+      throw new MutationUnknownError(`Refusing to adopt existing target without a durable build identity: ${buildId}`);
+    }
+    const candidate: PreAggregationBuild = { buildId, versionEntry, protectedTables, phase: 'selected' };
+    const selected = await this.preAggregationBuilds.resolve(key, candidate, force);
+    if (selected.phase === 'ready' && (await this.getPreAggregationBuildStatus(selected.buildId))?.state === 'absent') {
+      // A terminal, previously ready table may have been legitimately retired.
+      // Allocate a NEW attempt, never resurrect its old table identity.
+      await this.preAggregationBuilds.save({ ...selected, phase: 'retired', error: 'Previously completed target was retired' });
+      return this.preAggregationBuilds.resolve(key, candidate, force);
+    }
+    return selected;
+  }
+
+  public async getProtectedPreAggregationTables(): Promise<string[]> {
+    return this.preAggregationBuilds.protectedTables();
+  }
+
+  public async resumePreAggregationBuild(table: string): Promise<boolean> {
+    const record = await this.preAggregationBuilds.read(table);
+    if (!record || record.phase === 'selected') return false;
+    if (record.phase === 'failed' || record.phase === 'retired') throw new Error(record.error || `Pre-aggregation build failed: ${table}`);
+    if (!record.create) throw new MutationUnknownError(`Missing CREATE manifest for ${table}`);
+    if (record.phase === 'uploading') {
+      try {
+        // Each helper checks authoritative remote status before opening a local
+        // path. Another refresh worker needs no local files if all are remote.
+        for (const upload of record.uploads || []) await this.uploadTempFile(upload, true);
+      } catch (error: any) {
+        if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') return false;
+        throw error;
+      }
+      await this.preAggregationBuilds.save({ ...record, phase: 'uploaded' });
+    }
+    if (record.phase === 'uploaded') {
+      // Do not infer durability from a former acknowledgement alone.
+      for (const upload of record.uploads || []) {
+        try {
+          await this.uploadTempFile(upload, true);
+        } catch (error: any) {
+          if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') return false;
+          throw error;
+        }
+      }
+    }
+    await this.preAggregationBuilds.save({ ...record, phase: 'create' });
+    await this.executePreAggregationCreate({ ...record, phase: 'create' }, { preAggregationBuildId: table });
+    return true;
+  }
+
+  private async executePreAggregationCreate(record: PreAggregationBuild, tracing: any): Promise<any[]> {
+    const current = await this.preAggregationBuilds.read(record.buildId);
+    if (!current) throw new MutationUnknownError(`Build identity disappeared: ${record.buildId}`);
+    if (current.phase === 'failed' || current.phase === 'retired') throw new Error(current.error || `Build is terminal: ${record.buildId}`);
+    record = current;
+    if (!record.create) throw new MutationUnknownError(`Missing CREATE manifest for ${record.buildId}`);
+    let lastError: any;
+    const deadline = Date.now() + Math.max(1, this.preAggregationReconcileTimeoutMs);
+    const maxPolls = Math.ceil(Math.max(1, this.preAggregationReconcileTimeoutMs) / 1000) + 1;
+    for (let attempt = 0; attempt < maxPolls && Date.now() <= deadline; attempt++) {
+      let status;
+      try {
+        status = await this.getPreAggregationBuildStatus(record.buildId);
+      } catch (error: any) {
+        lastError = error;
+        await this.sleep(Math.min(2000, Math.max(0, deadline - Date.now())));
+        continue;
+      }
+      if (!status || status.state === 'unknown') throw new MutationUnknownError(`Build outcome unknown for ${record.buildId}`);
+      if (record.tableId != null && status.tableId != null && String(record.tableId) !== String(status.tableId)) {
+        throw new MutationUnknownError(`Table identity changed for ${record.buildId}`);
+      }
+      if (status.state === 'ready') {
+        if (record.create!.params.length && JSON.stringify(status.locations) !== JSON.stringify(record.create!.params)) {
+          throw new MutationUnknownError(`Authoritative CREATE locations do not match immutable manifest: ${record.buildId}`);
+        }
+        await this.preAggregationBuilds.save({ ...record, phase: 'ready', tableId: status.tableId });
+        return [];
+      }
+      if (status.state === 'failed') {
+        await this.preAggregationBuilds.save({ ...record, phase: 'failed', tableId: status.tableId, error: status.error });
+        throw new Error(status.error || `Pre-aggregation import failed: ${record.buildId}`);
+      }
+      if (status.tableId != null) {
+        record = { ...record, tableId: status.tableId };
+        await this.preAggregationBuilds.save(record);
+      }
+      if (status.state === 'absent') {
+        if (record.tableId != null) throw new MutationUnknownError(`Previously observed table disappeared: ${record.buildId}`);
+        // Only the immutable, build-specific CREATE can be retried after an
+        // authoritative no-effect observation. Never replay an arbitrary INSERT.
+        try {
+          await this.query(record.create!.sql, record.create!.params, {
+            ...tracing, mutationId: `${record.buildId}:create`, retryable: false
+          });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      await this.sleep(Math.min(2000, 250 * (attempt + 1), Math.max(0, deadline - Date.now())));
+    }
+    throw new MutationUnknownError(`Pre-aggregation ${record.buildId} still requires reconciliation${lastError ? `: ${lastError.message}` : ''}`);
+  }
+
+  protected async uploadTempFile(upload: BuildUpload, requireRecovery: boolean): Promise<string> {
+    let lastError: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const query = `name=${encodeURIComponent(upload.name)}&sha256=${upload.sha256}`;
+      let status;
+      try {
+        status = await this.routerRecoveryJson(`/upload-temp-file-status?${query}`);
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+      if (status?.state === 'uploaded') {
+        if (status.sha256 !== upload.sha256 || status.size !== upload.size) throw new MutationUnknownError('Uploaded payload checksum/size mismatch');
+        return upload.name;
+      }
+      if (status !== null && status?.state !== 'missing') throw new MutationUnknownError('Invalid upload status');
+      if (status === null && (requireRecovery || attempt > 0)) throw new MutationUnknownError('Upload recovery is not supported by this router');
+      try {
+        await access(upload.path);
+      } catch (error: any) {
+        if (error.code === 'ENOENT') throw Object.assign(new Error(`Regenerate source for missing upload ${upload.name}`), { code: 'PRE_AGG_UPLOAD_SOURCE_MISSING' });
+        throw error;
+      }
+      const body = createReadStream(upload.path);
+      try {
+        const res = await fetch(`${this.uploadBaseUrl(this.activeRouterBaseUrl())}/upload-temp-file?${status === null ? `name=${encodeURIComponent(upload.name)}` : query}`, {
+          method: 'POST', body, timeout: 60000, headers: this.recoveryHeaders(),
+        });
+        if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+        // Consume the response within the timeout before closing the source.
+        await res.text();
+        if (status === null) return upload.name;
+      } catch (error) {
+        lastError = error;
+        if (status === null) throw new MutationUnknownError(`Legacy upload outcome unknown: ${upload.name}`);
+      } finally {
+        body.destroy();
+      }
+    }
+    // The final POST may have committed even though its response was lost.
+    const final = await this.routerRecoveryJson(`/upload-temp-file-status?name=${encodeURIComponent(upload.name)}&sha256=${upload.sha256}`).catch(() => null);
+    if (final?.state === 'uploaded' && final.sha256 === upload.sha256 && final.size === upload.size) return upload.name;
+    throw new MutationUnknownError(`Upload outcome unresolved for ${upload.name}${lastError ? `: ${lastError.message}` : ''}`);
+  }
+
+  private recoveryHeaders(): Record<string, string> {
+    return this.config.user ? { Authorization: `Basic ${Buffer.from(`${this.config.user}:${this.config.password || ''}`).toString('base64')}` } : {};
   }
 
   private async importStreamingSource(columns: Column[], tableData: StreamingSourceTableData, table: string, indexes: string, uniqueKeyColumns: string[] | null, queryTracingObj?: any, sealAt?: string) {

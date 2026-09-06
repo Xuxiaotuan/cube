@@ -261,6 +261,30 @@ di_service!(S3RemoteFs, [RemoteFs, ExtendedRemoteFs]);
 
 #[async_trait]
 impl RemoteFs for S3RemoteFs {
+    async fn download_file_uncached(
+        &self,
+        remote_path: String,
+        expected_file_size: Option<u64>,
+    ) -> Result<String, CubeError> {
+        let uploads = self.uploads_dir().await?;
+        let (file, path) = NamedTempFile::new_in(uploads)?.into_parts();
+        let mut writer = File::from_std(file);
+        let status = self
+            .bucket
+            .load()
+            .get_object_stream(self.s3_path(&remote_path).as_str(), &mut writer)
+            .await?;
+        if status != 200 {
+            return Err(CubeError::internal(format!(
+                "Remote download returned status {}",
+                status
+            )));
+        }
+        writer.flush().await?;
+        drop(writer);
+        CommonRemoteFsUtils::finish_uncached_download(path, expected_file_size).await
+    }
+
     async fn temp_upload_path(&self, remote_path: String) -> Result<String, CubeError> {
         CommonRemoteFsUtils::temp_upload_path(self, remote_path).await
     }

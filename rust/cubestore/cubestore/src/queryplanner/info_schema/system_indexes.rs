@@ -1,4 +1,4 @@
-use crate::metastore::{IdRow, Index, MetaStoreTable};
+use crate::metastore::{IdRow, Index};
 use crate::queryplanner::{InfoSchemaTableDef, InfoSchemaTableDefContext};
 use crate::CubeError;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ impl InfoSchemaTableDef for SystemIndexesTableDef {
         ctx: InfoSchemaTableDefContext,
         _limit: Option<usize>,
     ) -> Result<Vec<Self::T>, CubeError> {
-        Ok(ctx.meta_store.index_table().all_rows().await?)
+        ctx.meta_store.get_indexes().await
     }
 
     fn schema(&self) -> Vec<Field> {

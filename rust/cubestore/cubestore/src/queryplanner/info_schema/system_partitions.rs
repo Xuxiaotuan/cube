@@ -1,5 +1,5 @@
 use crate::metastore::partition::partition_file_name;
-use crate::metastore::{IdRow, MetaStoreTable, Partition};
+use crate::metastore::{IdRow, Partition};
 use crate::queryplanner::{InfoSchemaTableDef, InfoSchemaTableDefContext};
 use crate::CubeError;
 use async_trait::async_trait;
@@ -18,7 +18,11 @@ impl InfoSchemaTableDef for SystemPartitionsTableDef {
         ctx: InfoSchemaTableDefContext,
         _limit: Option<usize>,
     ) -> Result<Vec<Self::T>, CubeError> {
-        Ok(ctx.meta_store.partition_table().all_rows().await?)
+        let (partitions, _) = ctx
+            .meta_store
+            .get_all_partitions_and_chunks_out_of_queue()
+            .await?;
+        Ok(partitions)
     }
 
     fn schema(&self) -> Vec<Field> {

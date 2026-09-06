@@ -68,8 +68,9 @@ func main() {
 	}
 
 	if err = (&controllers.CubeClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		APIReader: mgr.GetAPIReader(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		os.Exit(1)
 	}

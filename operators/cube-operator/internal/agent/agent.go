@@ -36,12 +36,15 @@ type LeaseStore interface {
 
 // Config configures a lease agent for one Router pod.
 type Config struct {
-	Store         LeaseStore
-	ClusterID     string
-	HolderID      string
-	Path          string
-	RetryPeriod   time.Duration
-	Now           func() time.Time
+	Store           LeaseStore
+	PromotionSource PromotionSource
+	PromotionPath   string
+	SyncTimeout     time.Duration
+	ClusterID       string
+	HolderID        string
+	Path            string
+	RetryPeriod     time.Duration
+	Now             func() time.Time
 }
 
 // LeadershipFile is the strict, local data-plane representation consumed by
@@ -56,12 +59,15 @@ type LeadershipFile struct {
 
 // Agent polls the authoritative lease store and maintains the local file.
 type Agent struct {
-	store         LeaseStore
-	clusterID     string
-	holderID      string
-	path          string
-	retryPeriod   time.Duration
-	now           func() time.Time
+	store           LeaseStore
+	promotionSource PromotionSource
+	promotionPath   string
+	syncTimeout     time.Duration
+	clusterID       string
+	holderID        string
+	path            string
+	retryPeriod     time.Duration
+	now             func() time.Time
 
 	maxEpoch  int64
 	lastToken string
@@ -84,24 +90,41 @@ func New(config Config) (*Agent, error) {
 	if config.RetryPeriod <= 0 {
 		return nil, errors.New("retry period must be positive")
 	}
+	if config.SyncTimeout == 0 {
+		config.SyncTimeout = 2 * time.Second
+	}
+	if config.SyncTimeout < 0 {
+		return nil, errors.New("sync timeout must be positive")
+	}
+	if config.PromotionSource != nil {
+		if config.PromotionPath == "" {
+			config.PromotionPath = DefaultPromotionFile
+		}
+		if filepath.Clean(config.PromotionPath) == filepath.Clean(config.Path) {
+			return nil, errors.New("promotion and leadership files must use distinct paths")
+		}
+	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
 
 	return &Agent{
-		store:         config.Store,
-		clusterID:     config.ClusterID,
-		holderID:      config.HolderID,
-		path:          config.Path,
-		retryPeriod:   config.RetryPeriod,
-		now:           config.Now,
+		store:           config.Store,
+		promotionSource: config.PromotionSource,
+		promotionPath:   config.PromotionPath,
+		syncTimeout:     config.SyncTimeout,
+		clusterID:       config.ClusterID,
+		holderID:        config.HolderID,
+		path:            config.Path,
+		retryPeriod:     config.RetryPeriod,
+		now:             config.Now,
 	}, nil
 }
 
 // Run synchronizes immediately, then at RetryPeriod until the context ends.
 // It always leaves an expired follower file when the agent stops.
 func (a *Agent) Run(ctx context.Context) error {
-	defer a.writeExpiredFollower()
+	defer a.fenceLocal()
 
 	if err := a.Sync(ctx); err != nil {
 		log.Printf("lease sync failed: %v", err)
@@ -127,18 +150,21 @@ func (a *Agent) Run(ctx context.Context) error {
 // Sync reads the authoritative lease and writes it atomically. Every read
 // error, malformed record, expired record, non-owner record, and fencing
 // regression fails closed by writing an expired follower file.
-func (a *Agent) Sync(ctx context.Context) error {
+func (a *Agent) Sync(ctx context.Context) (syncErr error) {
+	ctx, cancel := context.WithTimeout(ctx, a.syncTimeout)
+	defer cancel()
+	// A failed refresh must invalidate both local data-plane inputs, not leave
+	// the previous promotion marker live while the authoritative API is down.
+	defer func() {
+		if syncErr != nil {
+			syncErr = errors.Join(syncErr, a.fenceLocal())
+		}
+	}()
 	record, err := a.store.Get(ctx, a.clusterID)
 	if err != nil {
-		if writeErr := a.writeExpiredFollower(); writeErr != nil {
-			return fmt.Errorf("read lease: %w; expire leadership file: %v", err, writeErr)
-		}
 		return fmt.Errorf("read lease: %w", err)
 	}
 	if err := validate(record, a.clusterID, a.maxEpoch, a.lastToken, a.now()); err != nil {
-		if writeErr := a.writeExpiredFollower(); writeErr != nil {
-			return fmt.Errorf("%w: %v; expire leadership file: %v", ErrInvalidLeaseRecord, err, writeErr)
-		}
 		return fmt.Errorf("%w: %v", ErrInvalidLeaseRecord, err)
 	}
 	if record.Epoch > a.maxEpoch {
@@ -146,19 +172,43 @@ func (a *Agent) Sync(ctx context.Context) error {
 	}
 	a.lastToken = record.Token
 	if record.HolderID != a.holderID {
-		if err := a.writeExpiredFollower(); err != nil {
-			return fmt.Errorf("%w: expire leadership file: %v", ErrNotHolder, err)
-		}
 		return ErrNotHolder
 	}
 
-	file := LeadershipFile{
-		HolderID:  record.HolderID,
-		Epoch:     record.Epoch,
-		TokenHash: tokenHash(record.Token),
-		IssuedAt:  record.IssuedAt.UTC(),
-		ExpiresAt: record.ExpiresAt.UTC(),
+	if a.promotionSource != nil {
+		raw, err := a.promotionSource.Read(ctx)
+		if err != nil {
+			return fmt.Errorf("read promotion marker: %w", err)
+		}
+		if err := validatePromotion(raw, record); err != nil {
+			return err
+		}
+		// Reject a lease transfer that raced the ConfigMap read. Renewed timestamps
+		// may change, but holder, epoch, token and generation must remain identical.
+		current, err := a.store.Get(ctx, a.clusterID)
+		if err != nil {
+			return fmt.Errorf("recheck promotion lease: %w", err)
+		}
+		if err := leadership.ValidateLeaseFence(current, record); err != nil {
+			return err
+		}
+		if err := validate(current, a.clusterID, a.maxEpoch, a.lastToken, a.now()); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidLeaseRecord, err)
+		}
+		record = current
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Publish marker first: an old leadership file cannot pair with a newer
+		// marker. Only the following leadership write enables the matching epoch.
+		if err := writeAtomic(a.promotionPath, json.RawMessage(raw)); err != nil {
+			return fmt.Errorf("write promotion marker: %w", err)
+		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	file := LeadershipFile{HolderID: record.HolderID, Epoch: record.Epoch, TokenHash: tokenHash(record.Token), IssuedAt: record.IssuedAt.UTC(), ExpiresAt: record.ExpiresAt.UTC()}
 	if err := writeAtomic(a.path, file); err != nil {
 		return fmt.Errorf("write leadership file: %w", err)
 	}
@@ -210,7 +260,7 @@ func tokenHash(token string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func writeAtomic(path string, file LeadershipFile) error {
+func writeAtomic(path string, file any) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o750); err != nil {
 		return err

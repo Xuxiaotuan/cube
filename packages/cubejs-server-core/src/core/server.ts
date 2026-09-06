@@ -35,6 +35,7 @@ import { CompilerApi, type CompilerApiOptions } from './CompilerApi';
 import { DevServer } from './DevServer';
 import { agentCollect } from './agentCollect';
 import { OrchestratorStorage } from './OrchestratorStorage';
+import { recoveryCapabilitiesMiddleware } from './recoveryCapabilities';
 import { createLogger } from './logger';
 import { OptsHandler } from './OptsHandler';
 import {
@@ -439,6 +440,11 @@ export class CubejsServerCore {
 
   public async initApp(app: ExpressApplication) {
     const apiGateway = this.apiGateway();
+    // Capability is scoped to the default context, even with contextToAppId.
+    // It does not assert recovery support for every tenant or scheduled context.
+    app.get('/readyz', recoveryCapabilitiesMiddleware(async () => (
+      this.getOrchestratorApi({} as RequestContext)
+    )));
     apiGateway.initApp(app);
 
     if (this.options.devServer) {

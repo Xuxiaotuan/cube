@@ -7,6 +7,7 @@ mod listener;
 mod queue_item;
 mod queue_item_payload;
 mod queue_result;
+mod remote;
 mod scheduler;
 
 pub use cache_eviction_manager::{
@@ -18,8 +19,13 @@ pub use cache_rocksstore::{
     QueueAddResponse, QueueAllItem, QueueCancelResponse, QueueGetResponse, QueueKey, QueueListItem,
     QueueResultResponse, RocksCacheStore,
 };
+pub use cache_rocksstore::{
+    CacheStoreRpcClientTransport, CacheStoreRpcMethodCall, CacheStoreRpcMethodResult,
+    CacheStoreRpcServer,
+};
 pub use lazy::LazyRocksCacheStore;
 pub use queue_item::{QueueItem, QueueItemStatus, QueueResultAckEvent, QueueRetrieveResponse};
 pub use queue_item_payload::QueueItemPayload;
 pub use queue_result::QueueResult;
+pub use remote::RemoteCacheStoreTransport;
 pub use scheduler::CacheStoreSchedulerImpl;

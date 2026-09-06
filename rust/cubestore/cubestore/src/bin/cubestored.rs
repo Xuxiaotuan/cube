@@ -15,6 +15,14 @@ use tokio::runtime::Builder;
 const PACKAGE_JSON: &str = std::include_str!("../../../package.json");
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--drain") {
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+        if let Err(error) = runtime.block_on(drain_router()) {
+            eprintln!("Router drain failed: {}", error);
+            std::process::exit(1);
+        }
+        return;
+    }
     let package_json: Value = serde_json::from_str(PACKAGE_JSON).unwrap();
     let version = package_json
         .get("version")
@@ -98,26 +106,61 @@ fn main() {
             track_event("Cube Store Start".to_string(), HashMap::new()).await;
         }
 
-        stop_on_ctrl_c(&services).await;
+        stop_on_signals(&services).await;
         services.wait_processing_loops().await.unwrap();
     });
 }
 
-async fn stop_on_ctrl_c(s: &CubeServices) {
+async fn drain_router() -> Result<(), Box<dyn std::error::Error>> {
+    let port = std::env::var("CUBESTORE_HTTP_PORT")
+        .unwrap_or_else(|_| "3030".to_string())
+        .parse::<u16>()?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
+    let mut request = client.post(format!("http://127.0.0.1:{}/router/drain", port));
+    if let Ok(user) = std::env::var("CUBESTORE_DRAIN_USER") {
+        request = request.basic_auth(user, std::env::var("CUBESTORE_DRAIN_PASSWORD").ok());
+    }
+    let response = request.send().await?.error_for_status()?;
+    let status: Value = response.json().await?;
+    if status.get("drained").and_then(Value::as_bool) != Some(true) {
+        return Err("Router still has in-flight mutations".into());
+    }
+    Ok(())
+}
+
+async fn stop_on_signals(s: &CubeServices) {
     let s = s.clone();
     cube_ext::spawn(async move {
+        #[cfg(unix)]
+        let mut terminate =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(signal) => signal,
+                Err(error) => {
+                    log::error!("Failed to listen for SIGTERM: {}", error);
+                    return;
+                }
+            };
         let mut counter = 0;
         loop {
-            if let Err(e) = tokio::signal::ctrl_c().await {
-                log::error!("Failed to listen for Ctrl+C: {}", e);
+            #[cfg(unix)]
+            let received = tokio::select! {
+                result = tokio::signal::ctrl_c() => result,
+                _ = terminate.recv() => Ok(()),
+            };
+            #[cfg(not(unix))]
+            let received = tokio::signal::ctrl_c().await;
+            if let Err(e) = received {
+                log::error!("Failed to listen for shutdown signal: {}", e);
                 break;
             }
             counter += 1;
             if counter == 1 {
-                log::info!("Received Ctrl+C, shutting down.");
+                log::info!("Received shutdown signal, shutting down.");
                 s.stop_processing_loops().await.ok();
             } else if counter == 3 {
-                log::info!("Received Ctrl+C 3 times, exiting immediately.");
+                log::info!("Received shutdown signal 3 times, exiting immediately.");
                 std::process::exit(130); // 130 is the default exit code when killed by a signal.
             }
         }

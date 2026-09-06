@@ -1,0 +1,6 @@
+2026-09-06T19:46:07.081391910Z 2026-09-06T19:46:07.081Z INFO  [cubestored] <pid:1> Cube Store version 1.7.15
+2026-09-06T19:46:07.092781901Z 2026-09-06T19:46:07.090Z INFO  [cubestore::http::status] <pid:1> Serving status probes at 0.0.0.0:3031
+2026-09-06T19:46:07.094342057Z 2026-09-06T19:46:07.094Z INFO  [cubestore::mysql] <pid:1> MySQL port open on 0.0.0.0:3306
+2026-09-06T19:46:07.094349723Z 2026-09-06T19:46:07.094Z INFO  [cubestore::http] <pid:1> Http Server is listening on 0.0.0.0:3030
+2026-09-06T19:52:02.049163703Z 2026-09-06T19:52:02.048Z INFO  [cubestore::remotefs::minio] <pid:1> Uploaded temp-uploads/519d779ef74ad2f592beef5c37a753713e0f831846fea3d4e4412fae74eafb49.csv.gz (14.565359ms)
+2026-09-06T19:52:10.956712509Z 2026-09-06T19:52:10.956Z ERROR [cubestore::http] <pid:1> Websocket error: Protocol(ResetWithoutClosingHandshake)

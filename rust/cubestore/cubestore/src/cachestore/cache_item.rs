@@ -22,6 +22,22 @@ pub struct CacheItem {
 // SecondaryIndex::ByPath 13 + hash (let's take 18)
 pub const CACHE_ITEM_SIZE_WITHOUT_VALUE: u32 = (15 * 3) + 58 + (8 + 18) + (13 + 18);
 
+// Durable pre-aggregation protocol records share CacheStore storage, but are
+// not disposable cache entries. Keep the namespace boundary exact.
+pub(crate) const PRE_AGG_RECOVERY_PREFIXES: [&str; 5] = [
+    "PRE_AGG_BUILD_V1:",
+    "PRE_AGG_ACTIVE_V1:",
+    "PRE_AGG_MANIFEST_V1:",
+    "PRE_AGG_PHASE_V1:",
+    "PRE_AGG_TABLE_ID_V1:",
+];
+
+pub(crate) fn is_pre_aggregation_recovery_key(path: &str) -> bool {
+    PRE_AGG_RECOVERY_PREFIXES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+}
+
 impl RocksEntity for CacheItem {}
 
 impl CacheItem {
@@ -43,6 +59,11 @@ impl CacheItem {
     }
 
     pub fn new(path: String, ttl: Option<u32>, value: String) -> CacheItem {
+        let ttl = if is_pre_aggregation_recovery_key(&path) {
+            None
+        } else {
+            ttl
+        };
         let parts: Vec<&str> = path.rsplitn(2, ":").collect();
 
         let (prefix, key) = match parts.len() {
@@ -75,7 +96,15 @@ impl CacheItem {
     }
 
     pub fn get_expire(&self) -> &Option<DateTime<Utc>> {
-        &self.expire
+        if self.is_pre_aggregation_recovery() {
+            &None
+        } else {
+            &self.expire
+        }
+    }
+
+    pub(crate) fn is_pre_aggregation_recovery(&self) -> bool {
+        is_pre_aggregation_recovery_key(&self.get_path())
     }
 
     pub fn get_value(&self) -> &String {
@@ -199,6 +228,34 @@ impl RocksSecondaryIndex<CacheItem, CacheItemIndexKey> for CacheItemRocksIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_pre_aggregation_recovery_namespace_and_ttl() {
+        for prefix in PRE_AGG_RECOVERY_PREFIXES {
+            let path = format!("{}schema.table:ready", prefix);
+            let mut row = CacheItem::new(path.clone(), Some(0), "manifest".to_string());
+            assert!(row.is_pre_aggregation_recovery(), "{}", path);
+            assert!(row.expire.is_none());
+            // Deserialized old rows must not propagate TTL to either index.
+            row.expire = Some(Utc::now() - Duration::seconds(10));
+            assert!(row.get_expire().is_none());
+            for index in [CacheItemRocksIndex::ByPath, CacheItemRocksIndex::ByPrefix] {
+                assert!(index.get_expire(&row).is_none());
+            }
+        }
+        for path in [
+            "ordinary:no-ttl",
+            "tenant:PRE_AGG_BUILD_V1:table",
+            "PRE_AGG_BUILD_V10:table",
+            "PRE_AGG_BUILD_V1_OTHER:table",
+            "pre_agg_build_v1:table",
+            "PRE_AGG_BUILD_V1",
+        ] {
+            let row = CacheItem::new(path.to_string(), Some(0), "cache".to_string());
+            assert!(!row.is_pre_aggregation_recovery(), "{}", path);
+            assert!(row.get_expire().is_some());
+        }
+    }
 
     #[test]
     fn test_prefix_split() {

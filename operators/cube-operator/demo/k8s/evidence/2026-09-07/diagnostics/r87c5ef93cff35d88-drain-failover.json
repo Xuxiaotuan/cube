@@ -1,0 +1,564 @@
+{
+  "controllerExit": 1,
+  "status": "FAIL",
+  "events": [
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:31.598Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "effective_budgets",
+      "budgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:31.984Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "source_ready",
+      "sourceTable": "ha_r87c5ef93cff35d88_source.events",
+      "rollupSchema": "ha_r87c5ef93cff35d88_rollups",
+      "rows": 4096,
+      "transfer": "rows",
+      "expectedHash": "2aec5be03d33ef1a0c1b4bcb3aaaac7e13f7caa1d9fb7c79101b38d70c228036",
+      "cache": "cubestore"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:31.989Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "query_started",
+      "query": {
+        "measures": [
+          "RouterHaRollup.rowCount",
+          "RouterHaRollup.totalAmount",
+          "RouterHaRollup.idChecksum"
+        ],
+        "dimensions": [
+          "RouterHaRollup.bucket"
+        ],
+        "order": {
+          "RouterHaRollup.bucket": "asc"
+        }
+      },
+      "trigger": "api-on-demand",
+      "apiUrl": "http://127.0.0.1:4000"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:32.571Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "fault_ready",
+      "upload": {
+        "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+        "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+        "size": 41059,
+        "bytesForwarded": 41058,
+        "blockedLastByte": true
+      },
+      "manifest": {
+        "buildId": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+        "versionEntry": {
+          "table_name": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id",
+          "structure_version": "sfgx3mlr",
+          "content_version": "ydjiylbi",
+          "last_updated_at": 1788722132391,
+          "naming_version": 2
+        },
+        "protectedTables": [],
+        "phase": "uploading",
+        "uploads": [
+          {
+            "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+            "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+            "size": 41059,
+            "path": "/tmp/8eb3bb3f6d182fd8000b531bd6fe5280"
+          }
+        ],
+        "manifestHash": "d1e21739bbf11d2a3ab45e383af9685d71fbab1011b41c401bd66dbcc753d0a0",
+        "create": {
+          "sql": "CREATE TABLE ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+          "params": [
+            "temp://aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz"
+          ]
+        }
+      },
+      "key": "PRE_AGG_BUILD_V1:ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+      "buildStatus": {
+        "state": "absent"
+      },
+      "queryCompleted": false,
+      "trigger": "api-on-demand",
+      "apiLoadStarted": true
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:36.725Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 1,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722136725,
+      "recoveredAt": null,
+      "windowMs": 0,
+      "attempt": 1,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: invalid lease-agent contract: missing lease identity",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:37.521Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 2,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722137521,
+      "recoveredAt": null,
+      "windowMs": 796,
+      "attempt": 2,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:38.312Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 3,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722138312,
+      "recoveredAt": null,
+      "windowMs": 1587,
+      "attempt": 3,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:39.093Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 4,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722139093,
+      "recoveredAt": null,
+      "windowMs": 2368,
+      "attempt": 4,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:39.862Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 5,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722139862,
+      "recoveredAt": null,
+      "windowMs": 3137,
+      "attempt": 5,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:40.630Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 6,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722140630,
+      "recoveredAt": null,
+      "windowMs": 3905,
+      "attempt": 6,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:41.404Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 7,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722141404,
+      "recoveredAt": null,
+      "windowMs": 4679,
+      "attempt": 7,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:42.189Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 8,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722142189,
+      "recoveredAt": null,
+      "windowMs": 5464,
+      "attempt": 8,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:42.966Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 9,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722142966,
+      "recoveredAt": null,
+      "windowMs": 6241,
+      "attempt": 9,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:43.750Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 10,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722143750,
+      "recoveredAt": null,
+      "windowMs": 7025,
+      "attempt": 10,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:44.531Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 11,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722144531,
+      "recoveredAt": null,
+      "windowMs": 7806,
+      "attempt": 11,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:45.306Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 12,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722145306,
+      "recoveredAt": null,
+      "windowMs": 8581,
+      "attempt": 12,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:46.081Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 13,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722146081,
+      "recoveredAt": null,
+      "windowMs": 9356,
+      "attempt": 13,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:46.871Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 14,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722146871,
+      "recoveredAt": null,
+      "windowMs": 10146,
+      "attempt": 14,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:47.644Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 15,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722147644,
+      "recoveredAt": null,
+      "windowMs": 10919,
+      "attempt": 15,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:48.426Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 16,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722148426,
+      "recoveredAt": null,
+      "windowMs": 11701,
+      "attempt": 16,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:49.219Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "api_transient_unavailable",
+      "count": 17,
+      "firstAt": 1788722136725,
+      "lastAt": 1788722149218,
+      "recoveredAt": null,
+      "windowMs": 12493,
+      "attempt": 17,
+      "httpStatus": 400,
+      "error": "ConnectionError: CubeStore connection error: WrongConnection: Router is draining",
+      "retryDeadline": "2026-09-06T19:17:36.725Z"
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:57.850Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "failure",
+      "status": "evidence_incomplete",
+      "error": "Error: Local fault controller aborted the run\n    at /cube/conf/ha-fault-proxy.js:184:14\n    at Server.<anonymous> (/cube/conf/ha-fault-proxy.js:189:7)\n    at Server.emit (node:events:509:28)\n    at parserOnIncoming (node:_http_server:1268:12)\n    at HTTPParser.parserOnHeadersComplete (node:_http_common:125:17)",
+      "manifestBefore": [
+        {
+          "key": "PRE_AGG_BUILD_V1:ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+          "buildIdentity": {
+            "buildId": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+            "versionEntry": {
+              "table_name": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id",
+              "structure_version": "sfgx3mlr",
+              "content_version": "ydjiylbi",
+              "last_updated_at": 1788722132391,
+              "naming_version": 2
+            },
+            "protectedTables": [],
+            "phase": "selected"
+          },
+          "immutableManifest": {
+            "create": {
+              "sql": "CREATE TABLE ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+              "params": [
+                "temp://aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz"
+              ]
+            },
+            "uploads": [
+              {
+                "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+                "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+                "size": 41059
+              }
+            ],
+            "manifestHash": "d1e21739bbf11d2a3ab45e383af9685d71fbab1011b41c401bd66dbcc753d0a0"
+          },
+          "markers": {
+            "uploading": {
+              "buildId": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+              "versionEntry": {
+                "table_name": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id",
+                "structure_version": "sfgx3mlr",
+                "content_version": "ydjiylbi",
+                "last_updated_at": 1788722132391,
+                "naming_version": 2
+              },
+              "protectedTables": [],
+              "phase": "uploading",
+              "uploads": [
+                {
+                  "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+                  "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+                  "size": 41059,
+                  "path": "/tmp/8eb3bb3f6d182fd8000b531bd6fe5280"
+                }
+              ],
+              "manifestHash": "d1e21739bbf11d2a3ab45e383af9685d71fbab1011b41c401bd66dbcc753d0a0",
+              "create": {
+                "sql": "CREATE TABLE ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+                "params": [
+                  "temp://aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz"
+                ]
+              }
+            }
+          },
+          "tableIdentity": null,
+          "record": {
+            "buildId": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+            "versionEntry": {
+              "table_name": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id",
+              "structure_version": "sfgx3mlr",
+              "content_version": "ydjiylbi",
+              "last_updated_at": 1788722132391,
+              "naming_version": 2
+            },
+            "protectedTables": [],
+            "phase": "uploading",
+            "uploads": [
+              {
+                "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+                "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+                "size": 41059,
+                "path": "/tmp/8eb3bb3f6d182fd8000b531bd6fe5280"
+              }
+            ],
+            "manifestHash": "d1e21739bbf11d2a3ab45e383af9685d71fbab1011b41c401bd66dbcc753d0a0",
+            "create": {
+              "sql": "CREATE TABLE ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk (`router_ha_rollup__bucket` varchar(255), `router_ha_rollup__id` int, `router_ha_rollup__id_checksum` int, `router_ha_rollup__row_count` int, `router_ha_rollup__total_amount` int) LOCATION ?",
+              "params": [
+                "temp://aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz"
+              ]
+            }
+          }
+        }
+      ],
+      "transport": {
+        "mode": "drain-failover",
+        "uploads": [
+          {
+            "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+            "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+            "size": 41059,
+            "afterFault": false
+          }
+        ],
+        "receipts": [
+          {
+            "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+            "state": "missing",
+            "afterFault": false
+          }
+        ],
+        "builds": [
+          {
+            "table": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+            "state": "absent",
+            "afterFault": false
+          }
+        ],
+        "fault": {
+          "name": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517.csv.gz",
+          "sha256": "aea318cac8dcf132c83f424834968d911deea4de0299eb321630eea38764b517",
+          "size": 41059,
+          "bytesForwarded": 41058,
+          "blockedLastByte": true
+        },
+        "released": false
+      },
+      "apiAvailability": {
+        "count": 17,
+        "firstAt": 1788722136725,
+        "lastAt": 1788722149218,
+        "recoveredAt": null,
+        "windowMs": 12493
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:15:57.852Z",
+      "run": "r87c5ef93cff35d88",
+      "mode": "drain-failover",
+      "event": "result",
+      "status": "FAIL",
+      "evidence": "evidence_incomplete",
+      "effectiveBudgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    }
+  ]
+}

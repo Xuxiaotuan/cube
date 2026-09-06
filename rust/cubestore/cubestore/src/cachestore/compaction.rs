@@ -1,5 +1,9 @@
+use crate::cachestore::cache_item::{
+    is_pre_aggregation_recovery_key, CacheItemRocksIndex, CacheItemRocksTable,
+};
 use crate::metastore::{
-    IndexId, RocksSecondaryIndexValue, RocksSecondaryIndexValueVersion, RowKey, SecondaryIndexInfo,
+    BaseRocksSecondaryIndex, IndexId, RocksSecondaryIndexValue, RocksSecondaryIndexValueVersion,
+    RocksTable, RowKey, SecondaryIndexInfo,
 };
 use crate::TableId;
 
@@ -78,6 +82,14 @@ impl MetaStoreCacheCompactionFilter {
         };
 
         let root = reader.as_map();
+        if table_id == TableId::CacheItems {
+            if let Some(index) = root.index_key("prefix") {
+                if is_pre_aggregation_recovery_key(&format!("{}:", root.idx(index).as_str())) {
+                    self.no_ttl += 1;
+                    return CompactionDecision::Keep;
+                }
+            }
+        }
         let expire_key_id = match root.index_key(&table_id.get_ttl_field()) {
             None => {
                 if cfg!(debug_assertions) {
@@ -165,9 +177,22 @@ impl MetaStoreCacheCompactionFilter {
             }
             Ok(RocksSecondaryIndexValue::Hash(_)) => CompactionDecision::Keep,
             Ok(
-                RocksSecondaryIndexValue::HashAndTTL(_, expire)
-                | RocksSecondaryIndexValue::HashAndTTLExtended(_, expire, _),
+                RocksSecondaryIndexValue::HashAndTTL(raw_key, expire)
+                | RocksSecondaryIndexValue::HashAndTTLExtended(raw_key, expire, _),
             ) => {
+                let by_path = CacheItemRocksTable::index_id(CacheItemRocksIndex::ByPath.get_id());
+                let by_prefix =
+                    CacheItemRocksTable::index_id(CacheItemRocksIndex::ByPrefix.get_id());
+                if index_id == by_path || index_id == by_prefix {
+                    if let Ok(path) = std::str::from_utf8(raw_key) {
+                        if is_pre_aggregation_recovery_key(path)
+                            || (index_id == by_prefix
+                                && is_pre_aggregation_recovery_key(&format!("{}:", path)))
+                        {
+                            return CompactionDecision::Keep;
+                        }
+                    }
+                }
                 if let Some(expire) = expire {
                     if expire <= self.current {
                         self.removed += 1;
@@ -277,6 +302,47 @@ mod tests {
         CompactionFilterContext {
             is_full_compaction: false,
             is_manual_compaction: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pre_aggregation_recovery_compaction_keeps_rows_and_indexes() {
+        init_test_logger().await;
+        for prefix in crate::cachestore::cache_item::PRE_AGG_RECOVERY_PREFIXES {
+            let mut filter = MetaStoreCacheCompactionFilter::new(
+                Some(RocksCacheStoreDetails::get_compaction_state()),
+                get_test_filter_context(),
+            );
+            let mut row =
+                CacheItem::new(format!("{}table:ready", prefix), None, "intent".to_string());
+            row.expire = Some(Utc::now() - Duration::seconds(10));
+            let mut serializer = flexbuffers::FlexbufferSerializer::new();
+            row.serialize(&mut serializer).unwrap();
+            let key = RowKey::Table(TableId::CacheItems, 6);
+            assert!(matches!(
+                filter.filter(1, &key.to_bytes(), &serializer.take_buffer()),
+                Decision::Keep
+            ));
+            for index in [CacheItemRocksIndex::ByPath, CacheItemRocksIndex::ByPrefix] {
+                let key = RowKey::SecondaryIndex(
+                    CacheItemRocksTable::index_id(index.get_id()),
+                    index.key_hash(&row).to_be_bytes(),
+                    6,
+                );
+                assert!(matches!(
+                    filter.filter(1, &key.to_bytes(), &index.index_value(&row)),
+                    Decision::Keep
+                ));
+                // Existing serialized indexes may still contain an old TTL.
+                let raw_key = index.index_key_by(&row);
+                let expired = RocksSecondaryIndexValue::HashAndTTL(&raw_key, row.expire)
+                    .to_bytes(index.value_version())
+                    .unwrap();
+                assert!(matches!(
+                    filter.filter(1, &key.to_bytes(), &expired),
+                    Decision::Keep
+                ));
+            }
         }
     }
 

@@ -1,0 +1,92 @@
+{
+  "controllerExit": 1,
+  "status": "FAIL",
+  "workflow": "scheduled-refresher-warmup-then-api-consumption",
+  "apiPod": "analytics-api-59b68bd96f-p9xbx",
+  "apiUid": "a5ff2948-a51f-4b0e-b392-04eabd952327",
+  "builderPod": "analytics-refresher-67ff4f4844-n67gn",
+  "builderUid": "22a12fac-1b5e-4fdc-9983-c6865610c57f",
+  "apiRuntimeEvidence": "/tmp/cube-ha-refresher-acceptance-evidence/r78e805b0eed3bd08-api-runtime.jsonl",
+  "events": [
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:34:36.377Z",
+      "run": "r78e805b0eed3bd08",
+      "mode": "refresher-failover",
+      "event": "effective_budgets",
+      "budgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:34:36.385Z",
+      "run": "r78e805b0eed3bd08",
+      "mode": "refresher-failover",
+      "event": "failure",
+      "status": "evidence_incomplete",
+      "error": "AssertionError [ERR_ASSERTION]: Refresher must advertise real queue/build capability\n\nfalse !== true\n\n    at main ([stdin]:267:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+      "apiAvailability": {
+        "count": 0,
+        "firstAt": null,
+        "lastAt": null,
+        "recoveredAt": null,
+        "windowMs": 0
+      }
+    },
+    {
+      "kind": "cube-ha-preagg",
+      "time": "2026-09-06T19:34:36.385Z",
+      "run": "r78e805b0eed3bd08",
+      "mode": "refresher-failover",
+      "event": "result",
+      "status": "FAIL",
+      "evidence": "evidence_incomplete",
+      "effectiveBudgets": {
+        "totalRun": {
+          "milliseconds": 300000,
+          "source": "HA_TIMEOUT_SECONDS"
+        },
+        "failoverObservation": {
+          "milliseconds": 45000,
+          "source": "controller-forwarded-FAILOVER_TIMEOUT_SECONDS"
+        },
+        "uploadRequest": {
+          "milliseconds": 60000,
+          "source": "driver-fixed-per-POST"
+        },
+        "createReconcile": {
+          "milliseconds": 120000,
+          "configuredValue": null,
+          "source": "driver-default",
+          "scope": "per-CREATE-reconciliation-call"
+        },
+        "loadTransientRetry": {
+          "milliseconds": 120000,
+          "source": "runner-fixed-from-first-transient-clipped-by-total-deadline"
+        }
+      }
+    }
+  ]
+}

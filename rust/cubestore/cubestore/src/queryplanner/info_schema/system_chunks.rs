@@ -1,5 +1,5 @@
 use crate::metastore::chunks::chunk_file_name;
-use crate::metastore::{Chunk, IdRow, MetaStoreTable};
+use crate::metastore::{Chunk, IdRow};
 use crate::queryplanner::info_schema::timestamp_nanos_or_panic;
 use crate::queryplanner::{InfoSchemaTableDef, InfoSchemaTableDefContext};
 use crate::CubeError;
@@ -21,7 +21,11 @@ impl InfoSchemaTableDef for SystemChunksTableDef {
         ctx: InfoSchemaTableDefContext,
         _limit: Option<usize>,
     ) -> Result<Vec<Self::T>, CubeError> {
-        Ok(ctx.meta_store.chunks_table().all_rows().await?)
+        let (_, chunks) = ctx
+            .meta_store
+            .get_all_partitions_and_chunks_out_of_queue()
+            .await?;
+        Ok(chunks)
     }
 
     fn schema(&self) -> Vec<Field> {

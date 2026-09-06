@@ -10,8 +10,20 @@ spec:
     metaStore: cube-studio-router:ha-local
     worker: cube-studio-router:ha-local
     leaseAgent: cube-operator:dev
-  api: {replicas: 1}
-  router: {replicas: 2, highAvailability: true}
+  api:
+    replicas: 1
+    pod:
+      env:
+        - {name: CUBEJS_HA_DEMO, value: "true"}
+        - {name: CUBEJS_HA_PROXY_PORT, value: "13330"}
+        - {name: CUBEJS_PRE_AGGREGATIONS_BUILDER, value: "true"}
+      resources:
+        requests: {cpu: 100m, memory: 512Mi}
+        limits: {cpu: "2", memory: 2Gi}
+  router:
+    replicas: 2
+    highAvailability: true
+    drainCommand: ["/cube/cubestored", "--drain"]
   metaStore: {replicas: 1}
   workers: {replicas: 2}
   storage:

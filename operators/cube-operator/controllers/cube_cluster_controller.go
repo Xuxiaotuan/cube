@@ -3,7 +3,10 @@ package controllers
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -12,14 +15,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 )
 
 const (
@@ -43,52 +47,28 @@ const (
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch
 type CubeClusterReconciler struct {
 	client.Client
+	APIReader client.Reader
 	*runtime.Scheme
+	HTTPClient *http.Client
 }
 
 func (r *CubeClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := ctrl.NewControllerManagedBy(mgr).
+	// For() registers an informer whose initial Add events enter the ordinary
+	// keyed workqueue. Never call Reconcile directly from a startup runnable:
+	// that bypasses per-key serialization, retries and controller shutdown.
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.CubeCluster{}).
 		Owns(&apps.Deployment{}).
 		Owns(&apps.StatefulSet{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
-		Owns(&corev1.Secret{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&v1alpha1.CubestoreRouter{}).
-		Complete(r); err != nil {
-		return err
-	}
-
-	// Reconcile existing CubeClusters once after leadership is acquired. This
-	// closes the restart gap where an already-Running cluster would otherwise
-	// not receive a new event for newly introduced owned resources.
-	return mgr.Add(&cubeClusterStartupSync{cache: mgr.GetCache(), reconciler: r})
-}
-
-type cubeClusterStartupSync struct {
-	cache      cache.Cache
-	reconciler *CubeClusterReconciler
-}
-
-func (s *cubeClusterStartupSync) NeedLeaderElection() bool { return true }
-
-func (s *cubeClusterStartupSync) Start(ctx context.Context) error {
-	if !s.cache.WaitForCacheSync(ctx) {
-		return nil
-	}
-
-	var clusters v1alpha1.CubeClusterList
-	if err := s.reconciler.List(ctx, &clusters); err != nil {
-		return fmt.Errorf("list CubeClusters for startup reconciliation: %w", err)
-	}
-	for i := range clusters.Items {
-		cluster := &clusters.Items[i]
-		if _, err := s.reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err != nil {
-			return fmt.Errorf("startup reconcile CubeCluster %s/%s: %w", cluster.Namespace, cluster.Name, err)
-		}
-	}
-	return nil
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.configurationChanged)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configurationChanged)).
+		Complete(r)
 }
 
 func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -98,6 +78,22 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if err := validateCubeCluster(&cluster); err != nil {
 		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "InvalidSpec", err.Error())
+	}
+	if !cluster.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+	if err := r.validateStorageTransition(ctx, &cluster); err != nil {
+		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "StorageTransitionBlocked", err.Error())
+	}
+	if err := r.reconcileAPISecret(ctx, &cluster); err != nil {
+		return r.configurationError(ctx, &cluster, err)
+	}
+	if _, err := r.configurationDigest(ctx, &cluster); err != nil {
+		return r.configurationError(ctx, &cluster, err)
+	}
+	bootstrap, err := r.isBootstrap(ctx, &cluster)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	if err := r.reconcileConfigMap(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
@@ -111,16 +107,46 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.reconcileMetaStore(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
 	}
+	if !bootstrap {
+		ready, err := r.upgradeComponentReady(ctx, &cluster, cubeComponentMeta)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !ready {
+			return r.waitForUpgrade(ctx, &cluster, cubeComponentMeta)
+		}
+	}
 	if err := r.reconcileWorkers(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
 	}
+	if !bootstrap {
+		ready, err := r.upgradeComponentReady(ctx, &cluster, cubeComponentWorker)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !ready {
+			return r.waitForUpgrade(ctx, &cluster, cubeComponentWorker)
+		}
+	}
 	if err := r.reconcileRouters(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
+	}
+	if !bootstrap {
+		ready, err := r.upgradeComponentReady(ctx, &cluster, cubeComponentRouter)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !ready {
+			return r.waitForUpgrade(ctx, &cluster, cubeComponentRouter)
+		}
 	}
 	if err := r.reconcileAPISecret(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileAPI(ctx, &cluster); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileRefresher(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcilePDBs(ctx, &cluster); err != nil {
@@ -140,7 +166,7 @@ func validateCubeCluster(cluster *v1alpha1.CubeCluster) error {
 	if cluster.Spec.Storage.Endpoint == "" || cluster.Spec.Storage.Bucket == "" {
 		return fmt.Errorf("spec.storage.endpoint and spec.storage.bucket are required")
 	}
-	if cluster.Spec.Storage.ObjectStoreSecretRef != nil && cluster.Spec.Storage.ObjectStoreSecretRef.Namespace != cluster.Namespace {
+	if cluster.Spec.Storage.ObjectStoreSecretRef != nil && (cluster.Spec.Storage.ObjectStoreSecretRef.Namespace != "" && cluster.Spec.Storage.ObjectStoreSecretRef.Namespace != cluster.Namespace) {
 		return fmt.Errorf("spec.storage.objectStoreSecretRef must be in the CubeCluster namespace")
 	}
 	if cluster.Spec.Router.HighAvailability && clusterReplicas(cluster.Spec.Router.Replicas, 2) < 2 {
@@ -149,7 +175,7 @@ func validateCubeCluster(cluster *v1alpha1.CubeCluster) error {
 	if clusterReplicas(cluster.Spec.MetaStore.Replicas, 1) != 1 {
 		return fmt.Errorf("spec.metaStore.replicas must be 1 because CubeStore MetaStore is single-writer")
 	}
-	return nil
+	return validateClusterOptions(cluster)
 }
 
 func clusterReplicas(value, fallback int32) int32 {
@@ -189,7 +215,7 @@ func workerAddresses(c *v1alpha1.CubeCluster) string {
 }
 
 func (r *CubeClusterReconciler) reconcileServiceAccounts(ctx context.Context, c *v1alpha1.CubeCluster) error {
-	for _, component := range []string{cubeComponentRouter, cubeComponentAPI, cubeComponentMeta, cubeComponentWorker} {
+	for _, component := range []string{cubeComponentRouter, cubeComponentAPI, cubeComponentMeta, cubeComponentWorker, cubeComponentRefresher} {
 		obj := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: clusterName(c, component), Namespace: c.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 			if err := r.own(c, obj); err != nil {
@@ -211,7 +237,7 @@ func (r *CubeClusterReconciler) reconcileRouterRBAC(ctx context.Context, c *v1al
 			return err
 		}
 		role.Labels = clusterLabels(c, cubeComponentRouter)
-		role.Rules = []rbacv1.PolicyRule{{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get"}}}
+		role.Rules = []rbacv1.PolicyRule{{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get"}}, {APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{clusterName(c, cubeComponentRouter) + "-role-state"}, Verbs: []string{"get"}}}
 		return nil
 	}); err != nil {
 		return err
@@ -253,8 +279,11 @@ func (r *CubeClusterReconciler) reconcileMetaStore(ctx context.Context, c *v1alp
 		set.Spec.Replicas = ptr32(clusterReplicas(c.Spec.MetaStore.Replicas, 1))
 		set.Spec.Selector = &metav1.LabelSelector{MatchLabels: clusterLabels(c, cubeComponentMeta)}
 		set.Spec.Template = podTemplate(clusterLabels(c, cubeComponentMeta), clusterName(c, cubeComponentMeta), c.Spec.Images.MetaStore, clusterName(c, cubeComponentMeta), []corev1.ContainerPort{{Name: "metastore", ContainerPort: 9999}}, []corev1.EnvVar{{Name: "CUBESTORE_SERVER_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_DATA_DIR", Value: "/cube/.cubestore/data"}, {Name: "CUBESTORE_META_BIND_ADDR", Value: "0.0.0.0:9999"}, {Name: "CUBESTORE_BIND_ADDR", Value: "127.0.0.1:3306"}, {Name: "CUBESTORE_HTTP_BIND_ADDR", Value: "127.0.0.1:3030"}}, []corev1.VolumeMount{{Name: "data", MountPath: "/cube/.cubestore/data"}})
-		set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentMeta)}, Spec: pvcSpec(c)}}
-		return nil
+		if set.CreationTimestamp.IsZero() && len(set.Spec.VolumeClaimTemplates) == 0 {
+			set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentMeta)}, Spec: pvcSpec(c)}}
+		}
+		set.Spec.Template.Spec.Containers[0].Env = mergeEnv(set.Spec.Template.Spec.Containers[0].Env, rustSharedEnv(c))
+		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.MetaStore.Pod, 0, false)
 	})
 	return err
 }
@@ -268,6 +297,8 @@ func (r *CubeClusterReconciler) reconcileWorkers(ctx context.Context, c *v1alpha
 		}
 		service.Labels = clusterLabels(c, cubeComponentWorker)
 		service.Spec.ClusterIP = corev1.ClusterIPNone
+		// Stable worker DNS must resolve before dependency readiness succeeds.
+		service.Spec.PublishNotReadyAddresses = true
 		service.Spec.Selector = clusterLabels(c, cubeComponentWorker)
 		service.Spec.Ports = []corev1.ServicePort{{Name: "worker", Port: 10001, TargetPort: intstr.FromString("worker")}}
 		return nil
@@ -287,8 +318,11 @@ func (r *CubeClusterReconciler) reconcileWorkers(ctx context.Context, c *v1alpha
 		env := []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_SERVER_NAME", Value: fmt.Sprintf("$(POD_NAME).%s.%s.svc:10001", name, c.Namespace)}, {Name: "CUBESTORE_WORKER_PORT", Value: "10001"}, {Name: "CUBESTORE_NODE_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_META_ADDR", Value: fmt.Sprintf("%s.%s.svc:9999", clusterName(c, cubeComponentMeta), c.Namespace)}, {Name: "CUBESTORE_WORKERS", Value: workerAddresses(c)}, {Name: "CUBESTORE_REMOTE_DIR", Value: "/cube/data"}, {Name: "CUBESTORE_DATA_DIR", Value: "/cube/.cubestore/data"}, {Name: "CUBESTORE_MINIO_BUCKET", Value: c.Spec.Storage.Bucket}, {Name: "CUBESTORE_MINIO_SUB_PATH", Value: c.Spec.Storage.SubPath}, {Name: "CUBESTORE_MINIO_SERVER_ENDPOINT", Value: c.Spec.Storage.Endpoint}}
 		env = appendObjectStoreCredentials(env, c)
 		set.Spec.Template = podTemplate(clusterLabels(c, cubeComponentWorker), name, c.Spec.Images.Worker, clusterName(c, cubeComponentWorker), []corev1.ContainerPort{{Name: "worker", ContainerPort: 10001}}, env, []corev1.VolumeMount{{Name: "data", MountPath: "/cube/data"}, {Name: "local-data", MountPath: "/cube/.cubestore/data"}})
-		set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}, {ObjectMeta: metav1.ObjectMeta{Name: "local-data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}}
-		return nil
+		if set.CreationTimestamp.IsZero() && len(set.Spec.VolumeClaimTemplates) == 0 {
+			set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}, {ObjectMeta: metav1.ObjectMeta{Name: "local-data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}}
+		}
+		set.Spec.Template.Spec.Containers[0].Env = mergeEnv(set.Spec.Template.Spec.Containers[0].Env, rustSharedEnv(c))
+		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.Workers.Pod, 0, false)
 	})
 	return err
 }
@@ -328,6 +362,9 @@ func (r *CubeClusterReconciler) reconcileRouters(ctx context.Context, c *v1alpha
 		routerCR.Spec = v1alpha1.CubestoreRouterSpec{Selector: map[string]string{cubeClusterNameLabel: c.Name, cubeComponentLabel: cubeComponentRouter}, Namespace: c.Namespace, RouterPort: 3030, HealthPath: "/router/status", ElectionStrategy: v1alpha1.ElectionStrategyLease, RoleConfigMap: roleConfig, MetaStore: v1alpha1.MetaStore{Address: fmt.Sprintf("%s.%s.svc:9999", clusterName(c, cubeComponentMeta), c.Namespace)}, Storage: v1alpha1.Storage{DataPVC: "data"}, StateStore: &v1alpha1.StateStore{Type: "kubernetes"}}
 		if c.Spec.Storage.ObjectStoreSecretRef != nil {
 			ref := *c.Spec.Storage.ObjectStoreSecretRef
+			if ref.Namespace == "" {
+				ref.Namespace = c.Namespace
+			}
 			routerCR.Spec.Storage.ObjectStoreSecretRef = &ref
 		}
 		return nil
@@ -343,13 +380,16 @@ func (r *CubeClusterReconciler) reconcileRouters(ctx context.Context, c *v1alpha
 		set.Spec.Replicas = ptr32(clusterReplicas(c.Spec.Router.Replicas, 2))
 		set.Spec.Selector = &metav1.LabelSelector{MatchLabels: clusterLabels(c, cubeComponentRouter)}
 		routerEnv := []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_SERVER_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_ROUTER_ROLE_STRICT", Value: "true"}, {Name: "CUBESTORE_ROUTER_LEADERSHIP_FILE", Value: "/var/run/cubestore-ha/leadership.json"}, {Name: "CUBESTORE_ROUTER_PROMOTION_FILE", Value: "/var/run/cubestore-promotion/promotion.json"}, {Name: "CUBESTORE_HTTP_PORT", Value: "3030"}, {Name: "CUBESTORE_META_ADDR", Value: fmt.Sprintf("%s.%s.svc:9999", clusterName(c, cubeComponentMeta), c.Namespace)}, {Name: "CUBESTORE_NODE_NAME", ValueFrom: podNameField()}, {Name: "CUBESTORE_DATA_DIR", Value: "/cube/.cubestore/data"}, {Name: "CUBESTORE_MINIO_BUCKET", Value: c.Spec.Storage.Bucket}, {Name: "CUBESTORE_MINIO_SUB_PATH", Value: c.Spec.Storage.SubPath}, {Name: "CUBESTORE_MINIO_SERVER_ENDPOINT", Value: c.Spec.Storage.Endpoint}}
-		routerEnv = appendObjectStoreCredentials(routerEnv, c)
+		routerEnv = mergeEnv(routerEnv, rustSharedEnv(c))
 		router := corev1.Container{Name: "cube-studio-router", Image: c.Spec.Images.Router, ImagePullPolicy: corev1.PullIfNotPresent, Env: routerEnv, Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 3030}, {Name: "mysql", ContainerPort: 3306}}, VolumeMounts: []corev1.VolumeMount{{Name: "leadership", MountPath: "/var/run/cubestore-ha", ReadOnly: true}, {Name: "promotion", MountPath: "/var/run/cubestore-promotion", ReadOnly: true}, {Name: "local-data", MountPath: "/cube/.cubestore/data"}}}
-		agent := corev1.Container{Name: "lease-agent", Image: c.Spec.Images.LeaseAgent, ImagePullPolicy: corev1.PullIfNotPresent, Command: []string{"/usr/local/bin/lease-agent"}, Args: []string{"--cluster-id=" + c.Namespace + "/" + name, "--holder-id=$(POD_NAME)", "--backend=kubernetes", "--retry-period=2s"}, Env: []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: podNameField()}, {Name: "POD_NAMESPACE", ValueFrom: namespaceField()}, {Name: "CUBESTORE_LEASE_K8S_NAMESPACE", Value: c.Namespace}, {Name: "CUBESTORE_LEASE_K8S_NAME", Value: name}}, VolumeMounts: []corev1.VolumeMount{{Name: "leadership", MountPath: "/var/run/cubestore-ha"}}}
-		set.Spec.Template = corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: clusterLabels(c, cubeComponentRouter)}, Spec: corev1.PodSpec{ServiceAccountName: name, TerminationGracePeriodSeconds: ptr64(30), Containers: []corev1.Container{agent, router}, Volumes: []corev1.Volume{{Name: "leadership", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}}, {Name: "promotion", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: roleConfig}, Optional: ptrBool(true), Items: []corev1.KeyToPath{{Key: "route-role.json", Path: "promotion.json"}}}}}, {Name: "local-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}}}
+		agent := corev1.Container{Name: "lease-agent", Image: c.Spec.Images.LeaseAgent, ImagePullPolicy: corev1.PullIfNotPresent, Command: []string{"/usr/local/bin/lease-agent"}, Args: []string{"--cluster-id=" + c.Namespace + "/" + name, "--holder-id=$(POD_NAME)", "--backend=kubernetes", "--retry-period=2s", "--sync-timeout=2s", "--promotion-config-map=" + roleConfig}, Env: []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: podNameField()}, {Name: "POD_NAMESPACE", ValueFrom: namespaceField()}, {Name: "CUBESTORE_LEASE_K8S_NAMESPACE", Value: c.Namespace}, {Name: "CUBESTORE_LEASE_K8S_NAME", Value: name}}, VolumeMounts: []corev1.VolumeMount{{Name: "leadership", MountPath: "/var/run/cubestore-ha"}, {Name: "promotion", MountPath: "/var/run/cubestore-promotion"}}}
+		set.Spec.Template = corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: clusterLabels(c, cubeComponentRouter)}, Spec: corev1.PodSpec{ServiceAccountName: name, TerminationGracePeriodSeconds: ptr64(30), Containers: []corev1.Container{agent, router}, Volumes: []corev1.Volume{{Name: "leadership", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}}, {Name: "promotion", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}}, {Name: "local-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}}}
 		set.Spec.Template.Spec.Affinity = routerAntiAffinity(c)
-		set.Spec.Template.Spec.Containers[1].Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "sleep 10"}}}}
-		return nil
+		if len(c.Spec.Router.DrainCommand) > 0 {
+			set.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr64(60)
+			set.Spec.Template.Spec.Containers[1].Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: append([]string(nil), c.Spec.Router.DrainCommand...)}}}
+		}
+		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.Router.Pod, 1, false)
 	})
 	return err
 }
@@ -376,7 +416,11 @@ func (r *CubeClusterReconciler) reconcileAPI(ctx context.Context, c *v1alpha1.Cu
 		set.Labels = clusterLabels(c, cubeComponentAPI)
 		set.Spec.Replicas = ptr32(clusterReplicas(c.Spec.API.Replicas, 1))
 		set.Spec.Selector = &metav1.LabelSelector{MatchLabels: clusterLabels(c, cubeComponentAPI)}
-		set.Spec.Template = podTemplate(clusterLabels(c, cubeComponentAPI), name, c.Spec.Images.API, name, []corev1.ContainerPort{{Name: "http", ContainerPort: 4000}}, []corev1.EnvVar{{Name: "CUBEJS_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_EXT_DB_TYPE", Value: "cubestore"}, {Name: "CUBEJS_CUBESTORE_HOST", Value: fmt.Sprintf("%s.%s.svc.cluster.local", nameRouterLeader(c), c.Namespace)}, {Name: "CUBEJS_CUBESTORE_PORT", Value: "3030"}, {Name: "CUBEJS_API_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: apiSecretName(c)}, Key: cubeAPISecretKey}}}, {Name: "CUBEJS_SCHEMA_PATH", Value: "schema"}, {Name: "CUBEJS_PORT", Value: "4000"}}, nil)
+		pod, err := r.apiPod(ctx, c, cubeComponentAPI, c.Spec.API.Pod)
+		if err != nil {
+			return err
+		}
+		set.Spec.Template = pod
 		return nil
 	})
 	return err
@@ -384,9 +428,24 @@ func (r *CubeClusterReconciler) reconcileAPI(ctx context.Context, c *v1alpha1.Cu
 
 const cubeAPISecretKey = "apiSecret"
 
-func apiSecretName(c *v1alpha1.CubeCluster) string { return c.Name + "-api-secret" }
+func apiSecretName(c *v1alpha1.CubeCluster) string {
+	if c.Spec.APISecretRef != nil {
+		return c.Spec.APISecretRef.Name
+	}
+	return c.Name + "-api-secret"
+}
 
 func (r *CubeClusterReconciler) reconcileAPISecret(ctx context.Context, c *v1alpha1.CubeCluster) error {
+	if c.Spec.APISecretRef != nil {
+		var secret corev1.Secret
+		if err := r.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: c.Spec.APISecretRef.Name}, &secret); err != nil {
+			return err
+		}
+		if len(secret.Data[c.Spec.APISecretRef.Key]) == 0 {
+			return fmt.Errorf("API secret %s is missing nonempty key %s", secret.Name, c.Spec.APISecretRef.Key)
+		}
+		return nil
+	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: apiSecretName(c), Namespace: c.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		if err := r.own(c, secret); err != nil {
@@ -394,7 +453,7 @@ func (r *CubeClusterReconciler) reconcileAPISecret(ctx context.Context, c *v1alp
 		}
 		secret.Labels = clusterLabels(c, cubeComponentAPI)
 		secret.Type = corev1.SecretTypeOpaque
-		if len(secret.Data[cubeAPISecretKey]) == 0 {
+		if !printableSecret(secret.Data[cubeAPISecretKey]) {
 			value := make([]byte, 32)
 			if _, err := rand.Read(value); err != nil {
 				return err
@@ -402,7 +461,7 @@ func (r *CubeClusterReconciler) reconcileAPISecret(ctx context.Context, c *v1alp
 			if secret.Data == nil {
 				secret.Data = map[string][]byte{}
 			}
-			secret.Data[cubeAPISecretKey] = value
+			secret.Data[cubeAPISecretKey] = []byte(hex.EncodeToString(value))
 		}
 		return nil
 	})
@@ -418,14 +477,20 @@ func routerAntiAffinity(c *v1alpha1.CubeCluster) *corev1.Affinity {
 }
 
 func (r *CubeClusterReconciler) reconcilePDBs(ctx context.Context, c *v1alpha1.CubeCluster) error {
-	for _, component := range []string{cubeComponentAPI, cubeComponentRouter, cubeComponentMeta, cubeComponentWorker} {
+	for component, spec := range componentSpecs(c) {
 		obj := &policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: clusterName(c, component), Namespace: c.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 			if err := r.own(c, obj); err != nil {
 				return err
 			}
 			obj.Labels = clusterLabels(c, component)
-			obj.Spec.MinAvailable = intstrPtr(1)
+			obj.Spec.MinAvailable, obj.Spec.MaxUnavailable = nil, nil
+			if spec.Replicas == 1 && !spec.AllowSingleReplicaDisruption {
+				// Protect singleton data/API processes by default: node drains block.
+				obj.Spec.MinAvailable = intstrPtr(1)
+			} else {
+				obj.Spec.MaxUnavailable = intstrPtr(1)
+			}
 			obj.Spec.Selector = &metav1.LabelSelector{MatchLabels: clusterLabels(c, component)}
 			return nil
 		}); err != nil {
@@ -435,67 +500,15 @@ func (r *CubeClusterReconciler) reconcilePDBs(ctx context.Context, c *v1alpha1.C
 	return nil
 }
 
-func (r *CubeClusterReconciler) reconcileStatus(ctx context.Context, c *v1alpha1.CubeCluster) error {
-	var api apps.Deployment
-	var router apps.Deployment
-	var meta apps.StatefulSet
-	var worker apps.StatefulSet
-	var routerCR v1alpha1.CubestoreRouter
-	get := func(obj client.Object, name string) error {
-		return r.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: name}, obj)
-	}
-	if err := get(&api, clusterName(c, cubeComponentAPI)); err != nil {
-		return err
-	}
-	if err := get(&router, clusterName(c, cubeComponentRouter)); err != nil {
-		return err
-	}
-	if err := get(&meta, clusterName(c, cubeComponentMeta)); err != nil {
-		return err
-	}
-	if err := get(&worker, clusterName(c, cubeComponentWorker)); err != nil {
-		return err
-	}
-	if err := get(&routerCR, clusterName(c, cubeComponentRouter)); err != nil {
-		return err
-	}
-	ready := api.Status.ReadyReplicas + router.Status.ReadyReplicas + meta.Status.ReadyReplicas + worker.Status.ReadyReplicas
-	desired := clusterReplicas(c.Spec.API.Replicas, 1) + clusterReplicas(c.Spec.Router.Replicas, 2) + clusterReplicas(c.Spec.MetaStore.Replicas, 1) + clusterReplicas(c.Spec.Workers.Replicas, 2)
-	resourcesOK := ready >= desired
-	haOK := false
-	for _, condition := range routerCR.Status.Conditions {
-		if condition.Type == v1alpha1.CubestoreRouterConditionPromotionReady {
-			haOK = condition.Status == metav1.ConditionTrue
-		}
-	}
-	phase := "Provisioning"
-	if resourcesOK {
-		phase = "Running"
-	}
-	if resourcesOK && !haOK {
-		phase = "Degraded"
-	}
-	next := c.DeepCopy()
-	next.Status.Phase = phase
-	next.Status.ReadyReplicas = ready
-	next.Status.Conditions = []metav1.Condition{newClusterCondition(c, cubeClusterConditionResources, resourcesOK, "ChildResources", fmt.Sprintf("%d/%d replicas ready", ready, desired)), newClusterCondition(c, cubeClusterConditionStorage, true, "Configured", "external object storage endpoint is configured"), newClusterCondition(c, cubeClusterConditionHA, haOK, "RouterController", "Router HA readiness is delegated to CubestoreRouter status")}
-	if statusEqualCubeCluster(c.Status, next.Status) {
-		return nil
-	}
-	return r.Status().Update(ctx, next)
-}
-
 func (r *CubeClusterReconciler) setClusterCondition(ctx context.Context, c *v1alpha1.CubeCluster, typ string, status metav1.ConditionStatus, reason, message string) (ctrl.Result, error) {
 	next := c.DeepCopy()
-	next.Status.Phase = "Invalid"
-	next.Status.Conditions = []metav1.Condition{newClusterCondition(c, typ, status == metav1.ConditionTrue, reason, message)}
+	next.Status = v1alpha1.CubeClusterStatus{Phase: "Invalid", ObservedGeneration: c.Generation}
+	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, typ, status == metav1.ConditionTrue, reason, message))
+	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, "ProductionReady", false, reason, message))
 	if statusEqualCubeCluster(c.Status, next.Status) {
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
-	if err := r.Status().Update(ctx, next); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, r.Status().Update(ctx, next)
 }
 func newClusterCondition(c *v1alpha1.CubeCluster, typ string, ok bool, reason, message string) metav1.Condition {
 	status := metav1.ConditionFalse
@@ -505,15 +518,16 @@ func newClusterCondition(c *v1alpha1.CubeCluster, typ string, ok bool, reason, m
 	return metav1.Condition{Type: typ, Status: status, ObservedGeneration: c.Generation, LastTransitionTime: metav1.Now(), Reason: reason, Message: message}
 }
 func statusEqualCubeCluster(a, b v1alpha1.CubeClusterStatus) bool {
-	if a.Phase != b.Phase || a.ReadyReplicas != b.ReadyReplicas || len(a.Conditions) != len(b.Conditions) {
-		return false
-	}
+	// Ignore timestamps only, never generations, component counters or recovery.
+	a.Conditions = append([]metav1.Condition(nil), a.Conditions...)
+	b.Conditions = append([]metav1.Condition(nil), b.Conditions...)
 	for i := range a.Conditions {
-		if a.Conditions[i].Type != b.Conditions[i].Type || a.Conditions[i].Status != b.Conditions[i].Status || a.Conditions[i].Reason != b.Conditions[i].Reason || a.Conditions[i].Message != b.Conditions[i].Message || a.Conditions[i].ObservedGeneration != b.Conditions[i].ObservedGeneration {
-			return false
-		}
+		a.Conditions[i].LastTransitionTime = metav1.Time{}
 	}
-	return true
+	for i := range b.Conditions {
+		b.Conditions[i].LastTransitionTime = metav1.Time{}
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 func podTemplate(labels map[string]string, serviceAccount, image, name string, ports []corev1.ContainerPort, env []corev1.EnvVar, mounts []corev1.VolumeMount) corev1.PodTemplateSpec {
@@ -526,7 +540,7 @@ func appendObjectStoreCredentials(env []corev1.EnvVar, c *v1alpha1.CubeCluster) 
 	return env
 }
 func pvcSpec(c *v1alpha1.CubeCluster) corev1.PersistentVolumeClaimSpec {
-	return corev1.PersistentVolumeClaimSpec{AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resourceQuantity(c.Spec.Storage.DataSize)}}}
+	return corev1.PersistentVolumeClaimSpec{StorageClassName: c.Spec.Storage.StorageClassName, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resourceQuantity(c.Spec.Storage.DataSize)}}}
 }
 func resourceQuantity(value string) resource.Quantity {
 	if value == "" {

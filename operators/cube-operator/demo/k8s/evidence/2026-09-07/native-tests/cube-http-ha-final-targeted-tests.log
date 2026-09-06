@@ -1,0 +1,130 @@
+
+=== FILTER: cachestore::remote::tests ===
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.10s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 1 test
+2026-09-06T17:46:06.634Z INFO  [cubestore::metastore::rocks_fs] Creating metastore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/remote_cache_shared_nx_survives_router_client_replacement-local-store/metastore
+2026-09-06T17:46:06.641Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: started
+2026-09-06T17:46:06.643Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: done
+2026-09-06T17:46:06.652Z INFO  [cubestore::metastore::rocks_fs] Creating cachestore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/remote_cache_shared_nx_survives_router_client_replacement-local-store/cachestore
+2026-09-06T17:46:06.655Z TRACE [cubestore::metastore::rocks_store] Migration for cachestore: started
+2026-09-06T17:46:06.657Z TRACE [cubestore::metastore::rocks_store] Migration for cachestore: done
+test cachestore::remote::tests::remote_cache_shared_nx_survives_router_client_replacement ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 351 filtered out; finished in 0.04s
+
+
+=== FILTER: http::tests::real_metastore_probe_is_healthy_without_promotion ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 1 test
+2026-09-06T17:46:07.477Z INFO  [cubestore::metastore::rocks_fs] Creating metastore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/real_metastore_probe_is_healthy_without_promotion-local-store/metastore
+2026-09-06T17:46:07.482Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: started
+2026-09-06T17:46:07.482Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: done
+test http::tests::real_metastore_probe_is_healthy_without_promotion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 351 filtered out; finished in 0.02s
+
+
+=== FILTER: http::tests::marker_health_claim_is_ignored_when_service_cannot_read_metastore ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 1 test
+test http::tests::marker_health_claim_is_ignored_when_service_cannot_read_metastore ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 351 filtered out; finished in 0.00s
+
+
+=== FILTER: http::tests::promotion_marker_requires_exact_holder_epoch_and_token_hash ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 1 test
+test http::tests::promotion_marker_requires_exact_holder_epoch_and_token_hash ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 351 filtered out; finished in 0.00s
+
+
+=== FILTER: http::status::tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 5 tests
+test http::status::tests::readiness_errors_are_service_unavailable ... ok
+test http::status::tests::failed_read_is_not_a_successful_metastore_probe ... ok
+test http::status::tests::startup_without_metastore_fails_closed ... ok
+test http::status::tests::worker_probe_uses_real_rpc_client_without_initializing_sql_or_metastore ... ok
+test http::status::tests::stalled_metastore_probe_is_bounded ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 347 filtered out; finished in 2.00s
+
+
+=== FILTER: sql::ha_admission::tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 3 tests
+
+thread 'sql::ha_admission::tests::unwinding_releases_in_flight_work' panicked at cubestore/src/sql/ha_admission.rs:92:13:
+simulated request panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test sql::ha_admission::tests::drain_preserves_accepted_work_and_rejects_new_work ... ok
+test sql::ha_admission::tests::concurrent_admission_and_drain_cannot_reopen_gate_or_lose_permits ... ok
+test sql::ha_admission::tests::unwinding_releases_in_flight_work ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 349 filtered out; finished in 0.04s
+
+
+=== FILTER: sql::ha::tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 4 tests
+test sql::ha::tests::lost_fence_cancels_pending_operation_without_reporting_success ... ok
+test sql::ha::tests::fence_rejects_changed_epoch_even_if_new_epoch_is_valid ... ok
+test sql::ha::tests::sql_classification_handles_comments_and_fails_closed ... ok
+test sql::ha::tests::drain_waits_for_cloned_guard_and_does_not_cancel_accepted_work ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 348 filtered out; finished in 0.00s
+
+
+=== FILTER: sql::upload::tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 5 tests
+test sql::upload::tests::immutable_names_reject_traversal_wrong_digest_and_unsupported_suffixes ... ok
+test sql::upload::tests::stale_upload_guard_cannot_publish_after_body_arrives ... ok
+test sql::upload::tests::checksum_uses_exact_bytes_including_gzip_header ... ok
+test sql::upload::tests::durable_status_rechecks_origin_even_with_correct_local_cache ... ok
+test sql::upload::tests::retry_reconciles_durable_object_without_overwriting_conflicts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 347 filtered out; finished in 0.01s
+
+
+=== FILTER: sql::build_status::tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 3 tests
+test sql::build_status::tests::durable_failure_wins_over_a_stale_ready_bit ... ok
+test sql::build_status::tests::insert_targets_and_streams_never_report_recoverable_ready ... ok
+test sql::build_status::tests::table_existence_is_not_import_completion ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 349 filtered out; finished in 0.00s
+
+
+=== FILTER: remotefs::uncached_tests ===
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 2 tests
+test remotefs::uncached_tests::uncached_read_rejects_wrong_size_and_missing_origin ... ok
+test remotefs::uncached_tests::uncached_read_uses_origin_not_stale_local_bytes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 350 filtered out; finished in 0.00s
+

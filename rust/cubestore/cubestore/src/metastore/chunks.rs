@@ -19,6 +19,7 @@ impl Chunk {
         max: Option<Row>,
         in_memory: bool,
     ) -> Chunk {
+        let attempt = crate::metastore::job::current_job_attempt();
         Chunk {
             partition_id,
             row_count: row_count as u64,
@@ -38,6 +39,8 @@ impl Chunk {
             replay_handle_id: None,
             min,
             max,
+            job_id: attempt.as_ref().map(|a| a.job_id),
+            job_generation: attempt.as_ref().map(|a| a.generation),
         }
     }
 

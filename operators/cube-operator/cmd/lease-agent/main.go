@@ -14,6 +14,7 @@ import (
 	"github.com/cube-js/cube-operator/internal/leadership"
 	"github.com/redis/go-redis/v9"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +35,9 @@ func main() {
 		path        = flag.String("path", agent.DefaultLeadershipFile, "leadership file path")
 		retryPeriod = flag.Duration("retry-period", durationEnv("CUBESTORE_RETRY_PERIOD", 2*time.Second), "lease polling interval")
 	)
+	promotionConfigMap := flag.String("promotion-config-map", "", "optional controller promotion ConfigMap to read directly (Kubernetes only)")
+	promotionPath := flag.String("promotion-path", agent.DefaultPromotionFile, "local atomic promotion marker path")
+	syncTimeout := flag.Duration("sync-timeout", 2*time.Second, "deadline for one authoritative lease and promotion sync")
 	flag.Parse()
 
 	mode := strings.ToLower(strings.TrimSpace(*backend))
@@ -45,9 +49,13 @@ func main() {
 		}
 	}
 
+	if strings.TrimSpace(*promotionConfigMap) != "" && mode != "kubernetes" {
+		log.Fatal("--promotion-config-map requires --backend=kubernetes")
+	}
 	var (
-		leaseStore leadership.LeaseStore
-		closeFn    = func() {}
+		promotionSource agent.PromotionSource
+		leaseStore      leadership.LeaseStore
+		closeFn         = func() {}
 	)
 
 	switch mode {
@@ -71,22 +79,31 @@ func main() {
 		if err := coordinationv1.AddToScheme(scheme); err != nil {
 			log.Fatal(err)
 		}
+		if err := corev1.AddToScheme(scheme); err != nil {
+			log.Fatal(err)
+		}
 		c, err := client.New(cfg, client.Options{Scheme: scheme})
 		if err != nil {
 			log.Fatal(err)
 		}
 		leaseStore = leadership.NewKubernetesStore(c, ns, resolvedLeaseName, nil)
+		if name := strings.TrimSpace(*promotionConfigMap); name != "" {
+			promotionSource = &agent.ConfigMapPromotionSource{Reader: c, Namespace: ns, Name: name}
+		}
 	default:
 		log.Fatalf("unsupported backend %q", mode)
 	}
 	defer closeFn()
 
 	leaseAgent, err := agent.New(agent.Config{
-		Store:       leaseStore,
-		ClusterID:   *clusterID,
-		HolderID:    *holderID,
-		Path:        *path,
-		RetryPeriod: *retryPeriod,
+		Store:           leaseStore,
+		PromotionSource: promotionSource,
+		PromotionPath:   *promotionPath,
+		SyncTimeout:     *syncTimeout,
+		ClusterID:       *clusterID,
+		HolderID:        *holderID,
+		Path:            *path,
+		RetryPeriod:     *retryPeriod,
 	})
 	if err != nil {
 		log.Fatal(err)

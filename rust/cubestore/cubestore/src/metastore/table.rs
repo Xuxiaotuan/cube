@@ -139,6 +139,8 @@ pub struct Table {
     import_format: Option<ImportFormat>,
     #[serde(default)]
     has_data: bool,
+    #[serde(default)]
+    import_error: Option<String>,
     #[serde(default="Table::is_ready_default")]
     is_ready: bool,
     #[serde(default)]
@@ -226,6 +228,7 @@ impl Table {
             locations,
             import_format,
             has_data: false,
+            import_error: None,
             is_ready,
             created_at: Some(Utc::now()),
             build_range_end,
@@ -264,6 +267,16 @@ impl Table {
 
     pub fn has_data(&self) -> &bool {
         &self.has_data
+    }
+
+    pub fn import_error(&self) -> Option<&String> {
+        self.import_error.as_ref()
+    }
+
+    pub fn update_import_error(&self, error: Option<String>) -> Self {
+        let mut table = self.clone();
+        table.import_error = error;
+        table
     }
 
     pub fn update_has_data(&self, has_data: bool) -> Self {

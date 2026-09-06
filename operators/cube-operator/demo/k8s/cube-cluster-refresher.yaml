@@ -1,0 +1,43 @@
+apiVersion: cubestore.io/v1alpha1
+kind: CubeCluster
+metadata:
+  name: analytics
+  namespace: cube-ha-remediation
+spec:
+  images:
+    api: cube-studio-api:ha-remediation-20260907-r2
+    router: cube-studio-router:ha-remediation-20260907-r2
+    metaStore: cube-studio-router:ha-remediation-20260907-r2
+    worker: cube-studio-router:ha-remediation-20260907-r2
+    leaseAgent: cube-operator:ha-remediation-20260907-r2
+  api:
+    replicas: 1
+    pod:
+      env:
+        - {name: CUBEJS_HA_DEMO, value: "true"}
+        - {name: CUBEJS_HA_SCHEDULED_DEMO, value: "true"}
+        - {name: CUBEJS_HA_PROXY_PORT, value: "13330"}
+        - name: CUBEJS_HA_POD_NAME
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        - name: CUBEJS_HA_POD_UID
+          valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+      resources:
+        requests: {cpu: 100m, memory: 512Mi}
+        limits: {cpu: "2", memory: 2Gi}
+  # Inherits API env/model/resources; operator owns REFRESH_WORKER=true here
+  # and false on API, as well as shared cache and generated Secret references.
+  refresher: {replicas: 1}
+  router:
+    replicas: 2
+    highAvailability: true
+    drainCommand: ["/cube/cubestored", "--drain"]
+  metaStore: {replicas: 1}
+  workers: {replicas: 2}
+  storage:
+    endpoint: http://cube-router-object-store.cube-ha-remediation.svc.cluster.local:9000
+    bucket: cube-router-ha
+    subPath: cubecluster-analytics
+    storageClassName: local-path
+    objectStoreSecretRef:
+      name: cube-router-demo-object-store
+      namespace: cube-ha-remediation

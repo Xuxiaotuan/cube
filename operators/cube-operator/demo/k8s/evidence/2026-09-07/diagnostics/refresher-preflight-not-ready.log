@@ -1,0 +1,1 @@
+jq: error (at <stdin>:328): Require exactly one ready pod per role

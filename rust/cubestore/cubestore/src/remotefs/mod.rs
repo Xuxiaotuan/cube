@@ -3,6 +3,8 @@ pub mod gcs;
 pub mod minio;
 pub mod queue;
 pub mod s3;
+#[cfg(test)]
+mod uncached_tests;
 
 use crate::config::injection::DIService;
 use crate::di_service;
@@ -71,6 +73,15 @@ pub trait RemoteFs: DIService + Send + Sync + Debug {
         expected_file_size: Option<u64>,
     ) -> Result<String, CubeError>;
 
+    /// Read the authoritative remote object, bypassing the node's download cache.
+    /// Returns a unique temporary file owned by the caller, which must remove it.
+    /// Unsupported backends must fail closed instead of returning cached bytes.
+    async fn download_file_uncached(
+        &self,
+        remote_path: String,
+        expected_file_size: Option<u64>,
+    ) -> Result<String, CubeError>;
+
     async fn delete_file(&self, remote_path: String) -> Result<(), CubeError>;
 
     async fn list(&self, remote_prefix: String) -> Result<Vec<String>, CubeError>;
@@ -107,6 +118,22 @@ pub trait ExtendedRemoteFs: DIService + RemoteFs {
 pub struct CommonRemoteFsUtils;
 
 impl CommonRemoteFsUtils {
+    pub async fn finish_uncached_download(
+        path: tempfile::TempPath,
+        expected_size: Option<u64>,
+    ) -> Result<String, CubeError> {
+        let actual_size = fs::metadata(&path).await?.len();
+        if let Some(expected_size) = expected_size {
+            if actual_size != expected_size {
+                return Err(CubeError::internal(format!(
+                    "Remote object size mismatch: expected {}, got {}",
+                    expected_size, actual_size
+                )));
+            }
+        }
+        Ok(path.keep()?.to_string_lossy().into_owned())
+    }
+
     ///
     /// Use this path to prepare files for upload. Writing into `local_path()` directly can result
     /// in files being deleted by the background cleanup process, see `QueueRemoteFs::cleanup_loop`.
@@ -211,6 +238,21 @@ di_service!(RemoteFsRpcClient, [RemoteFs]);
 
 #[async_trait]
 impl RemoteFs for LocalDirRemoteFs {
+    async fn download_file_uncached(
+        &self,
+        remote_path: String,
+        expected_file_size: Option<u64>,
+    ) -> Result<String, CubeError> {
+        let remote_dir = self.remote_dir.read().await;
+        let origin = remote_dir.as_ref().ok_or_else(|| {
+            CubeError::internal("No authoritative remote directory configured".to_string())
+        })?;
+        let uploads = self.uploads_dir().await?;
+        let path = NamedTempFile::new_in(uploads)?.into_temp_path();
+        fs::copy(origin.join(remote_path), &path).await?;
+        CommonRemoteFsUtils::finish_uncached_download(path, expected_file_size).await
+    }
+
     async fn temp_upload_path(&self, remote_path: String) -> Result<String, CubeError> {
         CommonRemoteFsUtils::temp_upload_path(self, remote_path).await
     }

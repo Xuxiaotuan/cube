@@ -891,7 +891,8 @@ impl Cluster for ClusterImpl {
             NetworkMessage::FreeDeletedMemoryChunksResult(_) => {
                 panic!("FreeDeletedMemoryChunksResult sent to worker");
             }
-            NetworkMessage::MetaStoreCall(_) | NetworkMessage::MetaStoreCallResult(_) => {
+            NetworkMessage::MetaStoreCall(_) | NetworkMessage::MetaStoreCallWithAttempt(..) | NetworkMessage::MetaStoreCallResult(_)
+            | NetworkMessage::CacheStoreCall(_) | NetworkMessage::CacheStoreCallResult(_) => {
                 panic!("MetaStoreCall sent to worker");
             }
             NetworkMessage::NotifyJobListeners => {
@@ -914,6 +915,18 @@ impl Cluster for ClusterImpl {
 
     async fn process_metastore_message(&self, m: NetworkMessage) -> NetworkMessage {
         match m {
+            NetworkMessage::CacheStoreCall(method_call) => {
+                let store = self.injector.upgrade().unwrap()
+                    .get_service_typed::<dyn crate::cachestore::CacheStore>().await;
+                let server = crate::cachestore::CacheStoreRpcServer::new(store);
+                NetworkMessage::CacheStoreCallResult(server.invoke_method(method_call).await)
+            }
+            NetworkMessage::MetaStoreCallWithAttempt(attempt, method_call) => {
+                let server = MetaStoreRpcServer::new(self.meta_store.clone());
+                let res = crate::metastore::job::JOB_ATTEMPT
+                    .scope(Some(attempt), server.invoke_method(method_call)).await;
+                NetworkMessage::MetaStoreCallResult(res)
+            }
             NetworkMessage::MetaStoreCall(method_call) => {
                 let server = MetaStoreRpcServer::new(self.meta_store.clone());
                 let res = server.invoke_method(method_call).await;
@@ -2184,7 +2197,10 @@ impl MetaStoreRpcClientTransport for ClusterMetaStoreClient {
         &self,
         method_call: MetaStoreRpcMethodCall,
     ) -> Result<MetaStoreRpcMethodResult, CubeError> {
-        let m = NetworkMessage::MetaStoreCall(method_call);
+        let m = match crate::metastore::job::current_job_attempt() {
+            Some(attempt) => NetworkMessage::MetaStoreCallWithAttempt(attempt, method_call),
+            None => NetworkMessage::MetaStoreCall(method_call),
+        };
         let message = self.meta_store_transport.meta_store_call(m).await?;
         Ok(match message {
             NetworkMessage::MetaStoreCallResult(res) => res,

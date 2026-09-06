@@ -144,6 +144,16 @@ export class WebSocketConnection {
         webSocket.on('close', () => {
           clearInterval(pingInterval);
 
+          // Settle unknown writes without waiting for a new leader connection.
+          // A failed reconnect must never downgrade UNKNOWN to a generic error.
+          for (const key of Object.keys(webSocket.sentMessages)) {
+            const pending = webSocket.sentMessages[key];
+            if (!pending.replaySafe) {
+              delete webSocket.sentMessages[key];
+              pending.reject(new MutationUnknownError('CubeStore connection closed after sending a non-idempotent request; mutation outcome is unknown'));
+            }
+          }
+
           const pendingMessageKeys = Object.keys(webSocket.sentMessages);
           if (pendingMessageKeys.length) {
             setTimeout(async () => {
@@ -264,12 +274,19 @@ export class WebSocketConnection {
     }
 
     const head = normalizedUpper.split(/\s+/)[0];
+    if (/^CACHE\s+(GET|KEYS)\s/.test(normalizedUpper)) return true;
     const replaySafeHeads = ['SELECT', 'SHOW', 'DESCRIBE', 'EXPLAIN', 'PRAGMA'];
     return replaySafeHeads.includes(head);
   }
 
   private async sendMessage(messageId: number, buffer: Uint8Array, replaySafe = false): Promise<any> {
-    const socket = await this.initWebSocket();
+    let socket: CubeStoreWebSocket;
+    try {
+      socket = await this.initWebSocket();
+    } catch (error: any) {
+      error.code = 'MUTATION_NOT_DISPATCHED';
+      throw error;
+    }
     return new Promise((resolve, reject) => {
       socket.sentMessages[messageId] = {
         resolve,
@@ -281,7 +298,7 @@ export class WebSocketConnection {
         socket.send(buffer, (err) => {
           if (err) {
             delete socket.sentMessages[messageId];
-            reject(new ConnectionError(
+            reject(new MutationUnknownError(
               `CubeStore connection error: ${err.message}`,
               err
             ));
@@ -289,7 +306,9 @@ export class WebSocketConnection {
         });
       } else {
         delete socket.sentMessages[messageId];
-        reject(new ConnectionError('CubeStore connection closed before request could be sent'));
+        const error = new ConnectionError('CubeStore connection closed before request could be sent');
+        (error as any).code = 'MUTATION_NOT_DISPATCHED';
+        reject(error);
       }
     });
   }

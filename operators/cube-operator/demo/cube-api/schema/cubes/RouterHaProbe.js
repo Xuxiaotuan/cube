@@ -4,6 +4,8 @@
 const schema = 'router_ha_probe';
 const table = 'router_ha_data';
 
+// A scheduled, run-scoped compiler must not query the legacy fixed fixture.
+if (!(COMPILE_CONTEXT.securityContext && COMPILE_CONTEXT.securityContext.haRun)) {
 cube('RouterHaProbe', {
   sql: `SELECT id, amount, region, payload FROM ${schema}.${table}`,
 
@@ -19,3 +21,4 @@ cube('RouterHaProbe', {
     payload: { sql: `payload`, type: `string` }
   }
 });
+}

@@ -712,26 +712,74 @@ impl SchedulerImpl {
     }
 
     pub async fn reconcile_table_imports(&self) -> Result<(), CubeError> {
-        // Using get_tables_with_path due to it's cached
+        // Jobs and receipts, not router-local CREATE TABLE futures, are authoritative.
         let tables = self.meta_store.get_tables_with_path(true).await?;
-        for table in tables.iter() {
-            if table.table.get_row().is_ready() && !table.table.get_row().sealed() {
-                if let Some(locations) = table.table.get_row().locations() {
-                    for location in locations.iter() {
-                        if Table::is_stream_location(location) {
-                            let job = self
-                                .meta_store
-                                .get_job_by_ref(
-                                    RowKey::Table(TableId::Tables, table.table.get_id()),
-                                    JobType::TableImportCSV(location.to_string()),
-                                )
-                                .await?;
-                            if job.is_none() {
-                                self.schedule_table_import(table.table.get_id(), &[location])
-                                    .await?;
-                            }
-                        }
+        for path in tables.iter() {
+            let table = &path.table;
+            if table.get_row().sealed() { continue; }
+            let Some(locations) = table.get_row().locations() else { continue; };
+            let whole = self.meta_store.get_job_by_ref(
+                RowKey::Table(TableId::Tables, table.get_id()), JobType::TableImport,
+            ).await?;
+            let mut imports_complete = true;
+            let mut has_stream = false;
+            for location in &locations {
+                let stream = Table::is_stream_location(location);
+                has_stream |= stream;
+                let job = self.meta_store.get_job_by_ref(
+                    RowKey::Table(TableId::Tables, table.get_id()),
+                    JobType::TableImportCSV((*location).clone()),
+                ).await?;
+                let effective = job.as_ref().or(whole.as_ref());
+                if !stream {
+                    imports_complete &= effective.map_or(false, |j| {
+                        j.get_row().status() == &JobStatus::Completed
+                            && j.get_row().completed_imports().contains(location)
+                    });
+                }
+                if effective.is_none() && (stream || !table.get_row().is_ready()) {
+                    // No receipts plus existing data can be a legacy partial raw
+                    // append. It is not safe to invent a new dedupe identity.
+                    let has_receipt = if *table.get_row().has_data() && !stream {
+                        self.meta_store.all_jobs().await?.iter().any(|j| {
+                            j.get_row().row_reference() == &RowKey::Table(TableId::Tables, table.get_id())
+                                && !j.get_row().completed_imports().is_empty()
+                        })
+                    } else { true };
+                    if !has_receipt {
+                        let node = pick_import_worker(self.config.as_ref(), table.get_id(), location, &HashMap::new());
+                        self.meta_store.add_job(Job::new(
+                            RowKey::Table(TableId::Tables, table.get_id()),
+                            JobType::TableImportCSV((*location).clone()), node,
+                        ).update_status(JobStatus::Error(
+                            "Existing import data has no durable receipts; explicit rebuild required".to_string(),
+                        ))).await?;
+                    } else {
+                        self.schedule_table_import(table.get_id(), &[*location]).await?;
                     }
+                }
+            }
+            if !table.get_row().is_ready() && !has_stream && imports_complete
+                && table.get_row().import_error().is_none() {
+                if let Some(threshold) = self.config.compaction_readiness_chunks_threshold() {
+                    let indexes = self.meta_store.get_table_indexes(table.get_id()).await?;
+                    let partitions = self.meta_store.get_active_partitions_and_chunks_by_index_id_for_select(
+                        indexes.iter().map(|i| i.get_id()).collect(),
+                    ).await?;
+                    if partitions.iter().flatten().any(|(_, chunks)| {
+                        chunks.iter().filter(|c| c.get_row().active()).count() as u64 > threshold
+                    }) { continue; }
+                }
+                // The write itself rechecks every receipt and persistent error.
+                self.meta_store.table_ready(table.get_id(), true).await?;
+            }
+        }
+        // Notification delivery is not durable. Re-drive scheduled work after a
+        // router switch; workers also poll, so duplicate wakeups are harmless.
+        for job in self.meta_store.all_jobs().await? {
+            if let JobStatus::Scheduled(node) = job.get_row().status() {
+                if !matches!(job.get_row().job_type(), JobType::Unknown) {
+                    self.cluster.notify_job_runner(node.clone()).await?;
                 }
             }
         }
@@ -739,42 +787,58 @@ impl SchedulerImpl {
     }
 
     async fn drop_not_ready_tables(&self) -> Result<(), CubeError> {
-        // TODO config
-        let not_ready_tables = self.meta_store.not_ready_tables(1800).await?;
-        for table in not_ready_tables.into_iter() {
-            self.meta_store.drop_table(table.get_id()).await?;
+        // Retain external builds and terminal failures for recovery/inspection.
+        // Their lifecycle ends only at explicit DROP, not a router-local timeout.
+        for table in self.meta_store.not_ready_tables(1800).await? {
+            if table.get_row().locations().is_none() {
+                self.meta_store.drop_table(table.get_id()).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn recover_owned_job(&self, job: IdRow<Job>) -> Result<(), CubeError> {
+        let node = match job.get_row().job_type() {
+            JobType::TableImportCSV(location) => {
+                let table_id = match job.get_row().row_reference() {
+                    RowKey::Table(TableId::Tables, id) => *id,
+                    _ => return Err(CubeError::internal("Invalid import job reference".to_string())),
+                };
+                pick_import_worker(self.config.as_ref(), table_id, location, &HashMap::new())
+            }
+            JobType::NodeInMemoryChunksCompaction(node) => node.clone(),
+            _ => match job.get_row().status() {
+                JobStatus::ProcessingBy(node) if self.config.select_workers().contains(node) => node.clone(),
+                _ => pick_worker_by_ids(self.config.as_ref(), [job.get_id()]).to_string(),
+            },
+        };
+        if let Some(recovered) = self.meta_store.recover_job(job, node.clone(), Duration::from_secs(120)).await? {
+            log::info!("Recovered job with dedupe identity preserved: {:?}", recovered);
+            if let Err(e) = self.cluster.notify_job_runner(node).await {
+                // Recovery is already durable. A failed hint must not stop the
+                // sweep; periodic worker polling will discover the scheduled job.
+                log::warn!("Recovered job wakeup failed, waiting for worker poll: {}", e);
+            }
         }
         Ok(())
     }
 
     async fn remove_jobs_on_non_exists_nodes(&self) -> Result<(), CubeError> {
-        let jobs_to_remove = self.meta_store.get_jobs_on_non_exists_nodes().await?;
-        for job in jobs_to_remove.into_iter() {
-            log::info!("Removing job {:?} on non-existing node", job);
-            self.meta_store.delete_job(job.get_id()).await?;
+        for job in self.meta_store.get_jobs_on_non_exists_nodes().await? {
+            self.recover_owned_job(job).await?;
         }
         Ok(())
     }
 
     async fn remove_unknown_jobs(&self) -> Result<(), CubeError> {
-        let deleted = self.meta_store.delete_unknown_jobs().await?;
-        if deleted > 0 {
-            crate::app_metrics::JOBS_UNKNOWN_DELETED.add(deleted as i64);
-        }
+        // Never rewrite unknown serialized variants: doing so would lose their
+        // payload and dedupe index. An upgraded compatible worker can recover them.
         Ok(())
     }
 
     async fn remove_orphaned_jobs(&self) -> Result<(), CubeError> {
-        let orphaned_jobs = self
-            .meta_store
-            .get_orphaned_jobs(Duration::from_secs(120)) // TODO config
-            .await?;
-        for job in orphaned_jobs {
-            log::info!("Removing orphaned job: {:?}", job);
-            self.meta_store
-                .update_status(job.get_id(), JobStatus::Orphaned)
-                .await?;
-            self.meta_store.delete_job(job.get_id()).await?;
+        for job in self.meta_store.get_orphaned_jobs(Duration::from_secs(120)).await? {
+            self.recover_owned_job(job).await?;
         }
         Ok(())
     }
@@ -892,12 +956,12 @@ impl SchedulerImpl {
                     match new_job.get_row().status() {
                         JobStatus::Error(e) if e.contains("Stale stream timeout") => {
                             log::info!("Removing stale stream job: {:?}", new_job);
-                            self.meta_store.delete_job(new_job.get_id()).await?;
+                            self.recover_owned_job(new_job.clone()).await?;
                             self.reconcile_table_imports().await?;
                         }
                         JobStatus::Error(e) if e.contains("Stream requires replay") => {
                             log::info!("Removing stream job that requires replay: {:?}", new_job);
-                            self.meta_store.delete_job(new_job.get_id()).await?;
+                            self.recover_owned_job(new_job.clone()).await?;
                             self.reconcile_table_imports().await?;
                         }
                         JobStatus::Error(e) if e.contains("CorruptData") => {
@@ -1523,8 +1587,8 @@ mod tests {
         let scheduler = services.injector.get_service_typed::<SchedulerImpl>().await;
         scheduler.remove_jobs_on_non_exists_nodes().await.unwrap();
         let all_jobs = meta_store.all_jobs().await.unwrap();
-        assert_eq!(all_jobs.len(), 1);
-        assert_eq!(all_jobs[0].get_id(), exists_job.get_id());
+        assert_eq!(all_jobs.len(), 2);
+        assert!(all_jobs.iter().any(|j| j.get_id() == exists_job.get_id()));
         services.stop_processing_loops().await.unwrap();
         let _ = fs::remove_dir_all(config.local_dir());
         let _ = fs::remove_dir_all(config.remote_dir());
@@ -1595,10 +1659,10 @@ mod tests {
         let scheduler = services.injector.get_service_typed::<SchedulerImpl>().await;
         scheduler.remove_jobs_on_non_exists_nodes().await.unwrap();
         let all_jobs = meta_store.all_jobs().await.unwrap();
-        assert_eq!(all_jobs.len(), 2);
+        assert_eq!(all_jobs.len(), 4);
         let mut job_ids = all_jobs.into_iter().map(|j| j.get_id()).collect::<Vec<_>>();
         job_ids.sort();
-        assert_eq!(job_ids, existing_ids);
+        assert!(existing_ids.iter().all(|id| job_ids.contains(id)));
         services.stop_processing_loops().await.unwrap();
         let _ = fs::remove_dir_all(config.local_dir());
         let _ = fs::remove_dir_all(config.remote_dir());

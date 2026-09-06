@@ -120,6 +120,25 @@ di_service!(GCSRemoteFs, [RemoteFs, ExtendedRemoteFs]);
 
 #[async_trait]
 impl RemoteFs for GCSRemoteFs {
+    async fn download_file_uncached(
+        &self,
+        remote_path: String,
+        expected_file_size: Option<u64>,
+    ) -> Result<String, CubeError> {
+        let uploads = self.uploads_dir().await?;
+        let (file, path) = NamedTempFile::new_in(uploads)?.into_parts();
+        let mut writer = BufWriter::new(tokio::fs::File::from_std(file));
+        let mut stream =
+            Object::download_streamed(self.bucket.as_str(), self.gcs_path(&remote_path).as_str())
+                .await?;
+        while let Some(byte) = stream.next().await {
+            writer.write_all(&[byte?]).await?;
+        }
+        writer.flush().await?;
+        drop(writer);
+        CommonRemoteFsUtils::finish_uncached_download(path, expected_file_size).await
+    }
+
     async fn temp_upload_path(&self, remote_path: String) -> Result<String, CubeError> {
         CommonRemoteFsUtils::temp_upload_path(self, remote_path).await
     }

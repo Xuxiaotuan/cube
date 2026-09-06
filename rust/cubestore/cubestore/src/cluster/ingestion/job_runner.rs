@@ -2,7 +2,7 @@ use crate::cluster::ingestion::job_processor::JobProcessor;
 use crate::cluster::rate_limiter::{ProcessRateLimiter, TaskType, TraceIndex};
 use crate::config::ConfigObj;
 use crate::import::ImportService;
-use crate::metastore::job::{Job, JobRunnerPool, JobStatus, JobType};
+use crate::metastore::job::{Job, JobRunnerPool, JobStatus, JobType, JOB_ATTEMPT};
 use crate::metastore::table::Table;
 use crate::metastore::{IdRow, MetaStore, RowKey, TableId};
 use crate::queryplanner::trace_data_loaded::DataLoadedSize;
@@ -10,14 +10,12 @@ use crate::store::compaction::CompactionService;
 use crate::store::ChunkDataStore;
 use crate::util::aborting_join_handle::AbortingJoinHandle;
 use crate::CubeError;
-use core::mem;
-use datafusion::cube_ext;
 use futures_timer::Delay;
 use log::{debug, error, info};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -45,6 +43,10 @@ impl JobRunner {
                     return;
                 }
                 _ = self.notify.notified() => {
+                    self.fetch_and_process().await
+                }
+                _ = Delay::new(Duration::from_secs(5)) => {
+                    // Notifications are hints: router loss must not strand durable jobs.
                     self.fetch_and_process().await
                 }
             };
@@ -79,92 +81,59 @@ impl JobRunner {
     async fn run_local(&self, job: IdRow<Job>) -> Result<(), CubeError> {
         let start = SystemTime::now();
         let job_id = job.get_id();
-        let (mut tx, rx) = oneshot::channel::<()>();
-        let meta_store = self.meta_store.clone();
-        let heart_beat_timer = cube_ext::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = tx.closed() => {
-                        break;
-                    }
-                    _ = Delay::new(Duration::from_secs(30)) => {
-                        let _ = meta_store.update_heart_beat(job_id).await; // TODO handle result
-                    }
-                }
-            }
-        });
+        let attempt = job.get_row().attempt().cloned().ok_or_else(|| {
+            CubeError::internal("Claimed job has no attempt token".to_string())
+        })?;
         debug!("Running job: {:?}", job);
-        let handle = AbortingJoinHandle::new(self.route_job(job.get_row())?);
-        // TODO cancel job if this worker isn't job owner anymore
-        let res = if let Some(duration) = self.job_timeout(&job) {
-            let future = timeout(duration, handle);
-            // TODO duplicate
-            tokio::select! {
-                _ = self.stop_token.cancelled() => {
-                    Err(CubeError::user("shutting down".to_string()))
-                }
-                res = future => {
-                    res.map_err(|_| CubeError::user("timed out".to_string()))
-                }
-            }
-        } else {
-            // TODO duplicate
-            tokio::select! {
-                _ = self.stop_token.cancelled() => {
-                    Err(CubeError::user("shutting down".to_string()))
-                }
-                res = handle => {
-                    Ok(res)
+        let routed = JOB_ATTEMPT.scope(Some(attempt.clone()), async {
+            self.route_job(job.get_row())
+        }).await;
+        let status = match routed {
+            Err(e) => JobStatus::Error(e.to_string()),
+            Ok(handle) => {
+                // Dropping work on heartbeat failure/timeout aborts its outer task.
+                // Already-running children still cannot commit after reclaim.
+                let handle = AbortingJoinHandle::new(handle);
+                let work = async {
+                    if let Some(duration) = self.job_timeout(&job) {
+                        match timeout(duration, handle).await {
+                            Err(_) => JobStatus::Timeout,
+                            Ok(Err(e)) => JobStatus::Error(e.to_string()),
+                            Ok(Ok(Err(e))) => JobStatus::Error(e.to_string()),
+                            Ok(Ok(Ok(()))) => JobStatus::Completed,
+                        }
+                    } else {
+                        match handle.await {
+                            Err(e) => JobStatus::Error(e.to_string()),
+                            Ok(Err(e)) => JobStatus::Error(e.to_string()),
+                            Ok(Ok(())) => JobStatus::Completed,
+                        }
+                    }
+                };
+                tokio::pin!(work);
+                let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
+                loop {
+                    tokio::select! {
+                        _ = self.stop_token.cancelled() => break JobStatus::Timeout,
+                        result = &mut work => break result,
+                        _ = heartbeat.tick() => {
+                            match timeout(Duration::from_secs(30), self.meta_store.heartbeat_job_attempt(attempt.clone())).await {
+                                Ok(Ok(_)) => {},
+                                failure => {
+                                    error!("Lost job ownership/heartbeat {:?}: {:?}", attempt, failure);
+                                    break JobStatus::Timeout;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         };
-
-        mem::drop(rx);
-        heart_beat_timer.await?;
-        if let Err(e) = res {
-            self.meta_store
-                .update_status(job_id, JobStatus::Timeout)
-                .await?;
-            error!(
-                "Running job {} ({:?}): {:?}",
-                e.message,
-                start.elapsed()?,
-                // Job can be removed by the time of fetch
-                self.meta_store.get_job(job_id).await.unwrap_or(job)
-            );
-        } else if let Ok(Err(cube_err)) = res {
-            self.meta_store
-                .update_status(job_id, JobStatus::Error(cube_err.to_string()))
-                .await?;
-            error!(
-                "Running job join error ({:?}): {:?}",
-                start.elapsed()?,
-                // Job can be removed by the time of fetch
-                self.meta_store.get_job(job_id).await.unwrap_or(job)
-            );
-        } else if let Ok(Ok(Err(cube_err))) = res {
-            self.meta_store
-                .update_status(job_id, JobStatus::Error(cube_err.to_string()))
-                .await?;
-            error!(
-                "Error while running job {}: {}",
-                job_id,
-                cube_err.display_with_backtrace()
-            );
-            error!(
-                "Running job error ({:?}): {:?}",
-                start.elapsed()?,
-                // Job can be removed by the time of fetch
-                self.meta_store.get_job(job_id).await.unwrap_or(job)
-            );
+        let completed = self.meta_store.finish_job_attempt(attempt, status.clone()).await?;
+        if status == JobStatus::Completed {
+            info!("Running job completed ({:?}): {:?}", start.elapsed()?, completed);
         } else {
-            let job = self
-                .meta_store
-                .update_status(job_id, JobStatus::Completed)
-                .await?;
-            info!("Running job completed ({:?}): {:?}", start.elapsed()?, job);
-            // TODO delete jobs on reconciliation
-            self.meta_store.delete_job(job_id).await?;
+            error!("Job {} stopped ({:?}): {:?}", job_id, start.elapsed()?, status);
         }
         Ok(())
     }
@@ -176,7 +145,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::WALs, wal_id) = job.row_reference() {
                     let chunk_store = self.chunk_store.clone();
                     let wal_id = *wal_id;
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         chunk_store.partition(wal_id).await
                     }))
                 } else {
@@ -187,7 +156,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::Partitions, partition_id) = job.row_reference() {
                     let chunk_store = self.chunk_store.clone();
                     let partition_id = *partition_id;
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         chunk_store.repartition(partition_id).await
                     }))
                 } else {
@@ -202,7 +171,7 @@ impl JobRunner {
                     let metastore = self.meta_store.clone();
                     let job_processor = self.job_processor.clone();
                     let job_to_move = job.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         let wait_ms = process_rate_limiter
                             .wait_for_allow(TaskType::Job, timeout)
                             .await?; //TODO config, may be same ad orphaned timeout
@@ -242,7 +211,7 @@ impl JobRunner {
                     log::warn!(
                         "JobType::InMemoryChunksCompaction is deprecated and should not be used"
                     );
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         compaction_service
                             .compact_in_memory_chunks(partition_id)
                             .await
@@ -255,7 +224,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::Tables, _) = job.row_reference() {
                     let compaction_service = self.compaction_service.clone();
                     let node_name = self.server_name.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         compaction_service
                             .compact_node_in_memory_chunks(node_name)
                             .await
@@ -268,7 +237,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::MultiPartitions, _) = job.row_reference() {
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         job_processor.process_job(job_to_move).await.map(|_| ())
                     }))
                 } else {
@@ -279,7 +248,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::MultiPartitions, _) = job.row_reference() {
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         job_processor.process_job(job_to_move).await.map(|_| ())
                     }))
                 } else {
@@ -290,7 +259,7 @@ impl JobRunner {
                 if let RowKey::Table(TableId::Tables, _) = job.row_reference() {
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         job_processor.process_job(job_to_move).await.map(|_| ())
                     }))
                 } else {
@@ -307,7 +276,7 @@ impl JobRunner {
                     let metastore = self.meta_store.clone();
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         let is_streaming = Table::is_stream_location(&location);
                         let data_loaded_size = if is_streaming {
                             None
@@ -358,7 +327,7 @@ impl JobRunner {
                     let metastore = self.meta_store.clone();
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         let wait_ms = process_rate_limiter
                             .wait_for_allow(TaskType::Job, timeout)
                             .await?; //TODO config, may be same ad orphaned timeout
@@ -405,7 +374,7 @@ impl JobRunner {
                     let metastore = self.meta_store.clone();
                     let job_to_move = job.clone();
                     let job_processor = self.job_processor.clone();
-                    Ok(cube_ext::spawn(async move {
+                    Ok(crate::metastore::job::spawn_job(async move {
                         let wait_ms = process_rate_limiter
                             .wait_for_allow(TaskType::Job, timeout)
                             .await?;

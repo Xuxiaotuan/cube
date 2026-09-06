@@ -1,0 +1,20 @@
+{
+  "time": "2026-09-06T19:53:19.713Z",
+  "run": "rf8f47788f4d404f8",
+  "table": "ha_rf8f47788f4d404f8_rollups.router_ha_rollup_by_id_jznx5i3p_0nbiitxl_1l9rh22",
+  "source": [
+    {
+      "source_rows": "4096",
+      "total_amount": "142653440",
+      "id_checksum": "22914881536"
+    }
+  ],
+  "rollup": [
+    {
+      "stored_rows": "4096",
+      "source_rows": "4096",
+      "total_amount": "142653440",
+      "id_checksum": "22914881536"
+    }
+  ]
+}

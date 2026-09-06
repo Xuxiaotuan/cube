@@ -1,0 +1,446 @@
+{
+  "scope": "Single-node OrbStack router-pod failover and file-import pre-aggregation recovery; not node/storage disaster recovery",
+  "capturedAt": "2026-09-06T19:53:57.569Z",
+  "cases": [
+    {
+      "file": "r14bc37b4bfa7e982-upload-failover.json",
+      "status": "PASS",
+      "run": "r14bc37b4bfa7e982",
+      "mode": "upload-failover",
+      "transfer": "rows",
+      "trigger": "api-on-demand",
+      "rows": 4096,
+      "expectedHash": "b1ee5131261c2533d69875f801a9a087dfe1699df6d4e010dd8c0707af55980e",
+      "actualHash": "b1ee5131261c2533d69875f801a9a087dfe1699df6d4e010dd8c0707af55980e",
+      "apiDataRows": 16,
+      "buildId": "ha_r14bc37b4bfa7e982_rollups.router_ha_rollup_by_id_mnmbosks_j12mfxcv_1l9reqj",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 14,
+        "locations": [
+          "temp://37f9e9372c45607af53424ffb705ca9fee7f53f77b2af952d23acaa82e957f04.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_r14bc37b4bfa7e982_rollups.router_ha_rollup_by_id_mnmbosks_j12mfxcv_1l9reqj",
+          "tableIdentity": "14"
+        }
+      ],
+      "faultAt": "2026-09-06T19:13:23.862Z",
+      "releasedAt": "2026-09-06T19:13:55.359Z",
+      "barrierReleaseMs": 31497,
+      "releaseProof": {
+        "namespace": "cube-ha-remediation",
+        "oldLeader": "analytics-router-69457448dc-tz4jj",
+        "oldUid": "fdf336a1-a4b4-4290-ba1b-ea0a2b03c148",
+        "oldEpoch": 11,
+        "newLeader": "analytics-router-69457448dc-5zxmx",
+        "newEpoch": 12,
+        "endpoint": "analytics-router-69457448dc-5zxmx"
+      },
+      "apiAvailability": {
+        "count": 2,
+        "firstAt": 1788722004069,
+        "lastAt": 1788722004843,
+        "recoveredAt": 1788722049926,
+        "windowMs": 45857
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": null,
+      "events": [
+        "effective_budgets",
+        "source_ready",
+        "query_started",
+        "fault_ready",
+        "api_transient_unavailable",
+        "api_transient_unavailable",
+        "fault_released",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    },
+    {
+      "file": "r2eaadaa775662174-upload-failover.json",
+      "status": "PASS",
+      "run": "r2eaadaa775662174",
+      "mode": "upload-failover",
+      "transfer": "stream",
+      "trigger": "api-on-demand",
+      "rows": 4096,
+      "expectedHash": "197dc529a15c07395ede10fc5fcce0ab374c0d11d410810900459b55a57b47b7",
+      "actualHash": "197dc529a15c07395ede10fc5fcce0ab374c0d11d410810900459b55a57b47b7",
+      "apiDataRows": 16,
+      "buildId": "ha_r2eaadaa775662174_rollups.router_ha_rollup_by_id_cnufmlo3_dhiyvq12_1l9rfv7",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 26,
+        "locations": [
+          "temp://6186ec20213d6312f4d48f5ba00c703352a4619e812131ff6a0680f41bcf9d66.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_r2eaadaa775662174_rollups.router_ha_rollup_by_id_cnufmlo3_dhiyvq12_1l9rfv7",
+          "tableIdentity": "26"
+        }
+      ],
+      "faultAt": "2026-09-06T19:32:55.304Z",
+      "releasedAt": "2026-09-06T19:33:30.437Z",
+      "barrierReleaseMs": 35133,
+      "releaseProof": {
+        "namespace": "cube-ha-remediation",
+        "oldLeader": "analytics-router-69457448dc-nb9dr",
+        "oldUid": "fecd5460-423e-4f22-9551-e52e55ce8760",
+        "oldEpoch": 17,
+        "newLeader": "analytics-router-69457448dc-xhjk4",
+        "newEpoch": 18,
+        "endpoint": "analytics-router-69457448dc-xhjk4",
+        "drain": null
+      },
+      "apiAvailability": {
+        "count": 2,
+        "firstAt": 1788723175630,
+        "lastAt": 1788723176410,
+        "recoveredAt": 1788723212048,
+        "windowMs": 36418
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": null,
+      "events": [
+        "effective_budgets",
+        "source_ready",
+        "query_started",
+        "fault_ready",
+        "api_transient_unavailable",
+        "api_transient_unavailable",
+        "fault_released",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    },
+    {
+      "file": "r881fce58f7d219a2-receipt-failover.json",
+      "status": "PASS",
+      "run": "r881fce58f7d219a2",
+      "mode": "receipt-failover",
+      "transfer": "rows",
+      "trigger": "api-on-demand",
+      "rows": 4096,
+      "expectedHash": "b72f113064005302138233d462ddca5bd8dfe544ceb4b614ac0dc907b69f5c21",
+      "actualHash": "b72f113064005302138233d462ddca5bd8dfe544ceb4b614ac0dc907b69f5c21",
+      "apiDataRows": 16,
+      "buildId": "ha_r881fce58f7d219a2_rollups.router_ha_rollup_by_id_c4yjkgoi_funtlrq4_1l9resq",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 18,
+        "locations": [
+          "temp://a8236971f46dd86d55e6af7f52fe4bac22c7ad7dc8ec173cd681442f379ce173.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_r881fce58f7d219a2_rollups.router_ha_rollup_by_id_c4yjkgoi_funtlrq4_1l9resq",
+          "tableIdentity": "18"
+        }
+      ],
+      "faultAt": "2026-09-06T19:14:34.487Z",
+      "releasedAt": "2026-09-06T19:15:10.156Z",
+      "barrierReleaseMs": 35669,
+      "releaseProof": {
+        "namespace": "cube-ha-remediation",
+        "oldLeader": "analytics-router-69457448dc-5zxmx",
+        "oldUid": "de31e62f-fc48-4bb4-9a41-341b28a54f3e",
+        "oldEpoch": 12,
+        "newLeader": "analytics-router-69457448dc-jcrk4",
+        "newEpoch": 13,
+        "endpoint": "analytics-router-69457448dc-jcrk4"
+      },
+      "apiAvailability": {
+        "count": 1,
+        "firstAt": 1788722074793,
+        "lastAt": 1788722074793,
+        "recoveredAt": 1788722131095,
+        "windowMs": 56302
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": null,
+      "events": [
+        "effective_budgets",
+        "source_ready",
+        "query_started",
+        "fault_ready",
+        "api_transient_unavailable",
+        "fault_released",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    },
+    {
+      "file": "ra552a74642ac663f-drain-failover.json",
+      "status": "PASS",
+      "run": "ra552a74642ac663f",
+      "mode": "drain-failover",
+      "transfer": "rows",
+      "trigger": "api-on-demand",
+      "rows": 4096,
+      "expectedHash": "5866b73823e2b38cefb7be58773bc3944a55c934f6c8be5f4ed74584ccf42dd9",
+      "actualHash": "5866b73823e2b38cefb7be58773bc3944a55c934f6c8be5f4ed74584ccf42dd9",
+      "apiDataRows": 16,
+      "buildId": "ha_ra552a74642ac663f_rollups.router_ha_rollup_by_id_vx04mpd2_si0bnbze_1l9rfu1",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 24,
+        "locations": [
+          "temp://e3929f4945bd4acc5c0f7363ae8c5f4cc33052d22a0b3fadd99fa7ca98e14a65.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_ra552a74642ac663f_rollups.router_ha_rollup_by_id_vx04mpd2_si0bnbze_1l9rfu1",
+          "tableIdentity": "24"
+        }
+      ],
+      "faultAt": "2026-09-06T19:32:17.880Z",
+      "releasedAt": "2026-09-06T19:32:51.131Z",
+      "barrierReleaseMs": 33251,
+      "releaseProof": {
+        "namespace": "cube-ha-remediation",
+        "oldLeader": "analytics-router-69457448dc-fs56m",
+        "oldUid": "9cca0504-01ba-4e8d-9a58-b9e56dfcba57",
+        "oldEpoch": 16,
+        "newLeader": "analytics-router-69457448dc-nb9dr",
+        "newEpoch": 17,
+        "endpoint": "analytics-router-69457448dc-nb9dr",
+        "drain": {
+          "cliExit": 0,
+          "drainHttpSuccess": true,
+          "completionSource": "independent pinned-pod POST /router/drain after CLI exit0",
+          "oldLeaderIp": "192.168.194.49",
+          "observedAt": "2026-09-06T19:32:20.592Z",
+          "status": {
+            "draining": true,
+            "inFlight": 0,
+            "drained": true
+          }
+        }
+      },
+      "apiAvailability": {
+        "count": 1,
+        "firstAt": 1788723140284,
+        "lastAt": 1788723140284,
+        "recoveredAt": 1788723173548,
+        "windowMs": 33264
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": null,
+      "events": [
+        "effective_budgets",
+        "source_ready",
+        "query_started",
+        "fault_ready",
+        "draining_observed",
+        "stale_writer_response",
+        "stale_writer_rejected",
+        "api_transient_unavailable",
+        "drain_completed",
+        "fault_released",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    },
+    {
+      "file": "rf07dd05657f38faa-receipt-loss.json",
+      "status": "PASS",
+      "run": "rf07dd05657f38faa",
+      "mode": "receipt-loss",
+      "transfer": "rows",
+      "trigger": "api-on-demand",
+      "rows": 4096,
+      "expectedHash": "bd50cfd1179e0e92cd889dbea068d16f6cf3888aa08f5a4f870dc2b977b34f0a",
+      "actualHash": "bd50cfd1179e0e92cd889dbea068d16f6cf3888aa08f5a4f870dc2b977b34f0a",
+      "apiDataRows": 16,
+      "buildId": "ha_rf07dd05657f38faa_rollups.router_ha_rollup_by_id_2xk5wuif_uy1zg50p_1l9res3",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 16,
+        "locations": [
+          "temp://9e94dc13a5f1a089d2d268e163b30a44239ab872d76b6dad1f97ef0551161d27.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_rf07dd05657f38faa_rollups.router_ha_rollup_by_id_2xk5wuif_uy1zg50p_1l9res3",
+          "tableIdentity": "16"
+        }
+      ],
+      "faultAt": "2026-09-06T19:14:11.681Z",
+      "releasedAt": "2026-09-06T19:14:12.039Z",
+      "barrierReleaseMs": 358,
+      "releaseProof": {
+        "namespace": "cube-ha-remediation",
+        "oldLeader": "analytics-router-69457448dc-5zxmx",
+        "oldUid": "de31e62f-fc48-4bb4-9a41-341b28a54f3e",
+        "oldEpoch": 12,
+        "newLeader": "analytics-router-69457448dc-5zxmx",
+        "newEpoch": 12,
+        "endpoint": "analytics-router-69457448dc-5zxmx"
+      },
+      "apiAvailability": {
+        "count": 1,
+        "firstAt": 1788722052041,
+        "lastAt": 1788722052041,
+        "recoveredAt": 1788722072972,
+        "windowMs": 20931
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": null,
+      "events": [
+        "effective_budgets",
+        "source_ready",
+        "query_started",
+        "fault_ready",
+        "fault_released",
+        "api_transient_unavailable",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "api_response",
+        "api_availability_recovered",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    },
+    {
+      "file": "rf8f47788f4d404f8-refresher-failover.json",
+      "status": "PASS",
+      "run": "rf8f47788f4d404f8",
+      "mode": "refresher-failover",
+      "transfer": "rows",
+      "trigger": "scheduled-refresh-warmup-then-api-consumption",
+      "rows": 4096,
+      "expectedHash": "c569eed4651ca9cea03548f000af05fa6872aec54d22a50dc01ca5f04909e644",
+      "actualHash": "c569eed4651ca9cea03548f000af05fa6872aec54d22a50dc01ca5f04909e644",
+      "apiDataRows": 16,
+      "buildId": "ha_rf8f47788f4d404f8_rollups.router_ha_rollup_by_id_jznx5i3p_0nbiitxl_1l9rh22",
+      "buildStatus": {
+        "state": "ready",
+        "tableId": 29,
+        "locations": [
+          "temp://519d779ef74ad2f592beef5c37a753713e0f831846fea3d4e4412fae74eafb49.csv.gz"
+        ]
+      },
+      "manifestAfter": [
+        {
+          "phase": "ready",
+          "buildId": "ha_rf8f47788f4d404f8_rollups.router_ha_rollup_by_id_jznx5i3p_0nbiitxl_1l9rh22",
+          "tableIdentity": "29"
+        }
+      ],
+      "faultAt": "2026-09-06T19:51:30.319Z",
+      "releasedAt": "2026-09-06T19:52:02.005Z",
+      "barrierReleaseMs": 31686,
+      "releaseProof": {
+        "oldLeader": "analytics-router-69457448dc-7ntz7",
+        "oldUid": "98722ca7-5ff3-40d9-a1d4-4deb385bfce3",
+        "oldEpoch": 19,
+        "newLeader": "analytics-router-69457448dc-vm9nn",
+        "newEpoch": 20,
+        "endpoint": "analytics-router-69457448dc-vm9nn"
+      },
+      "apiAvailability": {
+        "count": 0,
+        "firstAt": null,
+        "lastAt": null,
+        "recoveredAt": null,
+        "windowMs": 0
+      },
+      "provenance": {
+        "source": "runtime-sql",
+        "external": true,
+        "executionMode": "skip-queue",
+        "sharedQueueAcquired": false
+      },
+      "observations": {
+        "count": 1,
+        "firstAt": 1788724291203,
+        "lastAt": 1788724291203,
+        "recoveredAt": 1788724326995,
+        "windowMs": 35792
+      },
+      "events": [
+        "effective_budgets",
+        "readiness_observed",
+        "source_ready",
+        "scheduled_context_registered",
+        "fault_ready",
+        "observation_transient_unavailable",
+        "fault_released",
+        "observation_recovered",
+        "scheduled_warmup_ready",
+        "query_started",
+        "api_response",
+        "preaggregation_evidence",
+        "api_response",
+        "preaggregation_evidence",
+        "checks_passed",
+        "result"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "addressType": "IPv4",
+            "apiVersion": "discovery.k8s.io/v1",
+            "endpoints": [
+                {
+                    "addresses": [
+                        "192.168.194.59"
+                    ],
+                    "conditions": {
+                        "ready": true,
+                        "serving": true,
+                        "terminating": false
+                    },
+                    "nodeName": "orbstack",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "analytics-router-69457448dc-vm9nn",
+                        "namespace": "cube-ha-remediation",
+                        "uid": "f4e8a417-ff2b-4f24-9069-5798efbf8357"
+                    }
+                }
+            ],
+            "kind": "EndpointSlice",
+            "metadata": {
+                "annotations": {
+                    "endpoints.kubernetes.io/last-change-trigger-time": "2026-09-06T19:46:12Z"
+                },
+                "creationTimestamp": "2026-09-06T17:52:12Z",
+                "generateName": "analytics-router-leader-",
+                "generation": 46,
+                "labels": {
+                    "app.kubernetes.io/instance": "analytics",
+                    "app.kubernetes.io/name": "cube",
+                    "cubestore.io/component": "router",
+                    "cubestore.io/cube-cluster": "analytics",
+                    "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                    "kubernetes.io/service-name": "analytics-router-leader"
+                },
+                "name": "analytics-router-leader-lqmgq",
+                "namespace": "cube-ha-remediation",
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "blockOwnerDeletion": true,
+                        "controller": true,
+                        "kind": "Service",
+                        "name": "analytics-router-leader",
+                        "uid": "eef7821d-bf4c-404b-a3ee-0b1ce3923bbd"
+                    }
+                ],
+                "resourceVersion": "3295024",
+                "uid": "06ad7e1e-2cc4-4019-9fcf-887df1fe2aaa"
+            },
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 3030,
+                    "protocol": "TCP"
+                },
+                {
+                    "name": "mysql",
+                    "port": 3306,
+                    "protocol": "TCP"
+                }
+            ]
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

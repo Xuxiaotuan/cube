@@ -1,0 +1,290 @@
+{
+    "apiVersion": "cubestore.io/v1alpha1",
+    "kind": "CubeCluster",
+    "metadata": {
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cubestore.io/v1alpha1\",\"kind\":\"CubeCluster\",\"metadata\":{\"annotations\":{},\"name\":\"analytics\",\"namespace\":\"cube-ha-remediation\"},\"spec\":{\"api\":{\"pod\":{\"env\":[{\"name\":\"CUBEJS_HA_DEMO\",\"value\":\"true\"},{\"name\":\"CUBEJS_HA_SCHEDULED_DEMO\",\"value\":\"true\"},{\"name\":\"CUBEJS_HA_PROXY_PORT\",\"value\":\"13330\"},{\"name\":\"CUBEJS_HA_POD_NAME\",\"valueFrom\":{\"fieldRef\":{\"fieldPath\":\"metadata.name\"}}},{\"name\":\"CUBEJS_HA_POD_UID\",\"valueFrom\":{\"fieldRef\":{\"fieldPath\":\"metadata.uid\"}}}],\"resources\":{\"limits\":{\"cpu\":\"2\",\"memory\":\"2Gi\"},\"requests\":{\"cpu\":\"100m\",\"memory\":\"512Mi\"}}},\"replicas\":1},\"images\":{\"api\":\"cube-studio-api:ha-remediation-20260907-drain\",\"leaseAgent\":\"cube-operator:ha-remediation-20260907-cutover\",\"metaStore\":\"cube-studio-router:ha-remediation-20260907-final\",\"router\":\"cube-studio-router:ha-remediation-20260907-final\",\"worker\":\"cube-studio-router:ha-remediation-20260907-final\"},\"metaStore\":{\"replicas\":1},\"refresher\":{\"replicas\":1},\"router\":{\"drainCommand\":[\"/cube/cubestored\",\"--drain\"],\"highAvailability\":true,\"replicas\":2},\"storage\":{\"bucket\":\"cube-router-ha\",\"endpoint\":\"http://cube-router-object-store.cube-ha-remediation.svc.cluster.local:9000\",\"objectStoreSecretRef\":{\"name\":\"cube-router-demo-object-store\",\"namespace\":\"cube-ha-remediation\"},\"storageClassName\":\"local-path\",\"subPath\":\"cubecluster-analytics\"},\"workers\":{\"replicas\":2}}}\n"
+        },
+        "creationTimestamp": "2026-09-06T17:52:11Z",
+        "generation": 11,
+        "name": "analytics",
+        "namespace": "cube-ha-remediation",
+        "resourceVersion": "3295035",
+        "uid": "0565d0e7-77ca-41ac-bafb-6d80138db062"
+    },
+    "spec": {
+        "api": {
+            "allowSingleReplicaDisruption": false,
+            "pod": {
+                "env": [
+                    {
+                        "name": "CUBEJS_HA_DEMO",
+                        "value": "true"
+                    },
+                    {
+                        "name": "CUBEJS_HA_SCHEDULED_DEMO",
+                        "value": "true"
+                    },
+                    {
+                        "name": "CUBEJS_HA_PROXY_PORT",
+                        "value": "13330"
+                    },
+                    {
+                        "name": "CUBEJS_HA_POD_NAME",
+                        "valueFrom": {
+                            "fieldRef": {
+                                "fieldPath": "metadata.name"
+                            }
+                        }
+                    },
+                    {
+                        "name": "CUBEJS_HA_POD_UID",
+                        "valueFrom": {
+                            "fieldRef": {
+                                "fieldPath": "metadata.uid"
+                            }
+                        }
+                    }
+                ],
+                "resources": {
+                    "limits": {
+                        "cpu": "2",
+                        "memory": "2Gi"
+                    },
+                    "requests": {
+                        "cpu": "100m",
+                        "memory": "512Mi"
+                    }
+                }
+            },
+            "replicas": 1
+        },
+        "images": {
+            "api": "cube-studio-api:ha-remediation-20260907-refresher",
+            "leaseAgent": "cube-operator:ha-remediation-20260907-cutover",
+            "metaStore": "cube-studio-router:ha-remediation-20260907-final",
+            "router": "cube-studio-router:ha-remediation-20260907-final",
+            "worker": "cube-studio-router:ha-remediation-20260907-final"
+        },
+        "metaStore": {
+            "allowSingleReplicaDisruption": false,
+            "replicas": 1
+        },
+        "refresher": {
+            "allowSingleReplicaDisruption": false,
+            "replicas": 1
+        },
+        "router": {
+            "allowSingleReplicaDisruption": false,
+            "drainCommand": [
+                "/cube/cubestored",
+                "--drain"
+            ],
+            "highAvailability": true,
+            "replicas": 2
+        },
+        "storage": {
+            "bucket": "cube-router-ha",
+            "dataSize": "2Gi",
+            "endpoint": "http://cube-router-object-store.cube-ha-remediation.svc.cluster.local:9000",
+            "objectStoreSecretRef": {
+                "name": "cube-router-demo-object-store",
+                "namespace": "cube-ha-remediation"
+            },
+            "storageClassName": "local-path",
+            "subPath": "cubecluster-analytics"
+        },
+        "workers": {
+            "allowSingleReplicaDisruption": false,
+            "replicas": 2
+        }
+    },
+    "status": {
+        "components": {
+            "api": {
+                "applicationReady": "True",
+                "desiredReplicas": 1,
+                "observedGeneration": 8,
+                "ready": true,
+                "readyReplicas": 1,
+                "updatedReplicas": 1,
+                "workloadGeneration": 8
+            },
+            "metastore": {
+                "applicationReady": "True",
+                "desiredReplicas": 1,
+                "observedGeneration": 3,
+                "ready": true,
+                "readyReplicas": 1,
+                "updatedReplicas": 1,
+                "workloadGeneration": 3
+            },
+            "refresher": {
+                "applicationReady": "True",
+                "desiredReplicas": 1,
+                "observedGeneration": 6,
+                "ready": true,
+                "readyReplicas": 1,
+                "updatedReplicas": 1,
+                "workloadGeneration": 6
+            },
+            "router": {
+                "applicationReady": "True",
+                "desiredReplicas": 2,
+                "observedGeneration": 6,
+                "ready": true,
+                "readyReplicas": 2,
+                "updatedReplicas": 2,
+                "workloadGeneration": 6
+            },
+            "worker": {
+                "applicationReady": "True",
+                "desiredReplicas": 2,
+                "observedGeneration": 3,
+                "ready": true,
+                "readyReplicas": 2,
+                "updatedReplicas": 2,
+                "workloadGeneration": 3
+            }
+        },
+        "conditions": [
+            {
+                "lastTransitionTime": "2026-09-06T19:43:41Z",
+                "message": "ready=1 desired=1 updated=1 generation=8 observed=8 application=True",
+                "observedGeneration": 11,
+                "reason": "ComponentObservation",
+                "status": "True",
+                "type": "APIReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:52:01Z",
+                "message": "Promoted runtime supports fenced Job attempts; this is not proof of zero lost work or successful recovery of every job",
+                "observedGeneration": 11,
+                "reason": "JobAttemptFencingSupported",
+                "status": "True",
+                "type": "JobRecovery"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T17:52:32Z",
+                "message": "ready=1 desired=1 updated=1 generation=3 observed=3 application=True",
+                "observedGeneration": 11,
+                "reason": "ComponentObservation",
+                "status": "True",
+                "type": "MetaStoreReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:52:01Z",
+                "message": "Promoted runtime supports durable upload receipts and authoritative pre-aggregation status for scoped CSV builds; arbitrary mutations are not exactly-once",
+                "observedGeneration": 11,
+                "reason": "BuildReconciliationSupported",
+                "status": "True",
+                "type": "MutationReconcile"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T17:52:13Z",
+                "message": "MetaStore is single-writer; multi-node disaster recovery and durable refresher ownership are not certified by workload readiness",
+                "observedGeneration": 11,
+                "reason": "EvidenceIncomplete",
+                "status": "False",
+                "type": "ProductionReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:43:47Z",
+                "message": "ready=1 desired=1 updated=1 generation=6 observed=6 application=True",
+                "observedGeneration": 11,
+                "reason": "ComponentObservation",
+                "status": "True",
+                "type": "RefresherReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:52:01Z",
+                "message": "Current API and refresher are application-ready; refresher acknowledges shared CubeStore queue and resumable file-import manifests, with promoted Router upload receipts, pre-aggregation status and fenced Job attempts; this certifies scoped recovery support, not arbitrary mutation exactly-once, scheduler single leadership or completion of every build",
+                "observedGeneration": 11,
+                "reason": "FileImportBuildSchedulingSupported",
+                "status": "True",
+                "type": "RefresherRecovery"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:51:36Z",
+                "message": "Each workload must observe its generation, update every replica, and pass live application probes",
+                "observedGeneration": 11,
+                "reason": "ComponentObservations",
+                "status": "True",
+                "type": "ResourcesReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:52:01Z",
+                "message": "Router role cutover readiness only; not lossless business recovery",
+                "observedGeneration": 11,
+                "reason": "RouterController",
+                "status": "True",
+                "type": "RouterHAReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T17:52:32Z",
+                "message": "ready=2 desired=2 updated=2 generation=6 observed=6 application=True",
+                "observedGeneration": 11,
+                "reason": "ComponentObservation",
+                "status": "True",
+                "type": "RouterReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:52:01Z",
+                "message": "Current promotion acknowledgement plus live Router readiness",
+                "observedGeneration": 11,
+                "reason": "RouterController",
+                "status": "True",
+                "type": "RouterServingReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T17:52:13Z",
+                "message": "Object store configuration and credentials resolved; durability/access are not certified by this condition",
+                "observedGeneration": 11,
+                "reason": "ConfigurationOnly",
+                "status": "True",
+                "type": "StorageConfigured"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T19:51:36Z",
+                "message": "Desired child specifications applied in dependency order; readiness remains independently observed",
+                "observedGeneration": 11,
+                "reason": "DesiredResourcesApplied",
+                "status": "True",
+                "type": "UpgradeReady"
+            },
+            {
+                "lastTransitionTime": "2026-09-06T17:52:32Z",
+                "message": "ready=2 desired=2 updated=2 generation=3 observed=3 application=True",
+                "observedGeneration": 11,
+                "reason": "ComponentObservation",
+                "status": "True",
+                "type": "WorkersReady"
+            }
+        ],
+        "observedGeneration": 11,
+        "phase": "Running",
+        "readyReplicas": 7,
+        "recovery": {
+            "jobRecovery": {
+                "message": "Promoted runtime supports fenced Job attempts; this is not proof of zero lost work or successful recovery of every job",
+                "reason": "JobAttemptFencingSupported",
+                "state": "Ready"
+            },
+            "mutationReconcile": {
+                "message": "Promoted runtime supports durable upload receipts and authoritative pre-aggregation status for scoped CSV builds; arbitrary mutations are not exactly-once",
+                "reason": "BuildReconciliationSupported",
+                "state": "Ready"
+            },
+            "promotion": {
+                "message": "Router acknowledged the exact lease epoch, token hash, and MetaStore readiness.",
+                "reason": "PromotionAcknowledged",
+                "state": "Ready"
+            },
+            "refresher": {
+                "message": "Current API and refresher are application-ready; refresher acknowledges shared CubeStore queue and resumable file-import manifests, with promoted Router upload receipts, pre-aggregation status and fenced Job attempts; this certifies scoped recovery support, not arbitrary mutation exactly-once, scheduler single leadership or completion of every build",
+                "reason": "FileImportBuildSchedulingSupported",
+                "state": "Ready"
+            }
+        }
+    }
+}

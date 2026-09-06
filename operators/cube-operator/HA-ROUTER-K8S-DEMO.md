@@ -1,6 +1,116 @@
 # Cube Router 主备 HA：Kubernetes 演示与验证报告
 
-> 文档状态：2026-08-04
+## 2026-09-07 最新修复与真实验收
+
+本轮并行修复 Operator、lease-agent、CubeStore Rust、Driver、Orchestrator 和 Refresher 能力检查，实际构建并部署到本地 `orbstack / cube-ha-remediation`。六项真实场景分批通过，不是仅做选主或 mock 测试。
+
+| 场景 | 结果 | 屏障到新主接流量 | 最终 tableId |
+|---|---|---:|---:|
+| 上传中切主（rows） | PASS | 31.497 s | 14 |
+| 仅丢上传回执，不切主 | PASS | 不适用 | 16 |
+| 远端上传成功、丢回执并切主 | PASS | 35.669 s | 18 |
+| drain、旧连接拒写、真正排空再切主 | PASS | 33.251 s，含 drain | 24 |
+| 文件流导出上传中切主 | PASS | 35.133 s | 26 |
+| 独立 Refresher 构建中切主、API 随后消费 | PASS | 31.686 s | 29 |
+
+每项核对 4096 行源数据、16 行 API 分组结果、完整结果哈希、精确构建表、上传 SHA/LOCATION/receipt，以及持久化 ready/tableId。最后一项源表与预聚合表的金额合计均为 **142653440**，ID 平方校验和均为 **22914881536**。完整 SQL 对账、失败根因、镜像 SHA 和回归命令见 [本轮修复报告](HA-REMEDIATION-2026-09-07.md)，原始事件和服务日志见 [证据索引](demo/k8s/evidence/2026-09-07/README.md)。上述是实测样本，不是生产 P95/P99 或 SLA。
+
+### 逻辑架构：不是两份独立元数据的 Router 双写
+
+```mermaid
+flowchart LR
+    Client[Business client] --> API[Cube API]
+    API --> Driver[CubeStoreDriver]
+    Refresh[Independent Refresher] --> Build[Pre-aggregation build protocol]
+    Build --> Driver
+    Driver --> Service[Leader Service]
+    Service --> Active[Active Router]
+    Standby[Standby Router: no business writes] -. shares authority .-> Meta[Authoritative MetaStore and CacheStore]
+    Active --> Meta
+    Active --> Workers[CubeStore Workers]
+    Workers --> Meta
+    Build -. buildId / manifest / tableId .-> Meta
+    Active --> Objects[Shared object storage]
+    Workers --> Objects
+    Meta --> PVC[Persistent volume]
+```
+
+Router 负责 SQL/元数据访问、查询规划与 Worker 分发、上传入口、建表及后台工作的协调，但不是唯一持久化点。权威元数据、Job attempt 和共享恢复 ledger 不放在各 Router 的独立内存里。请求上下文、下载缓存、未确认本地上传仍可能丢失，依靠共享权威状态和不可变远端输入恢复，而不是复制整个进程。
+
+### K8s 部署关系：Lease + 直读状态
+
+```mermaid
+flowchart TB
+    CR[CubeCluster CR] --> Operator[Cube Operator Deployment]
+    Operator --> RouterCR[CubestoreRouter CR]
+    Operator --> API[API Deployment: 1]
+    Operator --> Refresh[Refresher Deployment: 1]
+    Operator --> Routers[Router Deployment: 2]
+    Operator --> Meta[MetaStore StatefulSet: 1 + PVC]
+    Operator --> Worker[Worker StatefulSet: 2 + PVC]
+    RouterCR --> Lease[Kubernetes Lease]
+    RouterCR --> CM[Promotion ConfigMap]
+    Lease --> Agent[lease-agent in each Router Pod]
+    CM -->|Direct API GET| Agent
+    Agent -->|Check Lease before and after; atomic write| Local[Memory EmptyDir: leadership + promotion]
+    Local -->|Read only| Runtime[Rust Router]
+    Operator --> SVC[Leader Service]
+    SVC --> Slice[One Ready EndpointSlice target]
+    Slice --> Runtime
+    Storage[Demo MinIO + PVC] --- Meta
+    Storage --- Worker
+    Storage --- Runtime
+```
+
+lease-agent 每 2 秒直读指定 ConfigMap，一次同步总超时 2 秒；校验 holder、cluster、epoch、token 和前后 Lease 后原子写本地文件。失配、过期、失联和退出均 fail closed。仍使用 ConfigMap，但 Router 不再等待 kubelet 投射。30 秒 Lease 安全等待保留，没有新增必选 Redis/PostgreSQL，也没有实现 Raft。
+
+### 数据流：构建、发布与切主
+
+```mermaid
+sequenceDiagram
+    participant C as Cube API / Refresher
+    participant D as Driver + Orchestrator
+    participant R as Active Router
+    participant O as Object storage
+    participant M as MetaStore + CacheStore
+    participant W as Worker
+    participant K as Operator + Lease agent
+    participant N as New Router
+    C->>D: Query or scheduled pre-aggregation build
+    D->>M: Pin buildId and immutable manifest
+    D->>R: Upload content-addressed file
+    R->>O: Persist input and verify origin receipt
+    D->>R: CREATE TABLE with exact LOCATION
+    R->>M: Persist table and Job attempt
+    M->>W: Claim work with attempt identity
+    W->>O: Read input and publish chunk objects
+    W->>M: Atomically validate attempt and publish metadata
+    Note over R,N: Active Router fails or is drained
+    K->>K: Acquire next Lease epoch and verify promotion
+    K->>N: Publish checked local role state
+    K->>N: Route Service after readiness acknowledgement
+    D->>N: Reconcile same buildId, receipt, LOCATION and tableId
+    N->>M: Read authoritative build status
+    D->>M: Persist and confirm ready before publishing table
+    C->>N: Query exact ready pre-aggregation
+    N-->>C: Result checked against expected data hash
+```
+
+故障可发生在上传或构建任一阶段，此图不表示只能在 Worker 发布后故障。未知普通写操作不盲重放。Refresher 场景先证明真实调度/构建队列、run 和执行 Pod，再由独立 API 消费，不能用 API 自己构建冒充 Refresher。
+
+### 当前结论与上线边界
+
+- 当前 Cube 工作负载 **7/7 Pod Ready**，Router epoch **20**；最终 API、Refresher、MetaStore、Worker 和当前 Router 容器重启数为 0。镜像滚动替换和注入删除旧 Pod 单独记录，不混称 restart。
+- Go 测试/build、四个 TS 包编译与定向回归、Rust 定向回归通过；不是声称整仓测试全部运行。
+- 生产 API 未开 dev mode，以真实 SQL 命中作为证据；合法 skip-queue 外部读取明确标记，不假称获取共享查询队列锁。
+- **已证明 Router 主备及本轮文件导入型预聚合恢复，未证明整套 Cube 跨节点容灾。** MetaStore/演示存储仍单节点，任意非幂等写的 exactly-once、Refresher 自身崩溃恢复、所有租户/数据源、自动恢复记录 GC 和长期压力仍需独立门禁。
+- `ProductionReady=False` 按事实保留，不强改为 true。镜像部署在本地，Git 推送不等于镜像发布到远端 registry。
+
+## 历史演示记录
+
+> 最近复核：2026-09-07。下方原演示数据属于历史验证记录。
+>
+> 本轮全量修复和构建中途故障验收请查看 [Router HA 与预聚合恢复修复记录](./HA-REMEDIATION-2026-09-07.md)。历史查询成功不能代替本轮上传、Job 接管与预聚合恢复验收。
 >
 > 验证环境：本地 Kubernetes（context：`orbstack`）
 >

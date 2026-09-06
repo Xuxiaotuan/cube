@@ -130,8 +130,10 @@ impl TableCreator {
         let this = self.clone();
         let trace_obj = trace_obj.clone();
         let columns = columns.clone();
+        let mutation = crate::sql::ha::current_mutation();
         self.cache
             .create_table(schema_name.clone(), table_name.clone(), async move || {
+                let create = async move {
                 let table = this
                     .db
                     .get_table(schema_name.clone(), table_name.clone())
@@ -163,6 +165,11 @@ impl TableCreator {
                     &extension,
                 )
                 .await
+                };
+                match mutation {
+                    Some(guard) => guard.run(create).await,
+                    None => create.await,
+                }
             })
             .await
     }
@@ -188,8 +195,8 @@ impl TableCreator {
         trace_obj: &Option<String>,
         extension: &Option<serde_json::Value>,
     ) -> Result<IdRow<Table>, CubeError> {
-        let mut retries = 0;
-        let max_retries = self.config_obj.create_table_max_retries();
+
+
         loop {
             let listener = if external {
                 Some(self.cluster.job_result_listener())
@@ -234,39 +241,22 @@ impl TableCreator {
                 .and_then(|r| r);
                 match finalize_res {
                     Ok(FinalizeExternalTableResult::Orphaned) => {
-                        if let Err(inner) = self.db.drop_table(table.get_id()).await {
-                            log::error!(
-                                "Drop table ({}) on orphaned import failed: {}",
-                                table.get_id(),
-                                inner
-                            );
-                            return Err(CubeError::internal(format!("Error during create table finalization {:?}: some jobs are orphaned", table)));
-                        }
-                        log::warn!(
-                            "Some import jobs for table {} are orphaned, table creation restarted",
+                        // The durable scheduler reclaims the same job/table identity.
+                        // Dropping here would destroy receipts or a healthy replacement.
+                        return Err(CubeError::internal(format!(
+                            "Import for table {} is recovering; retry against the same table",
                             table.get_id()
-                        );
-                        retries += 1;
-                        if retries > max_retries {
-                            return Err(CubeError::internal(format!("Error during create table finalization {:?}: some jobs are orphaned", table)));
-                        } else {
-                            continue;
-                        }
+                        )));
                     }
                     Err(e) => {
-                        if let Err(inner) = self.db.drop_table(table.get_id()).await {
-                            log::error!(
-                                "Drop table ({}) after error failed: {}",
-                                table.get_id(),
-                                inner
-                            );
-                        }
+                        // Preserve build status and completed locations. A request
+                        // timeout is not evidence that its worker import failed.
                         return Err(e);
                     }
                     _ => {}
                 }
             }
-            return Ok(table);
+            return self.db.get_table_by_id(table.get_id()).await;
         }
     }
     async fn create_table_impl(
@@ -291,6 +281,13 @@ impl TableCreator {
         extension: &Option<serde_json::Value>,
     ) -> Result<IdRow<Table>, CubeError> {
         let columns_to_set = convert_columns_type(columns, self.config_obj.allow_decimal128())?;
+        if if_not_exists {
+            if let Ok(existing) = self.db.get_table(schema_name.clone(), table_name.clone()).await {
+                // Reattach to a durable in-progress build after router/request loss.
+                // Do not create a new identity or destroy its location receipts.
+                return Ok(existing);
+            }
+        }
         let mut indexes_to_create = Vec::new();
         if let Some(mut p) = partitioned_index {
             let part_index_name = match p.name.0.as_mut_slice() {
@@ -590,6 +587,10 @@ impl TableCreator {
             }
         }
 
+        if let Some(guard) = crate::sql::ha::current_mutation() {
+            guard.check()?;
+        }
+        // MetaStore rechecks durable import receipts in the final write transaction.
         let ready_table = self.db.table_ready(table.get_id(), true).await?;
 
         if let Some(trace_obj) = trace_obj.as_ref() {

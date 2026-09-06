@@ -8,6 +8,35 @@ use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use std::io::{Cursor, Write};
+use std::future::Future;
+use crate::CubeError;
+
+/// Worker ownership, deliberately independent of the router leadership epoch.
+/// The job id is never reused; reclaim preserves it and advances generation.
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct JobAttempt {
+    pub job_id: u64,
+    pub generation: u64,
+    pub owner: String,
+}
+
+tokio::task_local! {
+    pub static JOB_ATTEMPT: Option<JobAttempt>;
+}
+
+pub fn current_job_attempt() -> Option<JobAttempt> {
+    JOB_ATTEMPT.try_with(Clone::clone).ok().flatten()
+}
+
+/// Tokio task locals do not inherit through spawn. Job-owned async children must
+/// use this wrapper, including children that outlive cancellation of their parent.
+pub fn spawn_job<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    datafusion::cube_ext::spawn(JOB_ATTEMPT.scope(current_job_attempt(), future))
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub enum JobType {
@@ -96,6 +125,12 @@ pub struct Job {
     job_type: JobType,
     last_heart_beat: DateTime<Utc>,
     status: JobStatus,
+    #[serde(default)]
+    attempt: Option<JobAttempt>,
+    /// Durable receipts for complete file locations, committed with their chunks.
+    /// Retained across reclaim and after completion until the table is dropped.
+    #[serde(default)]
+    completed_imports: Vec<String>,
 }
 
 impl RocksEntity for Job {}
@@ -107,6 +142,8 @@ impl Job {
             job_type,
             last_heart_beat: Utc::now(),
             status: JobStatus::Scheduled(shard),
+            attempt: None,
+            completed_imports: Vec::new(),
         }
     }
 
@@ -127,16 +164,48 @@ impl Job {
     }
 
     pub fn update_status(&self, status: JobStatus) -> Job {
-        Job {
-            row_reference: self.row_reference.clone(),
-            job_type: self.job_type.clone(),
-            last_heart_beat: Utc::now(),
-            status,
-        }
+        let mut job = self.clone();
+        job.last_heart_beat = Utc::now();
+        job.status = status;
+        job
     }
 
-    pub fn start_processing(&self, node_name: String) -> Job {
-        self.update_status(JobStatus::ProcessingBy(node_name))
+    pub fn start_processing(&self, job_id: u64, node_name: String) -> Result<Job, CubeError> {
+        let generation = self.attempt.as_ref().map_or(0, |a| a.generation)
+            .checked_add(1)
+            .ok_or_else(|| CubeError::internal("Job generation exhausted".to_string()))?;
+        let mut job = self.update_status(JobStatus::ProcessingBy(node_name.clone()));
+        job.attempt = Some(JobAttempt { job_id, generation, owner: node_name });
+        Ok(job)
+    }
+
+    pub fn attempt(&self) -> Option<&JobAttempt> {
+        self.attempt.as_ref()
+    }
+
+    pub fn completed_imports(&self) -> &[String] {
+        &self.completed_imports
+    }
+
+    pub fn with_import_receipt(&self, location: String) -> Job {
+        let mut job = self.clone();
+        if !job.completed_imports.contains(&location) {
+            job.completed_imports.push(location);
+        }
+        job
+    }
+
+    pub fn check_owner(&self, attempt: &JobAttempt) -> Result<(), CubeError> {
+        if self.attempt.as_ref() != Some(attempt)
+            || self.status != JobStatus::ProcessingBy(attempt.owner.clone())
+        {
+            return Err(CubeError::user(format!("Stale job attempt: {:?}", attempt)));
+        }
+        Ok(())
+    }
+
+    pub fn is_file_import(&self) -> bool {
+        matches!(self.job_type, JobType::TableImport) || self.is_csv_import()
     }
 
     pub fn update_heart_beat(&self) -> Job {
@@ -366,5 +435,51 @@ mod tests {
         let decoded: Job = flex_roundtrip(&newer).expect("job with unknown type must decode");
         assert_eq!(decoded.job_type(), &JobType::Unknown);
         assert!(matches!(decoded.status(), JobStatus::Scheduled(s) if s == "shard-1"));
+        assert!(decoded.attempt().is_none());
+        assert!(decoded.completed_imports().is_empty());
+    }
+
+    #[test]
+    fn job_attempt_generation_preserves_dedupe_and_receipts() {
+        let first = job(JobType::TableImportCSV("file.csv".to_string()))
+            .start_processing(42, "worker".to_string()).unwrap();
+        let receipt = first.with_import_receipt("file.csv".to_string());
+        let next = receipt.update_status(JobStatus::Scheduled("worker".to_string()))
+            .start_processing(42, "worker".to_string()).unwrap();
+        assert_eq!(next.attempt().unwrap().generation, 2);
+        assert_eq!(next.attempt().unwrap().job_id, 42);
+        assert_eq!(next.row_reference(), first.row_reference());
+        assert_eq!(next.completed_imports(), &["file.csv".to_string()]);
+        assert!(next.check_owner(first.attempt().unwrap()).is_err());
+        assert!(next.check_owner(next.attempt().unwrap()).is_ok());
+        assert!(next.completed().check_owner(next.attempt().unwrap()).is_err());
+        let decoded: Job = flex_roundtrip(&next).unwrap();
+        assert_eq!(decoded.attempt(), next.attempt());
+        assert_eq!(decoded.completed_imports(), next.completed_imports());
+    }
+
+    #[tokio::test]
+    async fn job_attempt_spawn_inherits_and_abort_cancels() {
+        let attempt = JobAttempt { job_id: 1, generation: 9, owner: "worker".to_string() };
+        let expected = attempt.clone();
+        JOB_ATTEMPT.scope(Some(attempt), async move {
+            let actual = spawn_job(async { current_job_attempt() }).await.unwrap();
+            assert_eq!(actual, Some(expected));
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+            struct OnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+            impl Drop for OnDrop {
+                fn drop(&mut self) { let _ = self.0.take().unwrap().send(()); }
+            }
+            let handle = crate::util::aborting_join_handle::AbortingJoinHandle::new(spawn_job(async move {
+                let _on_drop = OnDrop(Some(dropped_tx));
+                started_tx.send(()).unwrap();
+                std::future::pending::<()>().await;
+            }));
+            started_rx.await.unwrap();
+            drop(handle);
+            tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx).await.unwrap().unwrap();
+        }).await;
+        assert!(current_job_attempt().is_none());
     }
 }

@@ -1,0 +1,90 @@
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 24s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 1 test
+2026-09-06T18:12:29.633Z INFO  [cubestore::metastore::rocks_fs] Creating metastore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/metadata_sql_via_remote_metastore_preserves_local_rows_and_columns-local-store/metastore
+2026-09-06T18:12:29.640Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: started
+2026-09-06T18:12:29.642Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: done
+2026-09-06T18:12:29.651Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="CREATE SCHEMA rpc_metadata"
+2026-09-06T18:12:29.651Z TRACE [cubestore::sql] Query: 'CREATE SCHEMA rpc_metadata'
+2026-09-06T18:12:29.653Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="CREATE TABLE rpc_metadata.events (id int)"
+2026-09-06T18:12:29.653Z TRACE [cubestore::sql] Query: 'CREATE TABLE rpc_metadata.events (id int)'
+2026-09-06T18:12:29.653Z TRACE [cubestore::metastore] create_table; schema_name="rpc_metadata" table_name="events" source_coulumns=None trace_obj=None drop_if_exists=false extension=None
+2026-09-06T18:12:29.654Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-06T18:12:29.655Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-06T18:12:29.655Z TRACE [cubestore::metastore] get_partition; partition_id=1
+2026-09-06T18:12:29.655Z TRACE [cubestore::metastore] get_table; schema_name="rpc_metadata" table_name="events"
+2026-09-06T18:12:29.655Z TRACE [cubestore::metastore] get_table_indexes; table_id=1
+2026-09-06T18:12:29.655Z TRACE [cubestore::metastore] get_active_partitions_by_index_id; index_id=1
+2026-09-06T18:12:29.656Z TRACE [cubestore::metastore] create_chunk; partition_id=1 row_count=7 min=None max=None in_memory=false
+2026-09-06T18:12:29.656Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'rpc_metadata'"
+2026-09-06T18:12:29.656Z TRACE [cubestore::sql] Query: 'SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'rpc_metadata''
+2026-09-06T18:12:29.661Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-06T18:12:29.666Z TRACE [cubestore::queryplanner] Initial Logical Plan: Projection, [information_schema.schemata.schema_name:schema_name]
+  Filter, predicate: BinaryExpr(BinaryExpr { left: Column(Column { relation: Some(Partial { schema: "information_schema", table: "schemata" }), name: "schema_name" }), op: Eq, right: Literal(Utf8("rpc_metadata")) })
+    Scan information_schema.schemata, source: InfoSchemaTableProvider(table: Schemata), fields: *
+2026-09-06T18:12:29.669Z TRACE [cubestore::queryplanner] Logical Plan: Filter, predicate: BinaryExpr(BinaryExpr { left: Column(Column { relation: Some(Partial { schema: "information_schema", table: "schemata" }), name: "schema_name" }), op: Eq, right: Literal(Utf8("rpc_metadata")) })
+  Scan information_schema.schemata, source: InfoSchemaTableProvider(table: Schemata), fields: *
+2026-09-06T18:12:29.675Z DEBUG [cubestore::queryplanner] Meta query data processing time: 1.94ms
+2026-09-06T18:12:29.675Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'missing_rpc_schema'"
+2026-09-06T18:12:29.675Z TRACE [cubestore::sql] Query: 'SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'missing_rpc_schema''
+2026-09-06T18:12:29.676Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-06T18:12:29.676Z TRACE [cubestore::queryplanner] Initial Logical Plan: Projection, [information_schema.schemata.schema_name:schema_name]
+  Filter, predicate: BinaryExpr(BinaryExpr { left: Column(Column { relation: Some(Partial { schema: "information_schema", table: "schemata" }), name: "schema_name" }), op: Eq, right: Literal(Utf8("missing_rpc_schema")) })
+    Scan information_schema.schemata, source: InfoSchemaTableProvider(table: Schemata), fields: *
+2026-09-06T18:12:29.677Z TRACE [cubestore::queryplanner] Logical Plan: Filter, predicate: BinaryExpr(BinaryExpr { left: Column(Column { relation: Some(Partial { schema: "information_schema", table: "schemata" }), name: "schema_name" }), op: Eq, right: Literal(Utf8("missing_rpc_schema")) })
+  Scan information_schema.schemata, source: InfoSchemaTableProvider(table: Schemata), fields: *
+2026-09-06T18:12:29.678Z DEBUG [cubestore::queryplanner] Meta query data processing time: 410µs
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SHOW SCHEMAS"
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] Query: 'SHOW SCHEMAS'
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SHOW SCHEMAS LIKE 'missing_rpc_%'"
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] Query: 'SHOW SCHEMAS LIKE 'missing_rpc_%''
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SHOW CHUNKS"
+2026-09-06T18:12:29.679Z TRACE [cubestore::sql] Query: 'SHOW CHUNKS'
+2026-09-06T18:12:29.680Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT * FROM system.chunks ORDER BY id"
+2026-09-06T18:12:29.680Z TRACE [cubestore::sql] Query: 'SELECT * FROM system.chunks ORDER BY id'
+2026-09-06T18:12:29.680Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-06T18:12:29.681Z TRACE [cubestore::queryplanner] Initial Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "chunks" }), name: "id" }), asc: true, nulls_first: false }]
+  Projection, [*:id]
+    Scan system.chunks, source: InfoSchemaTableProvider(table: SystemChunks), fields: *
+2026-09-06T18:12:29.683Z TRACE [cubestore::queryplanner] Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "chunks" }), name: "id" }), asc: true, nulls_first: false }]
+  Scan system.chunks, source: InfoSchemaTableProvider(table: SystemChunks), fields: *
+2026-09-06T18:12:29.686Z DEBUG [cubestore::queryplanner] Meta query data processing time: 1.361ms
+2026-09-06T18:12:29.686Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SHOW INDEXES"
+2026-09-06T18:12:29.686Z TRACE [cubestore::sql] Query: 'SHOW INDEXES'
+2026-09-06T18:12:29.686Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT * FROM system.indexes ORDER BY id"
+2026-09-06T18:12:29.686Z TRACE [cubestore::sql] Query: 'SELECT * FROM system.indexes ORDER BY id'
+2026-09-06T18:12:29.687Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-06T18:12:29.687Z TRACE [cubestore::queryplanner] Initial Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "indexes" }), name: "id" }), asc: true, nulls_first: false }]
+  Projection, [*:id]
+    Scan system.indexes, source: InfoSchemaTableProvider(table: SystemIndexes), fields: *
+2026-09-06T18:12:29.689Z TRACE [cubestore::queryplanner] Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "indexes" }), name: "id" }), asc: true, nulls_first: false }]
+  Scan system.indexes, source: InfoSchemaTableProvider(table: SystemIndexes), fields: *
+2026-09-06T18:12:29.690Z DEBUG [cubestore::queryplanner] Meta query data processing time: 295µs
+2026-09-06T18:12:29.690Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SHOW PARTITIONS"
+2026-09-06T18:12:29.690Z TRACE [cubestore::sql] Query: 'SHOW PARTITIONS'
+2026-09-06T18:12:29.690Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT * FROM system.partitions ORDER BY id"
+2026-09-06T18:12:29.690Z TRACE [cubestore::sql] Query: 'SELECT * FROM system.partitions ORDER BY id'
+2026-09-06T18:12:29.691Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-06T18:12:29.691Z TRACE [cubestore::queryplanner] Initial Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "partitions" }), name: "id" }), asc: true, nulls_first: false }]
+  Projection, [*:id]
+    Scan system.partitions, source: InfoSchemaTableProvider(table: SystemPartitions), fields: *
+2026-09-06T18:12:29.693Z TRACE [cubestore::queryplanner] Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "system", table: "partitions" }), name: "id" }), asc: true, nulls_first: false }]
+  Scan system.partitions, source: InfoSchemaTableProvider(table: SystemPartitions), fields: *
+2026-09-06T18:12:29.694Z DEBUG [cubestore::queryplanner] Meta query data processing time: 346µs
+test queryplanner::info_schema::remote_tests::metadata_sql_via_remote_metastore_preserves_local_rows_and_columns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.08s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.16s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 4 tests
+test sql::ha::tests::sql_classification_handles_comments_and_fails_closed ... ok
+test sql::ha::tests::fence_rejects_changed_epoch_even_if_new_epoch_is_valid ... ok
+test sql::ha::tests::lost_fence_cancels_pending_operation_without_reporting_success ... ok
+test sql::ha::tests::drain_waits_for_cloned_guard_and_does_not_cancel_accepted_work ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 349 filtered out; finished in 0.00s
+

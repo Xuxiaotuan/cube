@@ -188,6 +188,16 @@ impl QueueRemoteFs {
 
 #[async_trait]
 impl RemoteFs for QueueRemoteFs {
+    async fn download_file_uncached(
+        &self,
+        remote_path: String,
+        expected_file_size: Option<u64>,
+    ) -> Result<String, CubeError> {
+        self.remote_fs
+            .download_file_uncached(remote_path, expected_file_size)
+            .await
+    }
+
     async fn temp_upload_path(&self, remote_path: String) -> Result<String, CubeError> {
         CommonRemoteFsUtils::temp_upload_path(self, remote_path).await
     }
@@ -401,6 +411,16 @@ mod test {
 
     #[async_trait]
     impl RemoteFs for MockFs {
+        async fn download_file_uncached(
+            &self,
+            _remote_path: String,
+            _expected_file_size: Option<u64>,
+        ) -> Result<String, CubeError> {
+            Err(CubeError::internal(
+                "Uncached reads unsupported by mock".to_string(),
+            ))
+        }
+
         async fn temp_upload_path(&self, remote_path: String) -> Result<String, CubeError> {
             CommonRemoteFsUtils::temp_upload_path(self, remote_path).await
         }
