@@ -55,6 +55,8 @@ func releaseMetricCluster(t *testing.T) *v1alpha1.CubeCluster {
 	t.Cleanup(func() {
 		clusterConditionMetric.DeletePartialMatch(map[string]string{"namespace": c.Namespace, "cluster": c.Name})
 		clusterObservationMetric.DeleteLabelValues(c.Namespace, c.Name)
+		clusterReplicaMetric.DeletePartialMatch(map[string]string{"namespace": c.Namespace, "cluster": c.Name})
+		clusterGenerationLagMetric.DeletePartialMatch(map[string]string{"namespace": c.Namespace, "cluster": c.Name})
 	})
 	return c
 }
@@ -200,12 +202,81 @@ func TestReleaseMetricDeletedReconcileDedicated(t *testing.T) {
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: c.Namespace, Name: c.Name}}); err != nil {
 		t.Fatal(err)
 	}
-	for _, collector := range []prometheus.Collector{clusterConditionMetric, clusterObservationMetric} {
+	for _, collector := range []prometheus.Collector{clusterConditionMetric, clusterObservationMetric, clusterReplicaMetric, clusterGenerationLagMetric} {
 		if n := releaseMetricSeries(t, collector, c); n != 0 {
 			t.Errorf("deleted cluster retained %d metric series", n)
 		}
 		if n := releaseMetricSeries(t, collector, other); n == 0 {
 			t.Error("deleting one cluster removed another cluster's metrics")
 		}
+	}
+}
+
+func TestReleaseMetricComponentCountsAndGenerationLag(t *testing.T) {
+	c := releaseMetricCluster(t)
+	c.Status.ObservedGeneration = c.Generation
+	c.Status.Components = map[string]v1alpha1.CubeComponentStatus{
+		cubeComponentRouter:  {DesiredReplicas: 2, ReadyReplicas: 1, UpdatedReplicas: 0, WorkloadGeneration: 9, ObservedGeneration: 7},
+		"untrusted-build-id": {DesiredReplicas: 100},
+	}
+	observeClusterConditions(c, true)
+	for state, want := range map[string]float64{"desired": 2, "ready": 1, "updated": 0} {
+		if got := releaseMetricValue(t, clusterReplicaMetric.WithLabelValues(c.Namespace, c.Name, cubeComponentRouter, state)); got != want {
+			t.Errorf("%s replicas = %v, want %v", state, got, want)
+		}
+	}
+	if got := releaseMetricValue(t, clusterGenerationLagMetric.WithLabelValues(c.Namespace, c.Name, cubeComponentRouter)); got != 2 {
+		t.Errorf("generation lag = %v, want 2", got)
+	}
+	if got := releaseMetricSeries(t, clusterReplicaMetric, c); got != 12 {
+		t.Errorf("replica series = %d, want 4 fixed components * 3 states", got)
+	}
+}
+
+func TestReleaseMetricComponentUnknownAndLagClamp(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		complete   bool
+		generation int64
+		present    bool
+		want       float64
+	}{
+		{"partial", false, 2, true, -1},
+		{"stale", true, 1, true, -1},
+		{"missing", true, 2, false, -1},
+		{"future_status", true, 3, true, -1},
+		{"clamped", true, 2, true, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := releaseMetricCluster(t)
+			c.Status.ObservedGeneration = test.generation
+			if test.present {
+				c.Status.Components = map[string]v1alpha1.CubeComponentStatus{cubeComponentRouter: {WorkloadGeneration: 2, ObservedGeneration: 3}}
+			}
+			observeClusterConditions(c, test.complete)
+			if got := releaseMetricValue(t, clusterGenerationLagMetric.WithLabelValues(c.Namespace, c.Name, cubeComponentRouter)); got != test.want {
+				t.Errorf("generation lag = %v, want %v", got, test.want)
+			}
+			if got := releaseMetricValue(t, clusterReplicaMetric.WithLabelValues(c.Namespace, c.Name, cubeComponentRouter, "ready")); got != test.want {
+				t.Errorf("ready replicas = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestReleaseMetricComponentRemovedRefresher(t *testing.T) {
+	c := releaseMetricCluster(t)
+	c.Spec.Refresher = &v1alpha1.CubeComponentSpec{}
+	observeClusterConditions(c, true)
+	if n := releaseMetricSeries(t, clusterReplicaMetric, c); n != 15 {
+		t.Fatalf("initial series = %d", n)
+	}
+	c.Spec.Refresher = nil
+	observeClusterConditions(c, true)
+	if n := releaseMetricSeries(t, clusterReplicaMetric, c); n != 12 {
+		t.Errorf("remaining series = %d", n)
+	}
+	if n := releaseMetricSeries(t, clusterGenerationLagMetric, c); n != 4 {
+		t.Errorf("remaining generation series = %d", n)
 	}
 }

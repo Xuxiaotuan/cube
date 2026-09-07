@@ -1,0 +1,244 @@
+
+=== wrapper bash -n ===
+BASH_SYNTAX_PASS
+
+=== lifecycle focused count=10 timeout=90s ===
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.05s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.02s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27637 returnedPID=27637 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.04s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27641 returnedPID=27641 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.04s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27645 returnedPID=27645 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.04s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27649 returnedPID=27649 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.04s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27653 returnedPID=27653 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.03s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27657 returnedPID=27657 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.03s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27661 returnedPID=27661 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.03s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27665 returnedPID=27665 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.03s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27669 returnedPID=27669 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.03s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27673 returnedPID=27673 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+PASS
+ok  	github.com/cube-js/cube-operator/internal/leadership	1.252s
+
+=== relocated wrapper synthetic ===
+AUDIT_DIRECTORY=/var/folders/c0/wzxnynsn36vf746bn4vcx_9r0000gn/T//cube-ha-controlplane-audit.8MsDpU
+=== RUN   TestKubernetesAuthorityDivergentCache
+--- PASS: TestKubernetesAuthorityDivergentCache (0.00s)
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader/unavailable
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader/missing
+--- PASS: TestKubernetesAuthorityUnavailableAndMissingReader (0.00s)
+    --- PASS: TestKubernetesAuthorityUnavailableAndMissingReader/unavailable (0.00s)
+    --- PASS: TestKubernetesAuthorityUnavailableAndMissingReader/missing (0.00s)
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity/renew
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity/release
+--- PASS: TestKubernetesAuthorityConflictRereadsIdentity (0.00s)
+    --- PASS: TestKubernetesAuthorityConflictRereadsIdentity/renew (0.00s)
+    --- PASS: TestKubernetesAuthorityConflictRereadsIdentity/release (0.00s)
+=== RUN   TestKubernetesReleasePreservesEpoch
+--- PASS: TestKubernetesReleasePreservesEpoch (0.00s)
+=== RUN   TestKubernetesManualRecoveryModelAndEpochExhaustion
+--- PASS: TestKubernetesManualRecoveryModelAndEpochExhaustion (0.00s)
+=== RUN   TestKubernetesCancelledControllerCannotRenew
+--- PASS: TestKubernetesCancelledControllerCannotRenew (0.00s)
+=== RUN   TestLeaseLifecycleChild
+    lifecycle_acceptance_test.go:26: subprocess only
+--- SKIP: TestLeaseLifecycleChild (0.00s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:132: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.04s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.02s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:159: AUDIT pause expectedPID=27700 returnedPID=27700 rawStatus=0x117f platform=darwin stoppedBySIGSTOP=true waitErr=<nil>
+    lifecycle_acceptance_test.go:187: AUDIT localChildPause=confirmed resumedOldIdentity=rejected authority=fake managerElectionTested=false
+--- PASS: TestLeaseLifecyclePausedWriterModel (0.01s)
+PASS
+ok  	github.com/cube-js/cube-operator/internal/leadership	1.146s
+=== RUN   TestLeaseBootstrapInterruptedReservationAndCompetition
+--- PASS: TestLeaseBootstrapInterruptedReservationAndCompetition (0.00s)
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion/false
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion/true
+--- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion (0.00s)
+    --- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion/false (0.00s)
+    --- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion/true (0.00s)
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/CR
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/ConfigMap
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/Pod
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/reader
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/uid
+--- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/CR (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/ConfigMap (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/Pod (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/reader (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/uid (0.00s)
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/healthy
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/no-election
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/wrong-token
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/cancelled
+--- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/healthy (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/no-election (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/wrong-token (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/cancelled (0.00s)
+=== RUN   TestLeaseCancelledReconcileStopsBeforeClientAccess
+--- PASS: TestLeaseCancelledReconcileStopsBeforeClientAccess (0.00s)
+PASS
+ok  	github.com/cube-js/cube-operator/controllers	0.691s
+ACCEPTANCE_PASS scope=--synthetic audit=/var/folders/c0/wzxnynsn36vf746bn4vcx_9r0000gn/T//cube-ha-controlplane-audit.8MsDpU
+External gates remain: actual Manager handover/loss, infrastructure isolation and business recovery.
+
+=== full offline Go suite count=1 timeout=120s ===
+?   	github.com/cube-js/cube-operator	[no test files]
+?   	github.com/cube-js/cube-operator/api/v1alpha1	[no test files]
+ok  	github.com/cube-js/cube-operator/cmd/lease-agent	0.620s
+ok  	github.com/cube-js/cube-operator/controllers	0.540s
+ok  	github.com/cube-js/cube-operator/internal/agent	2.201s
+ok  	github.com/cube-js/cube-operator/internal/leadership	7.860s

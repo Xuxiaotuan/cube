@@ -121,6 +121,9 @@ impl MetaStoreTransportImpl {
 #[async_trait]
 impl MetaStoreTransport for MetaStoreTransportImpl {
     async fn meta_store_call(&self, m: NetworkMessage) -> Result<NetworkMessage, CubeError> {
+        if crate::metastore::authority::strict_enabled() {
+            return crate::metastore::authority::https_call(m).await;
+        }
         let meta_remote_addr = self
             .config
             .metastore_remote_address()

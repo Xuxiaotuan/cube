@@ -111,3 +111,39 @@ that an administrator supplied a complete H or actually isolated a node. There i
 deliberately no online administrative recovery command with a self-attested safety
 flag. Production execution and end-to-end old-writer rejection remain externally
 gated acceptance work.
+
+## Isolated A1/A2 acceptance harness
+
+Run from the repository without changing deployment state:
+
+```sh
+bash operators/cube-operator/demo/k8s/isolated-controlplane-acceptance.sh --synthetic
+CUBE_HA_LIVE_LEASE_TEST=1 bash operators/cube-operator/demo/k8s/isolated-controlplane-acceptance.sh --live
+```
+
+Live mode requires current context `orbstack`, a local HTTPS API endpoint and
+existing namespace `cube-ha-remediation`. It creates only UUID names prefixed
+`cube-ha-cas-test-`. Every deletion requires the exact test-owned Lease UID;
+cleanup also checks the unique ownership label and confirms absence by direct
+API read. The script prints a temporary audit directory containing scope and
+test results without tokens. No real Router/Manager Lease or guard is deleted.
+
+| Scenario | Evidence from harness | Not established |
+| --- | --- | --- |
+| Reservation interrupted, uncommitted Create response lost | Controller fake CR tests and live Lease restoration with a modeled retained guard | Real CR/Lease cross-resource crash or process kill at reservation |
+| Committed Create response lost | Real Lease creation with locally injected lost response; authority rediscovery without reconstruction | Actual API-server/network response loss |
+| Running Lease lost | UID deletion of a private Lease, blocked automatic bootstrap, create-only expired H+1 recovery, acquisition at H+2, rejection of old identity and old UID deletion | Isolation of a real old Router/node; completeness of production historical H |
+| SIGTERM/SIGINT | Actual local child process using controller-runtime SetupSignalHandler cancels and exits | Real Manager election loss and reconcile shutdown ordering |
+| SIGKILL | Actual local test child terminated by SIGKILL | Router continuity or lease adoption after killing a real Operator |
+| SIGSTOP/SIGCONT | Child is confirmed stopped with wait status; after resume a stale identity is rejected by the fake authority model | A paused real Manager resuming against Kubernetes or MetaStore |
+
+The recovery test's H comes from its complete, synchronous, exclusive test
+writer ledger. This is deliberately stronger than reading mirror maxima and
+does not create a production high-water discovery mechanism. The in-memory
+reservation in live recovery is explicitly a model; actual CR history guards
+are exercised separately by controller tests. Never interpret synthetic signal
+tests or a one-node Lease test as infrastructure fencing. Real Manager fault
+injection must be coordinated with the parent acceptance owner, with an approved
+maintenance boundary, frozen release, traffic measurement and independently
+verifiable old-writer isolation. Business publication checks remain a separate
+acceptance gate even when all isolated tests pass.

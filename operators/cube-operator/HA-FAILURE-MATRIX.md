@@ -67,3 +67,10 @@ Task 13 的整体 acceptance 是至少 100 次重复 failover，并且 `rpo=0`�
 - Completed Job Pod 被误要求 Ready 已修：Refresher helper/wire 20/20 通过，语法检查通过。
 - 上述结果覆盖前文对应失败状态，但不替代真实 Refresher 崩溃恢复、最新 Linux 镜像部署或完整 K8s 故障矩阵。整体仍非生产 GO。
 - 原始日志：demo/k8s/evidence/2026-09-07-closure/approved-fixes/rust-rpc-setup-fix.log、refresher-completed-job-fix.log。
+
+### 最新授权协议修复关口
+
+- Go authority timeout fixture 修复后，专项及全量离线 Go 测试 PASS。
+- Rust Worker 上下文顺序和 TLS Cargo.lock 已修改；锁定编译报 E0004，TableId 穷尽匹配缺 RouterAuthority 分支。
+- 本轮 Rust authority_ / task4_rpc_ 执行数 0，不能继承历史 PASS；无新镜像、无部署、严格模式未启用。
+- 证据：authority-checkpoint/go-authority-fixed.log、rust-authority-fixed-build.log，位于 demo/k8s/evidence/2026-09-07-closure/ 下。

@@ -1,0 +1,4 @@
+mode=--synthetic
+started_at=2026-09-07T05:34:20Z
+scope=local-test-subprocesses;optional-UUID-Leases-only
+not_proven=Manager-election-loss,node-isolation,business-publication-fencing,traffic-outage

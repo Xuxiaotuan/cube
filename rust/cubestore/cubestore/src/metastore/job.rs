@@ -144,6 +144,8 @@ pub struct Job {
     status: JobStatus,
     #[serde(default)]
     attempt: Option<JobAttempt>,
+    #[serde(default)]
+    authority_pod_uid: Option<String>,
     /// Durable receipts for complete file locations, committed with their chunks.
     /// Retained across reclaim and after completion until the table is dropped.
     #[serde(default)]
@@ -160,6 +162,7 @@ impl Job {
             last_heart_beat: Utc::now(),
             status: JobStatus::Scheduled(shard),
             attempt: None,
+            authority_pod_uid: None,
             completed_imports: Vec::new(),
         }
     }
@@ -193,6 +196,7 @@ impl Job {
             .ok_or_else(|| CubeError::internal("Job generation exhausted".to_string()))?;
         let mut job = self.update_status(JobStatus::ProcessingBy(node_name.clone()));
         job.attempt = Some(JobAttempt { job_id, generation, owner: node_name });
+        job.authority_pod_uid = crate::metastore::authority::current_worker_uid();
         Ok(job)
     }
 
@@ -213,6 +217,7 @@ impl Job {
     }
 
     pub fn check_owner(&self, attempt: &JobAttempt) -> Result<(), CubeError> {
+        self.check_worker_identity()?;
         if self.attempt.as_ref() != Some(attempt)
             || self.status != JobStatus::ProcessingBy(attempt.owner.clone())
         {
@@ -223,6 +228,10 @@ impl Job {
 
     pub fn is_file_import(&self) -> bool {
         matches!(self.job_type, JobType::TableImport) || self.is_csv_import()
+    }
+
+    pub(crate) fn check_worker_identity(&self) -> Result<(), CubeError> {
+        crate::metastore::authority::check_worker_identity(self.authority_pod_uid.as_deref())
     }
 
     pub fn update_heart_beat(&self) -> Job {

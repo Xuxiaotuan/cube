@@ -243,7 +243,8 @@ export class QueryQueue {
       // Only a durable pre-aggregation can resume after a cached connection
       // failure. This does not enable replay of arbitrary queued SQL mutations.
       const resumableBuildError = query.preAggregationBuildId && result && (
-        ['MUTATION_UNKNOWN', 'PRE_AGG_REBUILD_REQUIRED'].includes(result.errorCode) || result.errorName === 'ConnectionError'
+        ['MUTATION_UNKNOWN', 'PRE_AGG_REBUILD_REQUIRED'].includes(result.errorCode) ||
+        ['ConnectionError', 'MutationUnknownError'].includes(result.errorName)
       );
       if (result && !result.streamResult && !resumableBuildError) {
         return this.parseResult(result);
@@ -715,10 +716,16 @@ export class QueryQueue {
         timeInQueue: 0
       });
     } catch (e: any) {
+      // Promise.race timing out does not stop a dispatched build mutation. Only
+      // durable builds can reconcile this outcome; arbitrary SQL keeps its
+      // existing timeout/error semantics and must not become replayable.
+      const reconciliationRequired = !!query.query?.preAggregationBuildId && (
+        e instanceof TimeoutError || e.code === 'MUTATION_UNKNOWN' || e.name === 'MutationUnknownError'
+      );
       executionResult = {
         error: (e.message || e).toString(),
-        errorCode: e.code,
-        errorName: e.name,
+        errorCode: reconciliationRequired ? 'MUTATION_UNKNOWN' : e.code,
+        errorName: reconciliationRequired ? 'MutationUnknownError' : e.name,
       };
       this.logger('Error while querying', {
         queueId,
@@ -728,6 +735,9 @@ export class QueryQueue {
         queuePrefix: this.redisQueuePrefix,
         requestId: query.requestId,
         timeInQueue: 0,
+        preAggregationBuildId: query.query?.preAggregationBuildId,
+        reconciliationRequired,
+        errorCode: executionResult.errorCode,
         error: (e.stack || e).toString()
       });
       if (e instanceof TimeoutError) {
@@ -922,10 +932,13 @@ export class QueryQueue {
             addedToQueueTime: query.addedToQueueTime,
           });
         } catch (e: any) {
+          const reconciliationRequired = !!query.query?.preAggregationBuildId && (
+            e instanceof TimeoutError || e.code === 'MUTATION_UNKNOWN' || e.name === 'MutationUnknownError'
+          );
           executionResult = {
             error: (e.message || e).toString(),
-            errorCode: e.code,
-            errorName: e.name,
+            errorCode: reconciliationRequired ? 'MUTATION_UNKNOWN' : e.code,
+            errorName: reconciliationRequired ? 'MutationUnknownError' : e.name,
           };
           this.logger('Error while querying', {
             queueId,
@@ -941,6 +954,9 @@ export class QueryQueue {
             newVersionEntry: query.query?.newVersionEntry,
             preAggregation: query.query?.preAggregation,
             addedToQueueTime: query.addedToQueueTime,
+            preAggregationBuildId: query.query?.preAggregationBuildId,
+            reconciliationRequired,
+            errorCode: executionResult.errorCode,
             error: (e.stack || e).toString()
           });
           if (e instanceof TimeoutError) {

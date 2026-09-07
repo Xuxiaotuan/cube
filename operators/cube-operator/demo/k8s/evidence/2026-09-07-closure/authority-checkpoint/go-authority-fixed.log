@@ -1,0 +1,178 @@
+
+=== focused authority/promotion/sync tests count=1 timeout=90s ===
+=== RUN   TestSyncWritesLeadershipFileAtomically
+--- PASS: TestSyncWritesLeadershipFileAtomically (0.01s)
+=== RUN   TestSyncExpiresOnMalformedBackendData
+--- PASS: TestSyncExpiresOnMalformedBackendData (0.01s)
+=== RUN   TestSyncExpiresImmediatelyOnBackendOutage
+--- PASS: TestSyncExpiresImmediatelyOnBackendOutage (0.02s)
+=== RUN   TestSyncExpiresForAnotherHolder
+--- PASS: TestSyncExpiresForAnotherHolder (0.01s)
+=== RUN   TestSyncExpiresForAlreadyExpiredLease
+--- PASS: TestSyncExpiresForAlreadyExpiredLease (0.01s)
+=== RUN   TestSyncReflectsHolderChange
+--- PASS: TestSyncReflectsHolderChange (0.01s)
+=== RUN   TestSyncRejectsDecreasingEpoch
+--- PASS: TestSyncRejectsDecreasingEpoch (0.01s)
+=== RUN   TestSyncRejectsOldTokenForSameEpoch
+--- PASS: TestSyncRejectsOldTokenForSameEpoch (0.01s)
+=== RUN   TestAuthorityConfigurationIsExplicit
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_CA_FILE
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_TOKEN_FILE
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_TOKEN_AUDIENCE
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_CLUSTER_UID
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_LEASE_NAME
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_LEASE_UID
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_VALIDATION_TIMEOUT_MS
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_URL
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_LEASE_NAMESPACE
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_API_TIMEOUT_MS
+=== RUN   TestAuthorityConfigurationIsExplicit/missing_MAX_CLOCK_SKEW_MS
+--- PASS: TestAuthorityConfigurationIsExplicit (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_CA_FILE (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_TOKEN_FILE (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_TOKEN_AUDIENCE (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_CLUSTER_UID (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_LEASE_NAME (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_LEASE_UID (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_VALIDATION_TIMEOUT_MS (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_URL (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_LEASE_NAMESPACE (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_API_TIMEOUT_MS (0.00s)
+    --- PASS: TestAuthorityConfigurationIsExplicit/missing_MAX_CLOCK_SKEW_MS (0.00s)
+=== RUN   TestAuthorityInstallContractAndTokenRotation
+--- PASS: TestAuthorityInstallContractAndTokenRotation (0.00s)
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/serverIncarnation
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/grantId
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/clusterUid
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/leaseUid
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/holderPodUid
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/routerEpoch
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/validForMs
+=== RUN   TestAuthorityRejectsInvalidAcknowledgements/protocolVersion
+--- PASS: TestAuthorityRejectsInvalidAcknowledgements (0.03s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/serverIncarnation (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/grantId (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/clusterUid (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/leaseUid (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/holderPodUid (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/routerEpoch (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/validForMs (0.00s)
+    --- PASS: TestAuthorityRejectsInvalidAcknowledgements/protocolVersion (0.00s)
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/holder
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/epoch
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/token
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/generation
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/holder-uid
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/lease-uid
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/pod-uid
+=== RUN   TestAuthorityRejectsLeaseChangeAfterACK/expired
+--- PASS: TestAuthorityRejectsLeaseChangeAfterACK (0.02s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/holder (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/epoch (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/token (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/generation (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/holder-uid (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/lease-uid (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/pod-uid (0.00s)
+    --- PASS: TestAuthorityRejectsLeaseChangeAfterACK/expired (0.00s)
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/san
+2026/09/07 14:32:06 http: TLS handshake error from 127.0.0.1:50961: remote error: tls: bad certificate
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/ca
+2026/09/07 14:32:06 http: TLS handshake error from 127.0.0.1:50963: remote error: tls: bad certificate
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/bearer
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/redirect
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/timeout
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/cancelled
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/missing-token
+=== RUN   TestAuthorityTLSBearerRedirectAndTimeoutFailures/expired-grant
+--- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures (0.06s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/san (0.00s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/ca (0.01s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/bearer (0.00s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/redirect (0.00s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/timeout (0.03s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/cancelled (0.00s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/missing-token (0.00s)
+    --- PASS: TestAuthorityTLSBearerRedirectAndTimeoutFailures/expired-grant (0.00s)
+=== RUN   TestAuthorityGatesLocalPublicationAndDemotion
+--- PASS: TestAuthorityGatesLocalPublicationAndDemotion (0.05s)
+=== RUN   TestAuthorityKubernetesIdentityUsesExistingLeaseContract
+--- PASS: TestAuthorityKubernetesIdentityUsesExistingLeaseContract (0.00s)
+=== RUN   TestPromotionDirectConfigMapPreservesContract
+--- PASS: TestPromotionDirectConfigMapPreservesContract (0.02s)
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/activeLeader
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/leaderEpoch
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/leaseClusterID
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/leaseEpoch
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/leaseToken
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/missing
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/malformed
+=== RUN   TestPromotionRejectsStaleAndMalformedMarkers/oversized
+--- PASS: TestPromotionRejectsStaleAndMalformedMarkers (0.19s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/activeLeader (0.03s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/leaderEpoch (0.02s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/leaseClusterID (0.02s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/leaseEpoch (0.02s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/leaseToken (0.02s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/missing (0.02s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/malformed (0.03s)
+    --- PASS: TestPromotionRejectsStaleAndMalformedMarkers/oversized (0.02s)
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/lease
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/configmap
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/timeout
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/cancelled
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/not-holder
+=== RUN   TestPromotionDisconnectAndTimeoutFenceBothFiles/expired
+--- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles (0.18s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/lease (0.02s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/configmap (0.03s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/timeout (0.06s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/cancelled (0.02s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/not-holder (0.03s)
+    --- PASS: TestPromotionDisconnectAndTimeoutFenceBothFiles/expired (0.03s)
+=== RUN   TestPromotionLeaseRaceFailsClosed
+=== RUN   TestPromotionLeaseRaceFailsClosed/holder
+=== RUN   TestPromotionLeaseRaceFailsClosed/epoch
+=== RUN   TestPromotionLeaseRaceFailsClosed/token
+=== RUN   TestPromotionLeaseRaceFailsClosed/read-error
+--- PASS: TestPromotionLeaseRaceFailsClosed (0.08s)
+    --- PASS: TestPromotionLeaseRaceFailsClosed/holder (0.02s)
+    --- PASS: TestPromotionLeaseRaceFailsClosed/epoch (0.01s)
+    --- PASS: TestPromotionLeaseRaceFailsClosed/token (0.03s)
+    --- PASS: TestPromotionLeaseRaceFailsClosed/read-error (0.02s)
+=== RUN   TestPromotionLeaseReadTimeoutFencesPreviousMarker
+--- PASS: TestPromotionLeaseReadTimeoutFencesPreviousMarker (0.06s)
+=== RUN   TestPromotionHealthySetupDoesNotUseFaultDeadline
+--- PASS: TestPromotionHealthySetupDoesNotUseFaultDeadline (0.07s)
+=== RUN   TestPromotionShutdownFencesBothFiles
+2026/09/07 14:32:07 lease sync failed: context canceled
+--- PASS: TestPromotionShutdownFencesBothFiles (0.04s)
+PASS
+ok  	github.com/cube-js/cube-operator/internal/agent	1.618s
+=== RUN   TestAuthorityStartupHelper
+    authority_startup_test.go:19: subprocess only
+--- SKIP: TestAuthorityStartupHelper (0.00s)
+=== RUN   TestAuthorityInvalidStartupFencesPriorFiles
+=== RUN   TestAuthorityInvalidStartupFencesPriorFiles/true
+=== RUN   TestAuthorityInvalidStartupFencesPriorFiles/invalid
+--- PASS: TestAuthorityInvalidStartupFencesPriorFiles (0.08s)
+    --- PASS: TestAuthorityInvalidStartupFencesPriorFiles/true (0.04s)
+    --- PASS: TestAuthorityInvalidStartupFencesPriorFiles/invalid (0.04s)
+=== RUN   TestNewRedisClientUsesSecretPasswordWithoutChangingURL
+--- PASS: TestNewRedisClientUsesSecretPasswordWithoutChangingURL (0.00s)
+PASS
+ok  	github.com/cube-js/cube-operator/cmd/lease-agent	1.370s
+
+=== full offline Go suite count=1 timeout=120s ===
+?   	github.com/cube-js/cube-operator	[no test files]
+?   	github.com/cube-js/cube-operator/api/v1alpha1	[no test files]
+ok  	github.com/cube-js/cube-operator/cmd/lease-agent	0.505s
+ok  	github.com/cube-js/cube-operator/controllers	1.078s
+ok  	github.com/cube-js/cube-operator/internal/agent	1.319s
+ok  	github.com/cube-js/cube-operator/internal/leadership	8.544s

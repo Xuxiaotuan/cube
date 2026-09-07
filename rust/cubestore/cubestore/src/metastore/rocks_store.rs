@@ -66,7 +66,8 @@ macro_rules! enum_from_primitive {
 
 enum_from_primitive! {
     #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize, Hash)]
-    pub enum TableId {
+pub enum TableId {
+    RouterAuthority = 4294967100,
         Schemas = 0x0100,
         Tables = 0x0200,
         Indexes = 0x0300,
@@ -91,6 +92,7 @@ impl TableId {
     #[inline]
     pub fn has_ttl(&self) -> bool {
         match self {
+            TableId::RouterAuthority => false,
             TableId::Schemas => false,
             TableId::Tables => false,
             TableId::Indexes => false,

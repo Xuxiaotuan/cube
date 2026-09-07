@@ -20,14 +20,16 @@ Do not inherit a PASS from the historical six scenarios.
    Refresher scheduling enabled. Keep `CUBEJS_HA_DEMO=true`,
    `CUBEJS_HA_SCHEDULED_DEMO=true`, and downward-API pod name/UID configuration.
    No historical-six role overlay changes are needed.
-4. Set `CUBEJS_HA_RESTART_PROXY_HOST` on both roles to the unaffected API Pod IP.
-   This is a Pod IP, not loopback; `haRestart=true` selects this demo-only route.
-   Ensure the API pod does not change while configuring this value. If setting
-   the shared environment recreates the API pod, use the resulting stable
-   deployment/config mechanism to inject its final IP before running. The
-   current candidate explicitly compares this setting with that pinned Pod IP;
-   it does not accept Service DNS as an alternative.
-5. Allow Refresher -> API Pod TCP 13332 and API -> Router HTTP/WebSocket access.
+4. Parent must provision a test-only ClusterIP Service named
+   `analytics-refresher-restart-proxy` in `cube-ha-remediation`, selecting ONLY
+   the API deployment's Pods, with TCP port 13332 and numeric targetPort 13332.
+   Set `CUBEJS_HA_RESTART_PROXY_HOST` on both roles to
+   `analytics-refresher-restart-proxy.cube-ha-remediation.svc.cluster.local`.
+   `haRestart=true` selects this demo-only route. This stable DNS configuration
+   no longer needs a new env value after API Pod recreation. The controller
+   validates the actual Service and EndpointSlice mapping before registration,
+   at barrier release, and before verification; stale/multiple endpoints fail.
+5. Allow Refresher -> proxy Service/API Pod TCP 13332 and API -> Router HTTP/WebSocket access.
    The control listener is API-loopback TCP 13333. These test-only ports have no
    production authentication boundary. Use only the isolated test namespace.
 6. Obtain the full `status.containerStatuses[].imageID` shared by API/Refresher;
@@ -39,7 +41,9 @@ The controller streams this JS file into the API pod using `kubectl exec -i`;
 the new harness need not be baked into the image. It creates 32 real source rows,
 starts the independent proxy, writes one expiring durable demo context, and
 waits for the actual configured Refresher scheduler. It never calls API load,
-manual build, or the scheduler directly to create/recover the rollup.
+manual build, or the scheduler directly to create/recover the rollup. Only after
+durable recovery and replacement Ready does it issue two real, authenticated,
+renewed API loads to consume the exact recovered rollup.
 
 ## Local checks
 
@@ -62,6 +66,7 @@ The controller is hard-pinned to context `orbstack`, namespace
 ```sh
 HA_ALLOW_REFRESHER_DELETE=1 \
 HA_MODE=uploaded \
+HA_PROXY_SERVICE=analytics-refresher-restart-proxy \
 HA_EXPECTED_IMAGE_ID='docker-pullable://YOUR_IMAGE@sha256:FULL_64_HEX_DIGEST' \
 bash demo/k8s/refresher-restart-check.sh
 ```
@@ -80,10 +85,15 @@ Optional controller environment:
 | `REFRESHER_DEPLOYMENT` | analytics-refresher; one ready replica |
 | `API_CONTAINER`, `REFRESHER_CONTAINER` | first container of each pinned pod |
 | `HA_UPSTREAM` | http://analytics-router-leader:3030 |
+| `HA_PROXY_SERVICE` | analytics-refresher-restart-proxy; existing verified ClusterIP Service |
 | `EVIDENCE_DIR` | existing parent directory, default /tmp; creates unique child |
 
-`HA_RUN`, `HA_OLD_UID`, `HA_API_IP`, and `HA_SCRIPT_HASH` are controller-generated
-runtime inputs. Do not run the internal `runtime` entrypoint manually.
+`HA_RUN`, `HA_OLD_UID`, `HA_API_IP`, `HA_API_UID`, `HA_PROXY_HOST`,
+`HA_REF_CONTAINER`, and `HA_SCRIPT_HASH` are controller-generated runtime
+inputs. `HA_API_IP` is used only to bind the proxy in the pinned API Pod, not as
+the Refresher routing configuration. Do not run the internal `runtime`
+entrypoint manually. The API container must have its normal `CUBEJS_API_SECRET`
+and pod-UID configuration; the signing secret is not copied into local evidence.
 
 ## Exact barriers and current evidence limits
 
@@ -102,13 +112,17 @@ column aliases.
 
 ## Candidate limitations / parent go-no-go checks
 
-- The controller waits for a replacement Ready Pod BEFORE releasing the gate.
-  If `/readyz` depends on recovery through that gate, this ordering cannot work
-  and will time out. Confirm the frozen runtime readiness contract before live
-  execution; do not claim the barrier is runnable if this is circular.
-- Direct API Pod-IP configuration needs a stable setup. A shared env update
-  that repeatedly recreates the API pod can invalidate the target. No workload
-  patch/Service automation is provided by this harness.
+- Barrier ordering: independently confirm the selected fault phase; observe old
+  UID disappearance and one replacement `Running` Pod whose target container
+  has a runtime containerID, running startedAt, and the frozen imageID; then
+  discard held traffic and release the gate. Only afterwards require durable
+  ready and final Pod Ready, preserving the same replacement UID. Readiness is
+  deliberately NOT a release prerequisite. Local sequencing tests do not prove
+  the parent's actual scheduler/startup/runtime behavior.
+- Service DNS removes the env/Pod-IP recreation coupling, but the independent
+  fault process still lives in one pinned API Pod. API recreation during a run
+  fails the test. Parent must provision the Service and configure the image;
+  this harness neither deploys nor patches workloads or network resources.
 - This is an explicit, still-unexpired durable demo context, not reconstruction
   of arbitrary tenants/data sources. Global recovery requires other build
   records to be terminal. Existing scheduler/queue ownership timeouts can still
@@ -116,9 +130,15 @@ column aliases.
 - Pod UID disappearance plus replacement is Kubernetes-level evidence, not
   proof of old-process fencing during node isolation. Immediate Pod deletion
   cannot establish node-loss safety or multi-node DR.
-- Result checking reads the real physical rollup and compares every row plus a
-  repeat read; it does not prove API consumption/provenance. Only one CREATE
-  dispatch is accepted and build/manifest/table identity must remain stable.
+- Result checking reads the physical rollup and compares every row plus a
+  repeat read. After recovery it also makes two authenticated Cube API loads,
+  comparing every dimension/metric and requiring exact rollup provenance via
+  existing API debug metadata or independently logged external SQL execution.
+  API runtime events must not show a build. Build/manifest/table identity is
+  checked again after each consumption; only one CREATE dispatch is accepted.
+  Unsupported response/member/provenance layouts fail closed, not just on HTTP
+  status. Control `/verify` acknowledges only dispatch; the final result event
+  must arrive within the original deadline to produce a PASS.
 - Old scheduler provenance and replacement scheduler wire connection are
   required. The test proxy survives Refresher disconnection in the API pod;
   unrelated pod/image/restart changes cause failure.
@@ -135,7 +155,9 @@ column aliases.
 - The independent HTTP receipt probe currently sends no Router authorization
   header. Auth-required layouts are unsupported by this candidate.
 
-Evidence files include `before.json`, `after.json`, `events.jsonl`, old/new
+Evidence files include `before.json`, `after.json`, `events.jsonl`,
+`replacement-at-release.json`, `network-before.json`, `network-at-release.json`,
+`network-after.json`, old/new
 runtime events, stderr, and `summary.json`. A helper-test PASS or shell exit code
 does not satisfy task 5/10; the parent must inspect the actual barrier, durable
 identity, table identity, scheduler origin, result hashes and topology evidence.

@@ -39,6 +39,15 @@ func main() {
 	promotionPath := flag.String("promotion-path", agent.DefaultPromotionFile, "local atomic promotion marker path")
 	syncTimeout := flag.Duration("sync-timeout", 2*time.Second, "deadline for one authoritative lease and promotion sync")
 	flag.Parse()
+	if strict := strings.TrimSpace(os.Getenv("CUBESTORE_AUTHORITY_STRICT")); strict != "" && strict != "false" {
+		if err := agent.FenceAuthorityFiles(*path, *promotionPath); err != nil {
+			log.Fatal(err)
+		}
+	}
+	authorityConfig, err := agent.AuthorityConfigFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mode := strings.ToLower(strings.TrimSpace(*backend))
 	if mode == "" {
@@ -54,12 +63,16 @@ func main() {
 	}
 	var (
 		promotionSource agent.PromotionSource
+		authority       agent.AuthorityConfirmer
 		leaseStore      leadership.LeaseStore
 		closeFn         = func() {}
 	)
 
 	switch mode {
 	case "redis":
+		if authorityConfig != nil {
+			log.Fatal("strict authority requires the Kubernetes Lease backend")
+		}
 		if strings.TrimSpace(*redisURL) == "" {
 			log.Fatal("--redis-url or REDIS_URL is required when --backend=redis")
 		}
@@ -87,6 +100,17 @@ func main() {
 			log.Fatal(err)
 		}
 		leaseStore = leadership.NewKubernetesStore(c, ns, resolvedLeaseName, nil)
+		if authorityConfig != nil {
+			if authorityConfig.LeaseNamespace != ns || authorityConfig.LeaseName != resolvedLeaseName {
+				log.Fatal("authority Lease namespace/name disagree with configured Lease backend")
+			}
+			authority, err = agent.NewHTTPSAuthorityInstaller(*authorityConfig, &agent.KubernetesAuthorityIdentitySource{
+				Reader: c, Namespace: ns, LeaseName: resolvedLeaseName, ClusterID: *clusterID, HolderName: *holderID,
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 		if name := strings.TrimSpace(*promotionConfigMap); name != "" {
 			promotionSource = &agent.ConfigMapPromotionSource{Reader: c, Namespace: ns, Name: name}
 		}
@@ -96,6 +120,7 @@ func main() {
 	defer closeFn()
 
 	leaseAgent, err := agent.New(agent.Config{
+		Authority:       authority,
 		Store:           leaseStore,
 		PromotionSource: promotionSource,
 		PromotionPath:   *promotionPath,

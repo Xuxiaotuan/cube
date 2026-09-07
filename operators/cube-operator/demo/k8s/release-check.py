@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Offline release freeze/evidence gate. Never invokes kubectl, shell, or networks."""
 import argparse
+from datetime import datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -14,6 +16,13 @@ SUITE = [*(f'historical-{i}' for i in range(1, 7)), 'control-plane',
 PRODUCTION = ['node-fencing', 'volume-reattach', 'backup-restore', 'object-reconciliation',
               'unfinished-build-restore', 'manager-rbac', 'drain-probes', 'admin-isolation']
 DIGEST = re.compile(r'[^\s@]+@sha256:[0-9a-f]{64}\Z')
+
+
+def timestamp(value):
+    require(isinstance(value, str), 'observation timestamp must be an ISO8601 string')
+    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    require(parsed.utcoffset() is not None, 'observation timestamp needs a timezone')
+    return parsed
 
 
 def require(ok, message):
@@ -82,6 +91,36 @@ def read_lock(path):
     return lock
 
 
+def verify_inventory(root, lock):
+    require(lock['suite'] == SUITE, 'frozen suite differs from checker suite')
+    for category in ('crd', 'config', 'test', 'source'):
+        require(bool(lock['artifacts'][category]), 'empty artifact category: ' + category)
+        for ref in lock['artifacts'][category]:
+            verify_artifact(root, ref)
+
+
+def approved_edge(args, old, lock, evidence):
+    # Approval is the independently supplied SHA, not a self-declared protocol
+    # label, "verified" boolean, release version or equal image digest.
+    require(args.edges is not None and args.edges_sha256,
+            'compatibility_blocked: --edges and independently approved --edges-sha256 required')
+    require(sha(args.edges.read_bytes()) == args.edges_sha256, 'edge registry approval hash mismatch')
+    registry = load(args.edges)
+    require(registry.get('schema') == 1 and isinstance(registry.get('edges'), list), 'invalid edge registry')
+    matches = [edge for edge in registry['edges']
+               if edge.get('from_release_id') == old['release_id']
+               and edge.get('to_release_id') == lock['release_id']
+               and edge.get('transition') == args.transition]
+    require(len(matches) == 1, 'compatibility_blocked: exact unique directed approved edge absent')
+    edge = matches[0]
+    require(edge.get('source_lock_sha256') == args.from_lock_sha256 and
+            edge.get('target_lock_sha256') == args.lock_sha256, 'approved edge lock hashes differ')
+    require(edge.get('evidence_sha256') == sha(args.evidence.read_bytes()), 'approved edge evidence hash differs')
+    require(edge.get('mode') in ('mixed-version', 'fenced-maintenance'), 'approved edge mode missing')
+    require(evidence.get('installation') == 'existing', 'transition evidence must describe an existing installation')
+    return edge
+
+
 def freeze(args):
     cluster = load(args.cluster)
     require(cluster.get('kind') == 'CubeCluster' and cluster.get('apiVersion') == 'cubestore.io/v1alpha1',
@@ -112,14 +151,16 @@ def report(root, ref, lock, scenario):
     require(value.get('scenario') == scenario and value.get('status') == 'PASS', scenario + ': not PASS')
     require(isinstance(value.get('case'), str) and value['case'].strip(), scenario + ': missing real case name')
     require(value.get('observed_images') == lock['images'], scenario + ': runtime image digest mismatch')
-    require(value.get('started_at') and value.get('finished_at'), scenario + ': missing observation times')
+    require(timestamp(value.get('finished_at')) >= timestamp(value.get('started_at')),
+            scenario + ': observation finishes before it starts')
     assertions = value.get('assertions')
     require(isinstance(assertions, list) and bool(assertions), scenario + ': no data assertions')
     for assertion in assertions:
         require(isinstance(assertion.get('name'), str) and assertion['name'].strip(), 'unnamed assertion')
         require('expected' in assertion and 'actual' in assertion and assertion['expected'] is not None,
                 scenario + ': assertion has no expected/actual result')
-        require(assertion['expected'] == assertion['actual'], scenario + ': failed assertion ' + assertion['name'])
+        require(encoded(assertion['expected']) == encoded(assertion['actual']),
+                scenario + ': failed assertion ' + assertion['name'])
     refs = value.get('raw_evidence', [])
     require(bool(refs), scenario + ': no raw evidence')
     for raw in refs:
@@ -130,11 +171,7 @@ def report(root, ref, lock, scenario):
 def check(args):
     require(sha(args.lock.read_bytes()) == args.lock_sha256, 'lock hash differs from independently approved digest')
     lock = read_lock(args.lock)
-    require(lock['suite'] == SUITE, 'frozen suite differs from checker suite')
-    for category in ('crd', 'config', 'test', 'source'):
-        require(bool(lock['artifacts'][category]), 'empty artifact category: ' + category)
-        for ref in lock['artifacts'][category]:
-            verify_artifact(args.root, ref)
+    verify_inventory(args.root, lock)
     if args.mode == 'preflight':
         require(args.from_lock is None, 'transition requires acceptance evidence, not preflight')
         return {'status': 'ARTIFACTS_MATCH_NOT_COMPATIBILITY_PROOF', 'release_id': lock['release_id']}
@@ -147,14 +184,34 @@ def check(args):
         require(scenario in checks, 'evidence_incomplete: ' + scenario)
         report(args.evidence.parent, checks[scenario], lock, scenario)
     if args.from_lock:
+        require(args.from_lock_sha256 and sha(args.from_lock.read_bytes()) == args.from_lock_sha256,
+                'compatibility_blocked: old lock independently approved hash missing or mismatched')
+        require(args.from_root is not None, 'compatibility_blocked: --from-root archived old artifacts required')
         old = read_lock(args.from_lock)
+        verify_inventory(args.from_root, old)
+        require(old['release_id'] != lock['release_id'], 'same release is not an upgrade or rollback edge')
+        edge = approved_edge(args, old, lock, evidence)
         scenario = args.transition
         require(scenario in checks, 'missing exact transition evidence: ' + scenario)
         transition = report(args.evidence.parent, checks[scenario], lock, scenario)
         require(transition.get('from_release_id') == old['release_id'], 'wrong transition source')
         require(transition.get('to_release_id') == lock['release_id'], 'wrong transition target')
-        require(transition.get('mode') in ('mixed-version', 'fenced-maintenance'), 'transition mode missing')
-        for name in ('interruption', 'partial-failure', 'old-worker-drained', 'persistent-state-readable'):
+        require(transition.get('mode') == edge['mode'], 'transition differs from approved mode')
+        require(transition.get('old_observed_images') == old['images'], 'old runtime image digest mismatch')
+        tested = transition.get('tested_image_sets', [])
+        require(isinstance(tested, list) and old['images'] in tested and lock['images'] in tested,
+                'transition lacks source and target runtime observations')
+        for combination in tested:
+            require(isinstance(combination, dict) and set(combination) == ROLES,
+                    'tested image set has missing or unknown roles')
+            require(all(combination[r] in (old['images'][r], lock['images'][r]) for r in ROLES),
+                    'tested image set contains an image outside the approved pair')
+        mode_check = 'maintenance-fencing'
+        if edge['mode'] == 'mixed-version':
+            require(any(combo != old['images'] and combo != lock['images'] for combo in tested),
+                    'mixed-version edge lacks a mixed runtime observation')
+            mode_check = 'mixed-version-rpc'
+        for name in ('interruption', 'partial-failure', 'old-worker-drained', 'persistent-state-readable', mode_check):
             require(name in checks, 'transition evidence missing: ' + name)
             detail = report(args.evidence.parent, checks[name], lock, name)
             require(detail.get('from_release_id') == old['release_id'] and
@@ -163,13 +220,17 @@ def check(args):
         require(evidence.get('installation') == 'fresh', 'existing installation requires --from-lock')
     if args.mode == 'production':
         topology = evidence.get('production', {})
-        require(len(set(topology.get('router_nodes', []))) >= 2, 'external_blocked: multi-node proof missing')
-        require(topology.get('metastore_writers') == 1, 'single writer not confirmed')
+        nodes = topology.get('router_nodes', [])
+        require(isinstance(nodes, list) and all(isinstance(n, str) and n.strip() for n in nodes)
+                and len(set(nodes)) >= 2, 'external_blocked: multi-node proof missing')
+        require(type(topology.get('metastore_writers')) is int and topology['metastore_writers'] == 1,
+                'single writer not confirmed')
         require(topology.get('manager_namespace') == topology.get('lease_namespace') and
                 bool(topology.get('manager_namespace')), 'Manager Lease namespace mismatch')
         for field in ('rpo_seconds', 'rto_seconds', 'observed_data_loss_seconds', 'observed_restore_seconds'):
             value = topology.get(field)
-            require(type(value) in (int, float) and value >= 0, 'external_blocked: missing ' + field)
+            require(type(value) in (int, float) and math.isfinite(value) and value >= 0,
+                    'external_blocked: missing or nonfinite ' + field)
         require(topology['observed_data_loss_seconds'] <= topology['rpo_seconds'], 'RPO exceeded')
         require(topology['observed_restore_seconds'] <= topology['rto_seconds'], 'RTO exceeded')
     return {'status': 'EVIDENCE_CONTRACT_SATISFIED', 'release_id': lock['release_id'],
@@ -192,6 +253,10 @@ def main():
     checking.add_argument('--mode', choices=['preflight', 'acceptance', 'production'], default='preflight')
     checking.add_argument('--evidence', type=Path)
     checking.add_argument('--from-lock', type=Path)
+    checking.add_argument('--from-lock-sha256')
+    checking.add_argument('--from-root', type=Path)
+    checking.add_argument('--edges', type=Path)
+    checking.add_argument('--edges-sha256')
     checking.add_argument('--transition', choices=['upgrade', 'rollback'], default='upgrade')
     args = parser.parse_args()
     try:

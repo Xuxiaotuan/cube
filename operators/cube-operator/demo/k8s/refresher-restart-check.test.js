@@ -8,7 +8,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const http = require('node:http');
 const { once } = require('node:events');
-const { Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods } = require('./refresher-restart-check');
+const { Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods,
+  replacementRunning, requireFinalReady, assertProxyEndpoint, normalizeApiData, assertApiDidNotBuild } = require('./refresher-restart-check');
 
 const run = 'r0123456789abcdef';
 const buildId = `ha_${run}_rollups.router_ha_rollup_by_id_c_s_123`;
@@ -77,6 +78,89 @@ test('topology still rejects an ordinary running service losing readiness', () =
   const api = topologyPod('api');
   const after = topologyPod('api', 'Running', false);
   assert.throws(() => assertUnchangedPods([api], [after], 'old-refresher'), /not ready or completed Job/);
+});
+
+function startedReplacement(isReady = false) {
+  const pod = topologyPod('replacement', 'Running', isReady);
+  Object.assign(pod.status.containerStatuses[0], { containerID: 'containerd://replacement',
+    state: { running: { startedAt: '2026-09-07T00:00:00Z' } } });
+  return pod;
+}
+
+test('restart sequence releases for a started Running container before Ready, then requires final Ready', () => {
+  const pod = startedReplacement();
+  assert.equal(replacementRunning([pod], 'old', 'main', 'sha256:fixture'), pod);
+  assert.throws(() => requireFinalReady(pod, 'replacement', 'main', 'sha256:fixture'), /finally Ready/);
+  pod.status.conditions[0].status = 'True';
+  requireFinalReady(pod, 'replacement', 'main', 'sha256:fixture');
+});
+
+test('release refuses old UID still present, pending pod, or unstarted target container', () => {
+  const pod = startedReplacement();
+  assert.equal(replacementRunning([topologyPod('old'), pod], 'old', 'main', 'sha256:fixture'), null);
+  const pending = structuredClone(pod); pending.status.phase = 'Pending';
+  assert.equal(replacementRunning([pending], 'old', 'main', 'sha256:fixture'), null);
+  const waiting = structuredClone(pod); waiting.status.containerStatuses[0].state = { waiting: {} };
+  assert.equal(replacementRunning([waiting], 'old', 'main', 'sha256:fixture'), null);
+  const missingID = structuredClone(pod); delete missingID.status.containerStatuses[0].containerID;
+  assert.equal(replacementRunning([missingID], 'old', 'main', 'sha256:fixture'), null);
+});
+
+test('release/final Ready reject ambiguous identity or changed runtime image', () => {
+  const pod = startedReplacement(true);
+  assert.throws(() => replacementRunning([pod, topologyPod('other')], 'old', 'main', 'sha256:fixture'), /Multiple/);
+  assert.throws(() => replacementRunning([pod], 'old', 'main', 'sha256:wrong'), /image changed/);
+  assert.throws(() => requireFinalReady(pod, 'different', 'main', 'sha256:fixture'), /changed after release/);
+});
+
+function networkFixture() {
+  const api = topologyPod('api');
+  Object.assign(api.metadata, { namespace: 'cube-ha-remediation', labels: { role: 'api' } });
+  api.status.podIP = '10.0.0.5';
+  const service = { metadata: { name: 'proxy', namespace: api.metadata.namespace },
+    spec: { clusterIP: '10.96.0.9', selector: { role: 'api' }, ports: [{ port: 13332, targetPort: 13332, protocol: 'TCP' }] } };
+  const slices = [{ metadata: { labels: { 'kubernetes.io/service-name': 'proxy' } }, ports: [{ port: 13332 }],
+    endpoints: [{ addresses: ['10.0.0.5'], conditions: { ready: true }, targetRef: { kind: 'Pod', uid: 'api', name: 'api' } }] }];
+  return { api, service, slices };
+}
+
+test('stable proxy endpoint accepts ClusterIP Service targeting the pinned API', () => {
+  const f = networkFixture(); assertProxyEndpoint(f.service, f.slices, f.api);
+});
+
+test('stable proxy endpoint fails closed for wrong routing, stale IP or multiple pods', () => {
+  for (const change of [
+    f => { f.service.spec.clusterIP = 'None'; },
+    f => { f.service.spec.ports[0].targetPort = 4000; },
+    f => { f.service.spec.selector.role = 'refresher'; },
+    f => { f.slices[0].endpoints[0].targetRef.uid = 'other-api'; },
+    f => { f.slices[0].endpoints[0].addresses = ['10.0.0.6']; },
+    f => { f.slices[0].endpoints[0].conditions.ready = false; },
+    f => { f.slices[0].endpoints[0].conditions.terminating = true; },
+    f => { f.slices[0].endpoints.push(structuredClone(f.slices[0].endpoints[0])); },
+  ]) {
+    const f = networkFixture(); change(f); assert.throws(() => assertProxyEndpoint(f.service, f.slices, f.api));
+  }
+});
+
+test('Cube API result normalization preserves every expected metric, independent of row order', () => {
+  const row = id => ({ 'RouterHaRollup.id': String(id), 'RouterHaRollup.totalAmount': id * 7,
+    'RouterHaRollup.bucket': 'b0', 'RouterHaRollup.idChecksum': String(id * 11), 'RouterHaRollup.rowCount': '1' });
+  assert.deepEqual(normalizeApiData([row(2), row(1)]), [1, 2].map(id => ({ id, amount: id * 7, bucket: 'b0', checksum: id * 11, count: 1 })));
+  for (const value of [null, undefined, '', 'NaN', Infinity]) {
+    assert.throws(() => normalizeApiData([{ ...row(1), 'RouterHaRollup.totalAmount': value }]));
+  }
+  assert.throws(() => normalizeApiData(undefined));
+});
+
+test('post-recovery API evidence rejects API-triggered builds and wrong runtime identity', () => {
+  const event = { run, role: 'api', podUid: 'api', message: 'Executing SQL', params: { query: 'SELECT 1' } };
+  assertApiDidNotBuild([event], run, 'api');
+  for (const patch of [{ role: 'refresher' }, { podUid: 'other-api' },
+    { message: 'Uploading external pre-aggregation' }, { message: 'Performing query', params: { newVersionEntry: {} } }]) {
+    assert.throws(() => assertApiDidNotBuild([{ ...event, ...patch }], run, 'api'));
+  }
+  assert.throws(() => assertApiDidNotBuild([], run, 'api'));
 });
 
 test('classifier matches exact run, CACHE key and CREATE tracing, not embedded text', () => {

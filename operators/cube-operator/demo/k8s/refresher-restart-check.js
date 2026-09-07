@@ -109,6 +109,67 @@ function assertUnchangedPods(before, after, excludedUid) {
   }
 }
 
+function replacementRunning(pods, oldUid, container, imageID) {
+  if (pods.some(p => p.metadata.uid === oldUid)) return null;
+  const candidates = pods.filter(p => !p.metadata.deletionTimestamp);
+  assert.ok(candidates.length <= 1, 'Multiple replacement candidates');
+  const pod = candidates[0];
+  if (!pod || pod.status.phase !== 'Running') return null;
+  const status = pod.status.containerStatuses?.find(c => c.name === container);
+  if (!status?.state?.running?.startedAt || !status.containerID) return null;
+  assert.equal(status.imageID, imageID, 'Replacement runtime image changed');
+  assert.ok(pod.metadata.uid && pod.metadata.uid !== oldUid);
+  return pod;
+}
+
+function requireFinalReady(pod, uid, container, imageID) {
+  assert.equal(pod.metadata.uid, uid, 'Replacement changed after release');
+  assert.ok(replacementRunning([pod], 'excluded-old-uid', container, imageID));
+  assert.ok(pod.status.conditions?.some(c => c.type === 'Ready' && c.status === 'True'), 'Replacement not finally Ready');
+}
+
+function assertProxyEndpoint(service, slices, api) {
+  assert.equal(service.metadata.namespace, api.metadata.namespace);
+  assert.ok(service.spec.clusterIP && service.spec.clusterIP !== 'None', 'Require a stable ClusterIP Service');
+  assert.ok(service.spec.ports?.some(p => p.port === 13332 && p.targetPort === 13332 && (!p.protocol || p.protocol === 'TCP')),
+    'Service must map TCP 13332 to numeric targetPort 13332');
+  const selector = Object.entries(service.spec.selector || {});
+  assert.ok(selector.length && selector.every(([key, value]) => api.metadata.labels?.[key] === value), 'Service selector does not select API');
+  const endpoints = slices.filter(s => s.metadata.labels?.['kubernetes.io/service-name'] === service.metadata.name &&
+    s.ports?.some(p => p.port === 13332 && (!p.protocol || p.protocol === 'TCP'))).flatMap(s => s.endpoints || []);
+  assert.equal(endpoints.length, 1, 'Require exactly one proxy endpoint');
+  const endpoint = endpoints[0];
+  assert.equal(endpoint.targetRef?.kind, 'Pod');
+  assert.equal(endpoint.targetRef.uid, api.metadata.uid, 'Proxy endpoint is not pinned API Pod');
+  assert.equal(endpoint.targetRef.name, api.metadata.name);
+  assert.ok(endpoint.addresses?.includes(api.status.podIP));
+  assert.notEqual(endpoint.conditions?.ready, false);
+  assert.notEqual(endpoint.conditions?.terminating, true);
+}
+
+function normalizeApiData(data) {
+  assert.ok(Array.isArray(data), 'Missing Cube API data');
+  return data.map(row => {
+    const numeric = member => {
+      const value = row[`RouterHaRollup.${member}`];
+      assert.ok((typeof value === 'number' || typeof value === 'string') && String(value).trim() !== '' && Number.isFinite(Number(value)),
+        `Invalid API member: ${member}`);
+      return Number(value);
+    };
+    assert.equal(typeof row['RouterHaRollup.bucket'], 'string');
+    return { id: numeric('id'), amount: numeric('totalAmount'), bucket: row['RouterHaRollup.bucket'],
+      checksum: numeric('idChecksum'), count: numeric('rowCount') };
+  }).sort((a, b) => a.id - b.id);
+}
+
+function assertApiDidNotBuild(events, run, uid) {
+  const scoped = events.filter(e => e.run === run);
+  assert.ok(scoped.length, 'Missing independent API runtime events');
+  assert.ok(scoped.every(e => e.role === 'api' && e.podUid === uid), 'Wrong API runtime identity');
+  assert.ok(!scoped.some(e => e.message === 'Uploading external pre-aggregation' ||
+    (e.message === 'Performing query' && e.params?.newVersionEntry != null)), 'API executed a pre-aggregation build');
+}
+
 async function startWireProxy({ upstream, run, mode, bind, onBarrier, fail, port = 13332 }) {
   const WebSocket = require('ws');
   const flatbuffers = require('flatbuffers');
@@ -183,7 +244,8 @@ async function runtime() {
   assert.ok(validRun(run) && MODES.includes(mode));
   assert.equal(process.env.CUBEJS_REFRESH_WORKER, 'false');
   assert.equal(process.env.CUBEJS_HA_SCHEDULED_DEMO, 'true');
-  assert.equal(process.env.CUBEJS_HA_RESTART_PROXY_HOST, process.env.HA_API_IP);
+  assert.equal(process.env.CUBEJS_HA_RESTART_PROXY_HOST, process.env.HA_PROXY_HOST);
+  assert.equal(process.env.CUBEJS_HA_POD_UID, process.env.HA_API_UID);
   const deadline = Date.now() + integer(process.env.HA_TIMEOUT_SECONDS, 180, 600) * 1000;
   const driver = new CubeStoreDriver();
   const upstream = new URL(process.env.HA_UPSTREAM);
@@ -199,7 +261,7 @@ async function runtime() {
       ready: `PRE_AGG_PHASE_V1:${buildId}:ready`, failed: `PRE_AGG_PHASE_V1:${buildId}:failed`, retired: `PRE_AGG_PHASE_V1:${buildId}:retired` })) value[field] = await get(key);
     return value;
   };
-  let proxy, control, before, registration, finished = false;
+  let proxy, control, before, registration, releasedTo, finished = false;
   const fail = error => { emit('failure', { status: 'evidence_incomplete', error: error.stack || String(error) }); process.exit(1); };
   const timer = setTimeout(() => fail(new Error('Total runtime deadline')), Math.max(1, deadline - Date.now()));
   try {
@@ -250,11 +312,21 @@ async function runtime() {
           assert.ok(before, 'Barrier is not yet proven');
           assert.equal(proof.oldUid, process.env.HA_OLD_UID);
           assert.ok(proof.newUid && proof.newUid !== proof.oldUid && proof.oldGone === true);
+          assert.equal(proof.replacement?.metadata.uid, proof.newUid);
+          assert.ok(replacementRunning([proof.replacement], proof.oldUid, process.env.HA_REF_CONTAINER, process.env.HA_EXPECTED_IMAGE_ID),
+            'Release requires replacement Running with the target container started, not Ready');
           schedulerEvidence(proof.oldEvents, proof.oldUid, run, proxy.gate.hit.processUid);
           assert.deepEqual(await get(registrationKey), registration, 'Durable context lost');
+          releasedTo = proof.newUid;
           proxy.release(); emit('released', { proof });
         } else if (req.url === '/verify') {
           assert.ok(proxy.gate.released);
+          assert.equal(proof.newUid, releasedTo);
+          requireFinalReady(proof.replacement, releasedTo, process.env.HA_REF_CONTAINER, process.env.HA_EXPECTED_IMAGE_ID);
+          // Verification includes bounded real API queries and can outlast the
+          // control client's 8s deadline. Acknowledge dispatch, not success;
+          // only the later result event can satisfy the controller.
+          res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"accepted":true}');
           const events = schedulerEvidence(proof.newEvents, proof.newUid, run);
           assert.ok(events.some(e => e.processUid !== proxy.gate.hit.processUid && proxy.state.connections.some(c => c.afterRelease && c.processUid === e.processUid)), 'No replacement scheduler wire connection');
           const after = await snapshot(before.identity.buildId);
@@ -267,15 +339,52 @@ async function runtime() {
             bucket: r.router_ha_rollup__bucket, checksum: Number(r.router_ha_rollup__id_checksum), count: Number(r.router_ha_rollup__row_count) })).sort((a, b) => a.id - b.id);
           assert.deepEqual(normalized, expected.map(r => ({ ...r, count: 1 })), 'Physical rollup result mismatch');
           assert.deepEqual(await driver.query(`SELECT * FROM ${before.identity.buildId}`, []), data, 'Repeated read changed');
+          assert.ok(process.env.CUBEJS_API_SECRET, 'Missing API signing secret in API runtime');
+          const apiResults = [];
+          for (const sequence of [1, 2]) {
+            const requestId = `${run}-post-recovery-${sequence}`;
+            const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+            const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ ...registration.context.securityContext,
+              iat: Math.floor(Date.now() / 1000), exp: Math.ceil(deadline / 1000) + 60 })}`;
+            const token = `${unsigned}.${crypto.createHmac('sha256', process.env.CUBEJS_API_SECRET).update(unsigned).digest('base64url')}`;
+            const url = new URL('http://127.0.0.1:4000/cubejs-api/v1/load');
+            url.searchParams.set('query', JSON.stringify({
+              measures: ['RouterHaRollup.rowCount', 'RouterHaRollup.totalAmount', 'RouterHaRollup.idChecksum'],
+              dimensions: ['RouterHaRollup.id', 'RouterHaRollup.bucket'],
+              order: { 'RouterHaRollup.id': 'asc' }, renewQuery: true,
+            }));
+            const result = await until(async () => {
+              const response = await json(url, 'GET', undefined, { authorization: `Bearer ${token}`, 'x-request-id': requestId });
+              if (response.error === 'Continue wait') return false;
+              assert.ok(!response.error, `Cube API error: ${response.error}`);
+              return response;
+            }, deadline, 'API consumption of recovered rollup');
+            const apiData = normalizeApiData(result.data);
+            assert.deepEqual(apiData, expected.map(r => ({ ...r, count: 1 })), 'Cube API result mismatch');
+            const runtimeEvents = helper.readRuntimeEvents(run);
+            assertApiDidNotBuild(runtimeEvents, run, process.env.HA_API_UID);
+            const provenance = helper.preAggregationEvidence(result, runtimeEvents, {
+              run, buildId: before.identity.buildId, requestId, podUid: process.env.HA_API_UID,
+            });
+            const afterConsumption = await snapshot(before.identity.buildId);
+            const consumedPhysical = await driver.getPreAggregationBuildStatus(before.identity.buildId);
+            recovered(before, afterConsumption, consumedPhysical);
+            assert.equal((await keys()).length, 1, 'API consumption forked build identity');
+            assert.equal(proxy.state.creates.length, 1, 'Additional CREATE during API consumption');
+            apiResults.push({ requestId, actualHash: hash(apiData), provenance, afterConsumption, physical: consumedPhysical, runtimeEvents });
+          }
           assert.deepEqual(await get(registrationKey), registration);
           await driver.query('CACHE REMOVE ?', [registrationKey]);
           emit('result', { status: 'PASS', scope: 'single-configured-context-refresher-pod-replacement', before, after, physical,
-            expectedHash: hash(expected.map(r => ({ ...r, count: 1 }))), actualHash: hash(normalized), transport: proxy.state, proof });
+            expectedHash: hash(expected.map(r => ({ ...r, count: 1 }))), actualHash: hash(normalized), apiResults, transport: proxy.state, proof });
           finished = true;
         } else throw new Error('Unknown controller command');
-        res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
+        if (!res.writableEnded) { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); }
         if (finished) setTimeout(() => process.exit(0), 100);
-      })().catch(error => { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); fail(error); });
+      })().catch(error => {
+        if (!res.writableEnded) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); }
+        fail(error);
+      });
     });
     await new Promise((resolve, reject) => { control.once('error', reject); control.listen(13333, '127.0.0.1', resolve); });
     await driver.query('CACHE SET NX ? ?', [registrationKey, JSON.stringify(registration)]);
@@ -315,9 +424,20 @@ async function controller() {
   const container = (pod, name) => { const c = name || pod.spec.containers[0].name;
     assert.equal(pod.status.containerStatuses.find(x => x.name === c)?.imageID, expectedImage); return c; };
   const ac = container(api.pod, process.env.API_CONTAINER), rc = container(old.pod, process.env.REFRESHER_CONTAINER);
+  const proxyService = process.env.HA_PROXY_SERVICE || 'analytics-refresher-restart-proxy';
+  assert.match(proxyService, /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/);
+  const proxyHost = `${proxyService}.${namespace}.svc.cluster.local`;
+  const network = () => {
+    const service = get(['service', proxyService]);
+    const slices = get(['endpointslices', '-l', `kubernetes.io/service-name=${proxyService}`]);
+    assertProxyEndpoint(service, slices.items, api.pod);
+    return { service, slices, proxyHost };
+  };
+  save('network-before.json', network());
   const allBefore = get(['pods']);
   save('before.json', { api, old, allPods: allBefore, mode, run });
   const env = { HA_RUN: run, HA_MODE: mode, HA_TIMEOUT_SECONDS: String(timeout), HA_API_IP: api.pod.status.podIP,
+    HA_PROXY_HOST: proxyHost, HA_API_UID: api.pod.metadata.uid, HA_REF_CONTAINER: rc, HA_EXPECTED_IMAGE_ID: expectedImage,
     HA_OLD_UID: old.pod.metadata.uid, HA_UPSTREAM: process.env.HA_UPSTREAM || 'http://analytics-router-leader:3030',
     HA_SCRIPT_HASH: crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex') };
   const eventsPath = path.join(dir, 'events.jsonl');
@@ -346,10 +466,12 @@ async function controller() {
     const replacement = await until(() => {
       alive(); const pods = get(['pods', '-l', old.selector]).items;
       if (pods.some(p => p.metadata.uid === old.pod.metadata.uid)) return false;
-      const candidates = pods.filter(ready); return candidates.length === 1 && candidates[0].metadata.uid !== old.pod.metadata.uid ? candidates[0] : false;
-    }, deadline, 'replacement pod ready / old UID absent');
+      return replacementRunning(pods, old.pod.metadata.uid, rc, expectedImage);
+    }, deadline, 'replacement Running / target container started / old UID absent');
     container(replacement, rc);
-    control('release', { oldUid: old.pod.metadata.uid, newUid: replacement.metadata.uid, oldGone: true, oldEvents });
+    save('replacement-at-release.json', replacement);
+    save('network-at-release.json', network());
+    control('release', { oldUid: old.pod.metadata.uid, newUid: replacement.metadata.uid, oldGone: true, replacement, oldEvents });
     // Never invoke an API load or scheduler method. Wait for authoritative CACHE
     // marker by a read-only CLI in the unaffected API pod.
     await until(() => {
@@ -357,18 +479,31 @@ async function controller() {
       return k(['exec', api.pod.metadata.name, '-c', ac, '--', 'node', '-e',
         `const {CubeStoreDriver}=require('@cubejs-backend/cubestore-driver');const d=new CubeStoreDriver();d.query('CACHE GET ?', [${JSON.stringify(`PRE_AGG_PHASE_V1:${barrier.hit.buildId}:ready`)}]).then(r=>{console.log(r.length?'READY':'WAIT');return d.release()}).catch(()=>process.exit(1));`]).trim() === 'READY';
     }, deadline, 'scheduler durable ready');
+    const finalReplacement = await until(() => {
+      alive();
+      const pod = get(['pod', replacement.metadata.name]);
+      assert.equal(pod.metadata.uid, replacement.metadata.uid, 'Replacement changed before final Ready');
+      return ready(pod) ? pod : false;
+    }, deadline, 'replacement finally Ready after barrier release');
+    requireFinalReady(finalReplacement, replacement.metadata.uid, rc, expectedImage);
     const newEvents = runtimeEvents(replacement.metadata.name, rc); save('new-runtime.json', newEvents);
     const allAfter = get(['pods']); save('after.json', allAfter);
     assertUnchangedPods(allBefore.items, allAfter.items, old.pod.metadata.uid);
-    control('verify', { newUid: replacement.metadata.uid, newEvents });
-    await until(() => events().find(e => e.event === 'result' && e.status === 'PASS'), deadline, 'final evidence');
+    save('network-after.json', network());
+    control('verify', { newUid: replacement.metadata.uid, replacement: finalReplacement, newEvents });
+    await until(() => {
+      const result = events().find(e => e.event === 'result' && e.status === 'PASS');
+      if (result) return result;
+      alive(); return false;
+    }, deadline, 'final physical/API consumption evidence');
     save('summary.json', { status: 'PASS', scope: 'single-node single-configured-context pod replacement, not node fencing/DR', run, mode, expectedImage });
     console.log(`PASS ${mode}; evidence: ${dir}`);
   } catch (e) { save('summary.json', { status: 'evidence_incomplete', error: e.stack, run, mode }); throw e; }
   finally { child.kill(); console.log(`Evidence retained: ${dir}; failed registrations expire; no table/object cleanup performed.`); }
 }
 
-module.exports = { Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods };
+module.exports = { Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods,
+  replacementRunning, requireFinalReady, assertProxyEndpoint, normalizeApiData, assertApiDidNotBuild };
 if (require.main === module) {
   const task = process.argv[2] === 'controller' ? controller : process.argv[2] === 'runtime' ? runtime : null;
   if (!task) { console.error('Use controller or runtime'); process.exitCode = 1; }

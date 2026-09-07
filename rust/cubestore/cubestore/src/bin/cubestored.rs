@@ -98,9 +98,11 @@ fn main() {
 
         config.configure_injector().await;
 
-        serve_status_probes(&config);
-
         let services = config.cube_services().await;
+        let _authority = cubestore::metastore::authority::start(&config)
+            .await.expect("MetaStore authority startup failed");
+
+        serve_status_probes(&config);
 
         if enable_telemetry {
             track_event("Cube Store Start".to_string(), HashMap::new()).await;

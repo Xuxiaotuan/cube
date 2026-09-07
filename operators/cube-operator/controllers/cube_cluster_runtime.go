@@ -41,12 +41,19 @@ var clusterConditionMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 var clusterObservationMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "cube_cluster_observation_timestamp_seconds", Help: "Time of the last successful full cluster status observation, not reconcile activity.",
 }, []string{"namespace", "cluster"})
+var clusterReplicaMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "cube_cluster_component_replicas", Help: "Observed desired/ready/updated replicas; -1 means no complete current-generation observation.",
+}, []string{"namespace", "cluster", "component", "state"})
+var clusterGenerationLagMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "cube_cluster_component_generation_lag", Help: "Workload generation minus observed generation, clamped to zero; -1 means unknown. Not elapsed time.",
+}, []string{"namespace", "cluster", "component"})
 
 func init() {
-	metrics.Registry.MustRegister(clusterConditionMetric, clusterObservationMetric)
+	metrics.Registry.MustRegister(clusterConditionMetric, clusterObservationMetric, clusterReplicaMetric, clusterGenerationLagMetric)
 }
 
 func observeClusterConditions(c *v1alpha1.CubeCluster, complete bool) {
+	observeClusterComponents(c, complete)
 	for _, name := range []string{"ResourcesReady", "RouterServingReady", "JobRecovery", "MutationReconcile", "RefresherRecovery", "ProductionReady", "UpgradeReady"} {
 		value := float64(-1)
 		condition := apiMeta.FindStatusCondition(c.Status.Conditions, name)
@@ -62,6 +69,35 @@ func observeClusterConditions(c *v1alpha1.CubeCluster, complete bool) {
 	}
 	if complete {
 		clusterObservationMetric.WithLabelValues(c.Namespace, c.Name).SetToCurrentTime()
+	}
+}
+
+func observeClusterComponents(c *v1alpha1.CubeCluster, complete bool) {
+	// Fixed component/state labels prevent arbitrary status keys from creating
+	// unbounded series. Removed Refresher state must not retain stale values.
+	for _, component := range []string{cubeComponentAPI, cubeComponentRouter, cubeComponentMeta, cubeComponentWorker, cubeComponentRefresher} {
+		if component == cubeComponentRefresher && c.Spec.Refresher == nil {
+			clusterReplicaMetric.DeletePartialMatch(map[string]string{"namespace": c.Namespace, "cluster": c.Name, "component": component})
+			clusterGenerationLagMetric.DeleteLabelValues(c.Namespace, c.Name, component)
+			continue
+		}
+		state, present := c.Status.Components[component]
+		known := complete && present && c.Status.ObservedGeneration == c.Generation
+		for label, count := range map[string]int32{"desired": state.DesiredReplicas, "ready": state.ReadyReplicas, "updated": state.UpdatedReplicas} {
+			value := float64(-1)
+			if known {
+				value = float64(count)
+			}
+			clusterReplicaMetric.WithLabelValues(c.Namespace, c.Name, component, label).Set(value)
+		}
+		lag := float64(-1)
+		if known {
+			lag = float64(state.WorkloadGeneration - state.ObservedGeneration)
+			if lag < 0 {
+				lag = 0
+			}
+		}
+		clusterGenerationLagMetric.WithLabelValues(c.Namespace, c.Name, component).Set(lag)
 	}
 }
 

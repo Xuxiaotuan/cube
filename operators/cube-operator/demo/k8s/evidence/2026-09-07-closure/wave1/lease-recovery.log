@@ -1,0 +1,24 @@
+=== RUN   TestKubernetesLiveControlledRecovery
+=== RUN   TestKubernetesLiveControlledRecovery/reservation-interrupted
+    kubernetes_live_recovery_test.go:84: AUDIT scenario=reservation-interrupted context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-961f6981-3c90-4df1-9e2b-111164def90b
+    kubernetes_live_recovery_test.go:218: AUDIT completeTestLedgerH=0 restoredEpoch=1 acquiredEpoch=2 modeledGuard=retained oldIdentityIssued=false oldIdentityRejected=false
+    kubernetes_live_recovery_test.go:109: AUDIT cleanup=deleted uidPrecondition=3bec7754-adf8-4a66-a4e9-b06b1f282a66
+=== RUN   TestKubernetesLiveControlledRecovery/create-uncommitted
+    kubernetes_live_recovery_test.go:84: AUDIT scenario=create-uncommitted context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-22b5763d-66d6-4076-bc4a-01cc6f5e7a0b
+    kubernetes_live_recovery_test.go:218: AUDIT completeTestLedgerH=0 restoredEpoch=1 acquiredEpoch=2 modeledGuard=retained oldIdentityIssued=false oldIdentityRejected=false
+    kubernetes_live_recovery_test.go:109: AUDIT cleanup=deleted uidPrecondition=491d6a51-6807-42a6-a2bb-de91f8b9a644
+=== RUN   TestKubernetesLiveControlledRecovery/create-committed
+    kubernetes_live_recovery_test.go:84: AUDIT scenario=create-committed context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-37ff2473-57e1-4b21-bf74-ec12608018cd
+    kubernetes_live_recovery_test.go:163: AUDIT unknownCreate=rediscovered epoch=1 recovery=not-needed modeledGuard=retained
+    kubernetes_live_recovery_test.go:109: AUDIT cleanup=deleted uidPrecondition=169cd5da-5354-4674-96f3-e74d15a2418d
+=== RUN   TestKubernetesLiveControlledRecovery/running-lease-lost
+    kubernetes_live_recovery_test.go:84: AUDIT scenario=running-lease-lost context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-edf5753b-6efd-4fbc-bc4c-3c04d6f2dc35
+    kubernetes_live_recovery_test.go:218: AUDIT completeTestLedgerH=1 restoredEpoch=2 acquiredEpoch=3 modeledGuard=retained oldIdentityIssued=true oldIdentityRejected=true
+    kubernetes_live_recovery_test.go:109: AUDIT cleanup=deleted uidPrecondition=c89133bd-749b-4cbf-a2f2-3dc3d45feb1a
+--- PASS: TestKubernetesLiveControlledRecovery (4.41s)
+    --- PASS: TestKubernetesLiveControlledRecovery/reservation-interrupted (0.03s)
+    --- PASS: TestKubernetesLiveControlledRecovery/create-uncommitted (1.18s)
+    --- PASS: TestKubernetesLiveControlledRecovery/create-committed (1.00s)
+    --- PASS: TestKubernetesLiveControlledRecovery/running-lease-lost (2.20s)
+PASS
+ok  	github.com/cube-js/cube-operator/internal/leadership	4.988s

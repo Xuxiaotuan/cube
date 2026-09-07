@@ -1,0 +1,46 @@
+=== RUN   TestAuthorityTLSGenerateAndReuse
+--- PASS: TestAuthorityTLSGenerateAndReuse (0.00s)
+=== RUN   TestAuthorityTLSRequiresAuthoritativeReader
+--- PASS: TestAuthorityTLSRequiresAuthoritativeReader (0.00s)
+=== RUN   TestAuthorityTLSRejectsChangedClusterIdentity
+--- PASS: TestAuthorityTLSRejectsChangedClusterIdentity (0.00s)
+=== RUN   TestAuthorityTLSRejectsUnpersistedCluster
+--- PASS: TestAuthorityTLSRejectsUnpersistedCluster (0.00s)
+=== RUN   TestAuthorityTLSRejectsDeletingCluster
+--- PASS: TestAuthorityTLSRejectsDeletingCluster (0.00s)
+=== RUN   TestAuthorityTLSExistingSecretValidation
+=== RUN   TestAuthorityTLSExistingSecretValidation/foreign_uid
+=== RUN   TestAuthorityTLSExistingSecretValidation/no_owner
+=== RUN   TestAuthorityTLSExistingSecretValidation/wrong_owner_kind
+=== RUN   TestAuthorityTLSExistingSecretValidation/mutable
+=== RUN   TestAuthorityTLSExistingSecretValidation/wrong_type
+=== RUN   TestAuthorityTLSExistingSecretValidation/extra_private_key
+=== RUN   TestAuthorityTLSExistingSecretValidation/bad_ca
+=== RUN   TestAuthorityTLSExistingSecretValidation/wrong_ca
+=== RUN   TestAuthorityTLSExistingSecretValidation/mismatched_key
+=== RUN   TestAuthorityTLSExistingSecretValidation/deleting
+--- PASS: TestAuthorityTLSExistingSecretValidation (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/foreign_uid (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/no_owner (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/wrong_owner_kind (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/mutable (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/wrong_type (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/extra_private_key (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/bad_ca (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/wrong_ca (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/mismatched_key (0.00s)
+    --- PASS: TestAuthorityTLSExistingSecretValidation/deleting (0.00s)
+=== RUN   TestAuthorityTLSRejectsExpiredWithoutRotation
+--- PASS: TestAuthorityTLSRejectsExpiredWithoutRotation (0.00s)
+=== RUN   TestAuthorityTLSRejectsNotYetValid
+--- PASS: TestAuthorityTLSRejectsNotYetValid (0.00s)
+=== RUN   TestAuthorityTLSRejectsWrongServiceSANs
+--- PASS: TestAuthorityTLSRejectsWrongServiceSANs (0.00s)
+=== RUN   TestAuthorityTLSConcurrentCreateValidatesWinner
+--- PASS: TestAuthorityTLSConcurrentCreateValidatesWinner (0.00s)
+=== RUN   TestAuthorityTLSConcurrentForeignWinnerFailsClosed
+--- PASS: TestAuthorityTLSConcurrentForeignWinnerFailsClosed (0.00s)
+=== RUN   TestAuthorityTLSUnknownCreateOutcomeReusesCommittedSecret
+--- PASS: TestAuthorityTLSUnknownCreateOutcomeReusesCommittedSecret (0.00s)
+PASS
+ok  	github.com/cube-js/cube-operator/controllers	0.819s

@@ -1,0 +1,240 @@
+{
+  "status": "BLOCKED",
+  "productionGo": false,
+  "cluster": "analytics",
+  "targets": {
+    "rpoSeconds": null,
+    "rtoSeconds": null
+  },
+  "blockers": [
+    "image_not_digest_pinned:analytics-api-8d47d47-52mxd",
+    "image_not_digest_pinned:analytics-metastore-0",
+    "image_not_digest_pinned:analytics-refresher-7d4bfb9b78-mqhfg",
+    "image_not_digest_pinned:analytics-router-69457448dc-fx9nc",
+    "image_not_digest_pinned:analytics-router-69457448dc-vm9nn",
+    "image_not_digest_pinned:analytics-worker-0",
+    "image_not_digest_pinned:analytics-worker-1",
+    "routers_not_on_two_ready_nodes",
+    "node_local_storage_requires_recovery_evidence:data-analytics-metastore-0",
+    "node_local_storage_requires_recovery_evidence:data-analytics-worker-0",
+    "node_local_storage_requires_recovery_evidence:data-analytics-worker-1",
+    "node_local_storage_requires_recovery_evidence:local-data-analytics-worker-0",
+    "node_local_storage_requires_recovery_evidence:local-data-analytics-worker-1",
+    "network_policy_absent",
+    "operator_image_not_digest_pinned",
+    "missing_acceptance_target:rpo_seconds",
+    "missing_acceptance_target:rto_seconds"
+  ],
+  "nodes": [
+    {
+      "name": "orbstack",
+      "ready": true,
+      "zone": null
+    }
+  ],
+  "pods": [
+    {
+      "name": "analytics-api-8d47d47-52mxd",
+      "uid": "40ff853a-59c0-413b-a760-66e47ef35817",
+      "role": "api",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "analytics-api",
+          "image": "cube-studio-api:ha-remediation-20260907-refresher",
+          "digestPinned": false
+        }
+      ],
+      "claims": []
+    },
+    {
+      "name": "analytics-metastore-0",
+      "uid": "8708c27d-72cf-4f23-8733-631b9c116a50",
+      "role": "metastore",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "analytics-metastore",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "digestPinned": false
+        }
+      ],
+      "claims": [
+        "data-analytics-metastore-0"
+      ]
+    },
+    {
+      "name": "analytics-refresher-7d4bfb9b78-mqhfg",
+      "uid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+      "role": "refresher",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "analytics-refresher",
+          "image": "cube-studio-api:ha-remediation-20260907-refresher",
+          "digestPinned": false
+        }
+      ],
+      "claims": []
+    },
+    {
+      "name": "analytics-router-69457448dc-fx9nc",
+      "uid": "ce53c1af-5c9e-49b1-88cd-3a4f9922663d",
+      "role": "router",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "lease-agent",
+          "image": "cube-operator:ha-remediation-20260907-cutover",
+          "digestPinned": false
+        },
+        {
+          "container": "cube-studio-router",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "digestPinned": false
+        }
+      ],
+      "claims": []
+    },
+    {
+      "name": "analytics-router-69457448dc-vm9nn",
+      "uid": "f4e8a417-ff2b-4f24-9069-5798efbf8357",
+      "role": "router",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "lease-agent",
+          "image": "cube-operator:ha-remediation-20260907-cutover",
+          "digestPinned": false
+        },
+        {
+          "container": "cube-studio-router",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "digestPinned": false
+        }
+      ],
+      "claims": []
+    },
+    {
+      "name": "analytics-worker-0",
+      "uid": "3ed798d2-ece8-4536-a07c-3e35af5d4805",
+      "role": "worker",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "analytics-worker",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "digestPinned": false
+        }
+      ],
+      "claims": [
+        "data-analytics-worker-0",
+        "local-data-analytics-worker-0"
+      ]
+    },
+    {
+      "name": "analytics-worker-1",
+      "uid": "6e68fa6b-d32f-45cf-bf84-3bee833f6838",
+      "role": "worker",
+      "node": "orbstack",
+      "ready": true,
+      "images": [
+        {
+          "container": "analytics-worker",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "digestPinned": false
+        }
+      ],
+      "claims": [
+        "data-analytics-worker-1",
+        "local-data-analytics-worker-1"
+      ]
+    }
+  ],
+  "pvcs": [
+    {
+      "name": "data-analytics-metastore-0",
+      "phase": "Bound",
+      "storageClass": "local-path",
+      "provisioner": "rancher.io/local-path",
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "2Gi"
+      }
+    },
+    {
+      "name": "data-analytics-worker-0",
+      "phase": "Bound",
+      "storageClass": "local-path",
+      "provisioner": "rancher.io/local-path",
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "2Gi"
+      }
+    },
+    {
+      "name": "data-analytics-worker-1",
+      "phase": "Bound",
+      "storageClass": "local-path",
+      "provisioner": "rancher.io/local-path",
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "2Gi"
+      }
+    },
+    {
+      "name": "local-data-analytics-worker-0",
+      "phase": "Bound",
+      "storageClass": "local-path",
+      "provisioner": "rancher.io/local-path",
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "2Gi"
+      }
+    },
+    {
+      "name": "local-data-analytics-worker-1",
+      "phase": "Bound",
+      "storageClass": "local-path",
+      "provisioner": "rancher.io/local-path",
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "capacity": {
+        "storage": "2Gi"
+      }
+    }
+  ],
+  "operatorImages": [
+    {
+      "container": "manager",
+      "image": "cube-operator:ha-closure-20260907"
+    }
+  ],
+  "networkPolicyNames": [],
+  "notVerified": [
+    "CNI enforcement and effective network policy rules",
+    "independent physical failure domains and node fencing",
+    "volume reattachment, backup restore and object-store consistency",
+    "protocol compatibility and runtime image attestation",
+    "RBAC, drain sequencing and management endpoint authentication",
+    "actual RPO/RTO and complete business recovery"
+  ],
+  "context": "orbstack",
+  "namespace": "cube-ha-remediation",
+  "observedAt": "2026-09-07T05:34:30.311718+00:00"
+}

@@ -1,0 +1,45 @@
+{
+  "observedAt": "2026-09-07T05:59:22.123574+00:00",
+  "context": "orbstack",
+  "namespace": "cube-ha-remediation",
+  "status": "PASS",
+  "results": [
+    {
+      "case": "bound-audience",
+      "authenticated": true,
+      "expectedAuthenticated": true,
+      "audiences": [
+        "cubestore-metastore-authority-v1"
+      ],
+      "username": "system:serviceaccount:cube-ha-remediation:analytics-router",
+      "podName": [
+        "analytics-router-69457448dc-vm9nn"
+      ],
+      "podUid": [
+        "f4e8a417-ff2b-4f24-9069-5798efbf8357"
+      ],
+      "pass": true
+    },
+    {
+      "case": "wrong-audience",
+      "authenticated": false,
+      "expectedAuthenticated": false,
+      "audiences": [],
+      "username": null,
+      "podName": [],
+      "podUid": [],
+      "pass": true
+    },
+    {
+      "case": "invalid-token",
+      "authenticated": false,
+      "expectedAuthenticated": false,
+      "audiences": [],
+      "username": null,
+      "podName": [],
+      "podUid": [],
+      "pass": true
+    }
+  ],
+  "scope": "Real Kubernetes TokenReview only; not CubeStore HTTPS admission or MetaStore service-account RBAC acceptance. No token retained."
+}

@@ -33,6 +33,7 @@ use std::{env, io::Cursor, sync::Arc};
 
 use crate::config::injection::DIService;
 use crate::config::{Config, ConfigObj};
+pub mod authority;
 use crate::metastore::chunks::{ChunkIndexKey, ChunkRocksIndex};
 use crate::metastore::index::IndexIndexKey;
 use crate::metastore::job::{
@@ -1765,6 +1766,8 @@ impl RocksMetaStore {
         // Capture before queueing: the RocksDB writer runs on another task/thread.
         // Ownership validation and the actual publication share one serial write.
         let attempt = current_job_attempt();
+        let authority = authority::registered(Arc::as_ptr(&self.store) as usize);
+        let authority_request = authority::current_request();
         let mutation = if attempt.is_none() {
             crate::sql::ha::current_mutation()
         } else {
@@ -1772,6 +1775,7 @@ impl RocksMetaStore {
         };
         self.store
             .write_operation_impl(&self.store.rw_loop_default_cf, op_name, move |db, pipe| {
+                JOB_ATTEMPT.sync_scope(attempt.clone(), || authority::with_write(authority.as_ref(), authority_request.clone(), &db.clone(), op_name, || {
                 if let Some(ref mutation) = mutation {
                     // Recheck after queueing, not only at SQL admission. This is
                     // local lease validation, not an atomic remote-router fence.
@@ -1786,7 +1790,8 @@ impl RocksMetaStore {
                             .get_row().check_owner(attempt)?;
                     }
                 }
-                JOB_ATTEMPT.sync_scope(attempt, || f(db, pipe))
+                    f(db, pipe)
+                }))
             }, self.clone())
             .await
     }
@@ -4674,6 +4679,7 @@ impl MetaStore for RocksMetaStore {
             if !matches!(status, JobStatus::Completed | JobStatus::Timeout | JobStatus::Error(_)) {
                 return Err(CubeError::user("Invalid job completion status".to_string()));
             }
+            job.get_row().check_worker_identity()?;
             // Idempotent retry after a lost completion response. A newer attempt
             // (even on the same worker) cannot use this path.
             if job.get_row().attempt() == Some(&attempt) && job.get_row().status() == &status {

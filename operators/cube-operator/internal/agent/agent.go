@@ -36,6 +36,7 @@ type LeaseStore interface {
 
 // Config configures a lease agent for one Router pod.
 type Config struct {
+	Authority       AuthorityConfirmer
 	Store           LeaseStore
 	PromotionSource PromotionSource
 	PromotionPath   string
@@ -59,6 +60,7 @@ type LeadershipFile struct {
 
 // Agent polls the authoritative lease store and maintains the local file.
 type Agent struct {
+	authority       AuthorityConfirmer
 	store           LeaseStore
 	promotionSource PromotionSource
 	promotionPath   string
@@ -108,7 +110,8 @@ func New(config Config) (*Agent, error) {
 		config.Now = time.Now
 	}
 
-	return &Agent{
+	instance := &Agent{
+		authority:       config.Authority,
 		store:           config.Store,
 		promotionSource: config.PromotionSource,
 		promotionPath:   config.PromotionPath,
@@ -118,7 +121,13 @@ func New(config Config) (*Agent, error) {
 		path:            config.Path,
 		retryPeriod:     config.RetryPeriod,
 		now:             config.Now,
-	}, nil
+	}
+	if instance.authority != nil {
+		if err := instance.fenceLocal(); err != nil {
+			return nil, err
+		}
+	}
+	return instance, nil
 }
 
 // Run synchronizes immediately, then at RetryPeriod until the context ends.
@@ -175,6 +184,7 @@ func (a *Agent) Sync(ctx context.Context) (syncErr error) {
 		return ErrNotHolder
 	}
 
+	var promotionRaw []byte
 	if a.promotionSource != nil {
 		raw, err := a.promotionSource.Read(ctx)
 		if err != nil {
@@ -199,9 +209,27 @@ func (a *Agent) Sync(ctx context.Context) (syncErr error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		// Publish marker first: an old leadership file cannot pair with a newer
-		// marker. Only the following leadership write enables the matching epoch.
-		if err := writeAtomic(a.promotionPath, json.RawMessage(raw)); err != nil {
+		promotionRaw = raw
+	}
+	if a.authority != nil {
+		deadline, err := a.authority.Confirm(ctx, record)
+		if err != nil {
+			return err
+		}
+		if !deadline.After(a.now()) {
+			return errors.New("authority confirmation expired before publication")
+		}
+		if deadline.Before(record.ExpiresAt) {
+			record.ExpiresAt = deadline
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Publish only after strict install acknowledgement and Lease revalidation.
+	// Marker first; the subsequent leadership file enables the matching epoch.
+	if a.promotionSource != nil {
+		if err := writeAtomic(a.promotionPath, json.RawMessage(promotionRaw)); err != nil {
 			return fmt.Errorf("write promotion marker: %w", err)
 		}
 	}

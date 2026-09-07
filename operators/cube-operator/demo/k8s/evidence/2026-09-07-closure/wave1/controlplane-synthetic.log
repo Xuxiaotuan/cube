@@ -1,0 +1,74 @@
+=== RUN   TestKubernetesAuthorityDivergentCache
+--- PASS: TestKubernetesAuthorityDivergentCache (0.00s)
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader/unavailable
+=== RUN   TestKubernetesAuthorityUnavailableAndMissingReader/missing
+--- PASS: TestKubernetesAuthorityUnavailableAndMissingReader (0.00s)
+    --- PASS: TestKubernetesAuthorityUnavailableAndMissingReader/unavailable (0.00s)
+    --- PASS: TestKubernetesAuthorityUnavailableAndMissingReader/missing (0.00s)
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity/renew
+=== RUN   TestKubernetesAuthorityConflictRereadsIdentity/release
+--- PASS: TestKubernetesAuthorityConflictRereadsIdentity (0.00s)
+    --- PASS: TestKubernetesAuthorityConflictRereadsIdentity/renew (0.00s)
+    --- PASS: TestKubernetesAuthorityConflictRereadsIdentity/release (0.00s)
+=== RUN   TestKubernetesReleasePreservesEpoch
+--- PASS: TestKubernetesReleasePreservesEpoch (0.00s)
+=== RUN   TestKubernetesManualRecoveryModelAndEpochExhaustion
+--- PASS: TestKubernetesManualRecoveryModelAndEpochExhaustion (0.00s)
+=== RUN   TestKubernetesCancelledControllerCannotRenew
+--- PASS: TestKubernetesCancelledControllerCannotRenew (0.00s)
+=== RUN   TestLeaseLifecycleChild
+    lifecycle_acceptance_test.go:25: subprocess only
+--- SKIP: TestLeaseLifecycleChild (0.00s)
+=== RUN   TestLeaseLifecycleSignals
+=== RUN   TestLeaseLifecycleSignals/terminated
+    lifecycle_acceptance_test.go:131: AUDIT localChildSignal=terminated gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/interrupt
+    lifecycle_acceptance_test.go:131: AUDIT localChildSignal=interrupt gracefulCancellation=true managerElectionTested=false
+=== RUN   TestLeaseLifecycleSignals/killed
+    lifecycle_acceptance_test.go:131: AUDIT localChildSignal=killed gracefulCancellation=false managerElectionTested=false
+--- PASS: TestLeaseLifecycleSignals (0.05s)
+    --- PASS: TestLeaseLifecycleSignals/terminated (0.02s)
+    --- PASS: TestLeaseLifecycleSignals/interrupt (0.01s)
+    --- PASS: TestLeaseLifecycleSignals/killed (0.01s)
+=== RUN   TestLeaseLifecyclePausedWriterModel
+    lifecycle_acceptance_test.go:144: child was not confirmed stopped: <nil>
+--- FAIL: TestLeaseLifecyclePausedWriterModel (0.01s)
+FAIL
+FAIL	github.com/cube-js/cube-operator/internal/leadership	1.400s
+=== RUN   TestLeaseBootstrapInterruptedReservationAndCompetition
+--- PASS: TestLeaseBootstrapInterruptedReservationAndCompetition (0.00s)
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion/false
+=== RUN   TestLeaseBootstrapUnknownCreateAndLeaseDeletion/true
+--- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion (0.00s)
+    --- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion/false (0.00s)
+    --- PASS: TestLeaseBootstrapUnknownCreateAndLeaseDeletion/true (0.00s)
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/CR
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/ConfigMap
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/Pod
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/reader
+=== RUN   TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/uid
+--- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/CR (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/ConfigMap (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/Pod (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/reader (0.00s)
+    --- PASS: TestLeaseBootstrapRejectsHistoricalFencesAndMissingReader/uid (0.00s)
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/healthy
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/no-election
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/wrong-token
+=== RUN   TestLeaseManagerAdoptionRequiresAcknowledgement/cancelled
+--- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/healthy (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/no-election (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/wrong-token (0.00s)
+    --- PASS: TestLeaseManagerAdoptionRequiresAcknowledgement/cancelled (0.00s)
+=== RUN   TestLeaseCancelledReconcileStopsBeforeClientAccess
+--- PASS: TestLeaseCancelledReconcileStopsBeforeClientAccess (0.00s)
+PASS
+ok  	github.com/cube-js/cube-operator/controllers	0.682s
+FAIL

@@ -27,6 +27,54 @@ function setup() {
 }
 
 describe('pre-aggregation queue/refresher failover', () => {
+  it.each([true, false])('keeps timed-out durable work UNKNOWN and resumes the same identity (skipQueue=%s)', async skipQueue => {
+    let release!: (value: string) => void;
+    const dispatched = new Promise<string>(resolve => { release = resolve; });
+    const logger = jest.fn();
+    const cancel = jest.fn().mockResolvedValue(undefined);
+    const handler = jest.fn().mockImplementationOnce(async (_query, setCancel) => {
+      if (skipQueue) await setCancel(cancel);
+      return dispatched;
+    }).mockResolvedValue('ready');
+    const queue = new QueryQueue(`durable-timeout-${skipQueue}`, {
+      cacheAndQueueDriver: 'memory', logger, skipQueue, executionTimeout: 0.01,
+      queryHandlers: { query: handler }, cancelHandlers: { query: cancel }, continueWaitTimeout: 1,
+    });
+    try {
+      await expect(queue.executeInQueue('query', 'same-build', { preAggregationBuildId: target })).rejects.toMatchObject({
+        code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
+      });
+      expect(logger).toHaveBeenCalledWith('Error while querying', expect.objectContaining({
+        preAggregationBuildId: target, reconciliationRequired: true, errorCode: 'MUTATION_UNKNOWN',
+      }));
+      // The original operation may still complete after the queue timed out.
+      release('late physical completion');
+      await expect(queue.executeInQueue('query', 'same-build', { preAggregationBuildId: target })).resolves.toBe('ready');
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler.mock.calls.every(([query]) => query.preAggregationBuildId === target)).toBe(true);
+    } finally {
+      release('cleanup');
+      await dispatched;
+      await queue.shutdown();
+    }
+  });
+
+  it.each([true, false])('does not label an arbitrary SQL timeout recoverable (skipQueue=%s)', async skipQueue => {
+    let release!: () => void;
+    const dispatched = new Promise<void>(resolve => { release = resolve; });
+    const queue = new QueryQueue(`ordinary-timeout-${skipQueue}`, {
+      cacheAndQueueDriver: 'memory', logger: jest.fn(), skipQueue, executionTimeout: 0.01,
+      queryHandlers: { query: () => dispatched }, cancelHandlers: { query: jest.fn() }, continueWaitTimeout: 1,
+    });
+    try {
+      await expect(queue.executeInQueue('query', 'sql', {})).rejects.toMatchObject({ code: undefined });
+    } finally {
+      release();
+      await dispatched;
+      await queue.shutdown();
+    }
+  });
+
   it('keeps touch/used keys on UNKNOWN but removes touch on a definitive failure', async () => {
     const { loader, preAggregations } = setup();
     const strategy = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy');

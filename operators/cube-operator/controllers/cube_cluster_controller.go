@@ -78,6 +78,8 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(err) {
 			clusterConditionMetric.DeletePartialMatch(map[string]string{"namespace": req.Namespace, "cluster": req.Name})
 			clusterObservationMetric.DeleteLabelValues(req.Namespace, req.Name)
+			clusterReplicaMetric.DeletePartialMatch(map[string]string{"namespace": req.Namespace, "cluster": req.Name})
+			clusterGenerationLagMetric.DeletePartialMatch(map[string]string{"namespace": req.Namespace, "cluster": req.Name})
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}

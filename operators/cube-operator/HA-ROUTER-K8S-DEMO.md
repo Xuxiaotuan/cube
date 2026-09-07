@@ -607,3 +607,35 @@ kubectl -n cube-operator-demo get endpointslice -l kubernetes.io/service-name=cu
 原始日志保存在 `demo/k8s/evidence/2026-09-07-closure/approved-fixes/`，详情见 [闭环记录](HA-CLOSURE-2026-09-07.md)。此前失败记录作为历史保留。
 
 这些是本地测试层的修复与验收，不是最新镜像的完整 K8s 验收。真实 Refresher 崩溃恢复仍未执行，屏障/Ready 依赖、unfinished ledger 门禁及固定 API Pod IP 限制仍需确认；整体仍不能判定生产 GO。本轮未提交、未推送。
+
+### 全量剩余任务第一波：尚未全部完成
+
+最新开发基于 bad90b9ee6。已补 durable build 超时的 MUTATION_UNKNOWN、Refresher 故障脚本的屏障/Ready 顺序与稳定 Service DNS、恢复后 API 消费校验、发布方向约束和组件状态指标。相关聚焦测试通过，但真实 Refresher E2E 尚未执行。
+
+当前新增生命周期暂停测试 FAIL，控制面脚本目录亦需修正；这一波尚未提交或构建部署。只读生产预检查在本地报告 BLOCKED：单节点、local-path 卷、无 NetworkPolicy、镜像未按 digest 固定、缺 RPO/RTO。
+
+进一步确认的核心缺口是远程 MetaStore Router 授权，以及可信 scope/generation/退休账本。它们需要跨角色协议和停写升级，不是再运行一次测试就能解决。待批准方案见 [协议设计](HA-PROTOCOL-V2-DESIGN.md)，结果与证据边界见 [闭环记录](HA-CLOSURE-2026-09-07.md)。不新增 Redis/PG，不宣称生产 GO。
+
+### 协议改造获准后的最新关口
+
+协议与停写升级方向已获确认，见 [协议记录](HA-PROTOCOL-V2-DESIGN.md)。上轮暂停识别和脚本位置问题已修复，修复时点全量 Go 通过；之后新增的 authority agent 测试又出现清理超时，不能继承该 PASS。
+
+当前 PKI helper 21 项、真实 Kubernetes 身份校验 3 项及身份脚本 helper 3 项通过。Rust 新授权代码已写入，但 Worker 执行上下文接线问题待修，且 Cargo.lock 未同步导致锁定构建 exit 101、未进入编译。严格模式没有启用，未构建或部署新镜像，未提交推送。
+
+原始结果与失败堆栈已放入 `demo/k8s/evidence/2026-09-07-closure/authority-checkpoint/`，详情见 [闭环记录](HA-CLOSURE-2026-09-07.md)。仍不是生产 GO，也不代表构建生命周期账本、恢复及 GC 已完成。
+
+### 同日三处修复后的验收更新
+
+Go 授权超时夹具已修复，专项和全量离线 Go 测试通过。Rust Worker 上下文顺序已调整，Cargo.lock 已离线同步；锁定构建进入编译后，因新增 RouterAuthority 表类型漏穷尽匹配分支报 E0004，尚未修正。
+
+本轮 Rust authority_、task4_rpc_ 未执行，不继承旧版 PASS。无新镜像、无部署、未启用严格模式、未提交推送。最新原始日志及完整边界见 [闭环记录](HA-CLOSURE-2026-09-07.md)。
+
+## 最新补充：2026-09-07 授权分支修复与验收边界
+
+`RouterAuthority` 的穷尽匹配遗漏已补齐，持久授权记录明确不参与 TTL 清理。本轮 Rust lib/tests/bin 编译在 180.02 秒达到上限，退出码 124；未再出现此前 E0004，但未完成编译。`authority_` 和 `task4_rpc_` 均未执行，测试数为 0，不能写为通过。
+
+原始证据：[Rust 有界编译日志](demo/k8s/evidence/2026-09-07-closure/authority-checkpoint/rust-authority-match-fix.log)。详细剩余任务见 [闭环报告](HA-CLOSURE-2026-09-07.md) 的“2026-09-07 RouterAuthority 分支修复及剩余门禁”。
+
+仍需完成：新协议编译与回归、Operator TLS/RBAC/token/严格模式集成、真实旧主隔离、数据库持久恢复、预聚合 generation/retirement/reference ledger、UNKNOWN 对账、Refresher 故障恢复和真实 Cube API 数据验收，以及统一镜像升级/回滚与生产等价环境验证。
+
+本轮没有镜像构建、部署或 Git 提交/推送。运行中的 `analytics` 尚未启用新 authority 配置，`ProductionReady=False/EvidenceIncomplete`。当前为 `evidence_incomplete`、生产 `NO-GO`，不得将历史 Service 切换成功等同于新协议或完整业务恢复验收通过。

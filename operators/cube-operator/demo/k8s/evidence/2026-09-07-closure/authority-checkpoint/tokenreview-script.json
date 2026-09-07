@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "context": "orbstack",
+  "namespace": "cube-ha-remediation",
+  "podName": "analytics-router-69457448dc-vm9nn",
+  "podUid": "f4e8a417-ff2b-4f24-9069-5798efbf8357",
+  "audience": "cubestore-metastore-authority-v1",
+  "results": [
+    {
+      "case": "bound-audience",
+      "authenticated": true,
+      "pass": true
+    },
+    {
+      "case": "wrong-audience",
+      "authenticated": false,
+      "pass": true
+    },
+    {
+      "case": "invalid-token",
+      "authenticated": false,
+      "pass": true
+    }
+  ],
+  "observedAt": "2026-09-07T06:03:13.133823+00:00",
+  "scope": "Kubernetes identity only; not CubeStore RPC, MetaStore RBAC, or HA acceptance"
+}
