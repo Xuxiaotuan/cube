@@ -402,8 +402,12 @@ impl RocksMetaStore {
             pipe.batch().put(record_key(), bytes);
             Ok(ack)
         })).await?;
-        // Only publish ephemeral validity after the durable write has committed.
-        state.grants.lock().map_err(|_| error("AUTHORITY_NOT_READY"))?.insert(ack.grant_id.clone(), (until, revision));
+        // The caller holds install_lock through commit and validity publication.
+        // Only the durable current grant can pass the writer; failed installs
+        // must leave the previous grant and its deadline untouched.
+        let mut grants = state.grants.lock().map_err(|_| error("AUTHORITY_NOT_READY"))?;
+        grants.retain(|id, _| id == &ack.grant_id);
+        grants.insert(ack.grant_id.clone(), (until, revision));
         Ok(ack)
     }
 }

@@ -1,0 +1,13 @@
+=== RUN   TestAuthorityInstallerWiring
+=== RUN   TestAuthorityInstallerWiring/cube-operator-demo
+=== RUN   TestAuthorityInstallerWiring/authority-install-test
+--- PASS: TestAuthorityInstallerWiring (1.28s)
+    --- PASS: TestAuthorityInstallerWiring/cube-operator-demo (0.73s)
+    --- PASS: TestAuthorityInstallerWiring/authority-install-test (0.55s)
+PASS
+ok  	github.com/cube-js/cube-operator/config	1.991s
+
+SERVER DRY-RUN: authority RBAC only; context=orbstack; namespace substitution=cube-ha-remediation
+clusterrole.rbac.authorization.k8s.io/cubestore-authority-tokenreview
+clusterrole.rbac.authorization.k8s.io/cubestore-authority-binding-manager
+clusterrolebinding.rbac.authorization.k8s.io/cubestore-authority-binding-manager-cube-ha-remediation

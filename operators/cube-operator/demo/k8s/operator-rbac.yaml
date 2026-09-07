@@ -29,7 +29,7 @@ rules:
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["cubestore.io"]
-    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers", "cubeclusters", "cubeclusters/status"]
+    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers", "cubeclusters", "cubeclusters/status", "cubeclusters/finalizers"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

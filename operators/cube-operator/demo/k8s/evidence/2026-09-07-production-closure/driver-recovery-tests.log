@@ -1,0 +1,60 @@
+yarn run v1.22.22
+$ /Users/xujiawei/magic/workbench/cube/node_modules/.bin/jest --config /tmp/cube-driver-source-jest-20260907.cjs --runInBand
+(node:73317) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/PreAggregationRecovery.test.ts (19.614 s)
+  durable pre-aggregation recovery
+    ✓ returns false for a durable selected build without blocking its first source strategy (7 ms)
+    ✓ does not treat missing durable identity as permission to start a fresh build (4 ms)
+    ✓ preserves uploading evidence when recovery has no upload source (4 ms)
+    ✓ preserves uploaded evidence when recovery has no upload source (3 ms)
+    ✓ keeps the selected target across workers and protects old ready versions without TTL (2 ms)
+    ✓ queries the exact build namespace without treating arbitrary key prefixes as namespaces (1 ms)
+    ✓ reconciles a CREATE response lost after success, with no duplicate CREATE (2 ms)
+    ✓ retains building intent across queue retries and does not treat building as ready (1 ms)
+    ✓ fails closed if a previously observed target is replaced (71 ms)
+    ✓ routes recovery-enabled row arrays through files, never partially visible INSERT batches (7 ms)
+    ✓ never drops an imported row table after unknown INSERT and keeps batch identity (2 ms)
+    ✓ does not enable generic write replay even when a mutation ID is provided (1 ms)
+    ✓ does not infer NX persistence from an absent or conflicting exact readback (1 ms)
+    ✓ polls through a realistic number of leader-transition observations in one call (5 ms)
+    ✓ atomically selects one of two unequal concurrent manifests (2 ms)
+    ✓ refuses ready without authoritative matching file locations (undefined) (6 ms)
+    ✓ refuses ready without authoritative matching file locations ([ 'temp://different.csv.gz' ]) (3 ms)
+    ✓ never regresses ready when a stale owner publishes an earlier phase (5 ms)
+    ✓ allocates a new target when a terminal ready target has been retired (2 ms)
+    ✓ publishes only authoritative ready tables while retaining compatibility with an old router (9 ms)
+    ✓ commits ready before discovery publishes a table whose original CREATE has not returned (2 ms)
+    ✓ requires exact durable evidence after a ready marker acknowledgement is lost (committed=true) (1 ms)
+    ✓ requires exact durable evidence after a ready marker acknowledgement is lost (committed=false) (1 ms)
+    ✓ does not adopt a discovered table with a selected build (1 ms)
+    ✓ does not adopt a discovered table with a failed build (1 ms)
+    ✓ does not adopt a discovered table with a retired build
+    ✓ does not publish or mark ready when discovered locations conflicts
+    ✓ does not publish or mark ready when discovered tableId conflicts (1 ms)
+  real gzip manifests after refresh worker loss
+    ✓ keeps uploading ledger and active identity unchanged across drain and a new candidate probe (87 ms)
+    ✓ recovers an empty dataset using a gzip header file and LOCATION, never a bare CREATE (9 ms)
+    ✓ recovers a complete remote manifest without any original local files (9 ms)
+    ✓ keeps UNKNOWN while inputs are missing and resumes when the same remote manifest is restored (5 ms)
+    ✓ does not mix regenerated changed inputs and moves a failed attempt to a new target (82 ms)
+    ✓ settles all compression pipelines when the source fails mid-stream (21 ms)
+  shared ledger maintenance after refresher restart
+    ✓ recovers uploading in a new driver without local queue state (4 ms)
+    ✓ recovers uploaded in a new driver without local queue state (2 ms)
+    ✓ recovers create in a new driver without local queue state (3 ms)
+    ✓ preserves UNKNOWN and shared references during targeted recovery (4 ms)
+    ✓ scans all 257 identities with at most eight in-flight reads, matching serial protection (103 ms)
+    ✓ follows more than 100 terminal attempts without treating history as absent (228 ms)
+  content-addressed upload recovery
+    ✓ recovers response lost after commit with the same immutable payload name (19 ms)
+    ✓ recovers mid-upload disconnect with the same immutable payload name (10 ms)
+    ✓ rejects uploaded metadata with a different checksum or length (4 ms)
+    ✓ negotiates an old router with a one-shot upload and never retries its unknown outcome (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        20.641 s
+Ran all test suites.
+Done in 24.13s.

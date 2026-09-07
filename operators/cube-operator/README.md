@@ -8,7 +8,7 @@
 
 | 目的 | 入口 |
 | --- | --- |
-| 看当前修复结果、未完成项与证据边界 | [HA-CLOSURE-2026-09-07.md](HA-CLOSURE-2026-09-07.md)，以末尾“三处定向修复”小节为最新检查点 |
+| 看当前修复结果、未完成项与证据边界 | [HA-CLOSURE-2026-09-07.md](HA-CLOSURE-2026-09-07.md)，以末尾“恢复边界与持久授权整改”小节为最新检查点 |
 | 看 K8s 演示过程、架构、部署与数据流说明 | [HA-ROUTER-K8S-DEMO.md](HA-ROUTER-K8S-DEMO.md)，历史日志不代表当前新协议已部署 |
 | 看 Kubernetes authority 协议设计 | [HA-PROTOCOL-V2-DESIGN.md](HA-PROTOCOL-V2-DESIGN.md)，设计不等于实现或验收完成 |
 | 看生产条件、发布门禁与故障覆盖 | [PRODUCTION-DEPLOYMENT.md](PRODUCTION-DEPLOYMENT.md)、[RELEASE-ACCEPTANCE.md](RELEASE-ACCEPTANCE.md)、[HA-FAILURE-MATRIX.md](HA-FAILURE-MATRIX.md) |
@@ -32,7 +32,7 @@
 
 ## 最新验证结果
 
-以下是本页对应代码修复的本地结果，不是运行集群的新镜像验收：
+下表保留上一轮定向修复的本地基线；最新增量结果见随后小节。两者均不是运行集群的新镜像验收：
 
 | 检查 | 结果 | 原始证据 |
 | --- | --- | --- |
@@ -47,7 +47,19 @@
 
 本轮定向修复了三处问题：Worker `create_chunk` 写操作标签错误；首次 Lease 引导使用错误注释键名；预聚合补丁过度阻断首次构建并全面暂停清理。修复没有放宽 Worker 白名单，也没有取消 Lease 丢失时的 fail-closed 保护。
 
-历史 74 项测试通过的预聚合候选补丁仍有首次构建阻塞回退，不能作为成功证据；最新 76 项结果对应其后修复。Rust fixture 的重启目前只是 authority State 重建，不是真实关闭重开数据库或恢复快照。
+历史 74 项测试通过的预聚合候选补丁仍有首次构建阻塞回退，不能作为成功证据；76 项结果对应其后修复。此后新增 Driver 恢复边界和实际数据库重开验证如下，不能将普通重开提升为快照恢复证明。
+
+### 最新增量：恢复边界与持久授权整改
+
+| 增量 | 实际结果 | 证据 |
+| --- | --- | --- |
+| Driver 恢复返回值 | false 仅用于已有 selected 记录；缺记录或缺上传源抛出 UNKNOWN，不自动进入重建；源恢复后可继续原 manifest | [44/44 测试通过](demo/k8s/evidence/2026-09-07-production-closure/driver-recovery-tests.log)、[类型检查通过](demo/k8s/evidence/2026-09-07-production-closure/driver-typecheck.log) |
+| grant 内存有界性 | 安装持久提交成功后只保留当前 grant；20 次续约、128 次轮换和失败保持均覆盖；未放宽 Lease 校验 | [Rust 编译与 5/5 authority 测试](demo/k8s/evidence/2026-09-07-production-closure/rust-authority-durability.log) |
+| 数据库普通重开 | 关闭并释放实际 RocksDB 后同路径打开，校验持久记录、旧 incarnation/epoch 拒绝和新授权写入 | 同上；没有验证磁盘故障、旧快照恢复或授权记录丢失 |
+| RPC 回归 | 2/2 PASS | [回归日志](demo/k8s/evidence/2026-09-07-production-closure/rust-task4-rpc.log) |
+| 安装入口 | `run-cubecluster.sh` 接入 authority RBAC；1 个接线测试含 2 个命名空间子用例通过，三个 RBAC 资源 server dry-run 通过 | [安装验证日志](demo/k8s/evidence/2026-09-07-production-closure/operator-install-wiring.log) |
+
+没有真实创建新 RBAC 或部署新镜像；dry-run 未验证实际 MetaStore ServiceAccount 的 TokenReview 请求。原子构建代次、发布/引用/回收事务仍未实现，生产仍为 NO-GO。
 
 ## 运行环境与源码必须分开看
 
@@ -90,7 +102,7 @@ go test ./controllers ./api/... ./internal/agent -count=1 -timeout=90s
 
 `spec.authority` 是新安装的显式配置，包含 API 超时、校验窗口、时钟偏差预算；不能把参数随便填写后认为已满足 fencing 条件。
 
-[authority-canary.yaml](config/samples/authority-canary.yaml) 是待填入真实镜像及存储参数的候选示例，不是已验收的一键部署文件。[authority RBAC](config/rbac/authority.yaml) 已有清单，但自动安装入口尚未完成接线/验收。不要只照旧 RBAC 命令安装后就开启 strict。
+[authority-canary.yaml](config/samples/authority-canary.yaml) 是待填入真实镜像及存储参数的候选示例，不是已验收的一键部署文件。[authority RBAC](config/rbac/authority.yaml) 已接入 `run-cubecluster.sh` 并通过接线测试及 server dry-run；旧 `run.sh` 入口未在本轮扩展。不要只照旧 RBAC 命令安装后就开启 strict，实际 MetaStore SA 权限与运行链路仍需验证。
 
 已有非 strict 集群需要单独批准的停写、隔离旧写者和维护迁移流程，不应直接通过滚动更新开启新协议。`strict` 是安全约束模式，不是生产认证标签。
 
@@ -113,10 +125,10 @@ go test ./controllers ./api/... ./internal/agent -count=1 -timeout=90s
 | --- | --- | --- |
 | P0 | 新 authority 的真实 TLS/RBAC/TokenReview/晋升与后台任务兼容性 | `evidence_incomplete` |
 | P0 | 暂停旧主、网络隔离、Lease 失效时拒绝旧写者 | 新协议真实 K8s 故障验收未完成 |
-| P0 | 数据库完全重开、快照恢复及授权记录缺失的安全处理 | `implementation_incomplete / evidence_incomplete` |
-| P0 | 构建代次、UNKNOWN 对账及发布/引用/回收原子协调 | `implementation_incomplete`；Driver false 语义和非事务清理竞态仍未闭环 |
+| P0 | 快照恢复、磁盘故障及授权记录缺失的安全处理 | 普通数据库关闭重开测试已过，其余仍为 `implementation_incomplete / evidence_incomplete` |
+| P0 | 构建代次、UNKNOWN 对账及发布/引用/回收原子协调 | `implementation_incomplete`；Driver false 歧义已收紧，不替代权威 claim 或事务化清理 |
 | P0 | Refresher 崩溃恢复及真实 Cube API 数据一致性 E2E | 未通过 |
-| P1 | grant 状态有界清理、访问 Kubernetes API 的开销优化 | 未完成 |
+| P1 | 访问 Kubernetes API 的开销与负载优化 | grant 状态有界清理已实现并测试；API 调用开销优化及负载验收未完成 |
 | P1 | 完整监控、统一镜像、升级/回滚及多节点故障验收 | 未完成；当前单节点环境不足以验收节点级容灾 |
 | 验收前提 | RPO/RTO、保留期、真实测试集群及备份恢复条件 | 尚未完成定标和实证 |
 

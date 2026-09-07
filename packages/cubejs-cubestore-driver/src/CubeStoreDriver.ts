@@ -1348,7 +1348,10 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   public async resumePreAggregationBuild(table: string): Promise<boolean> {
     const record = await this.preAggregationBuilds.read(table);
-    if (!record || record.phase === 'selected') return false;
+    // Only a durable, selected build can enter the initial source strategy.
+    // Missing recovery evidence is not permission to start a new mutation.
+    if (!record) throw new MutationUnknownError(`Missing durable build identity for ${table}`);
+    if (record.phase === 'selected') return false;
     if (record.phase === 'failed' || record.phase === 'retired') throw new Error(record.error || `Pre-aggregation build failed: ${table}`);
     if (!record.create) throw new MutationUnknownError(`Missing CREATE manifest for ${table}`);
     if (record.phase === 'uploading') {
@@ -1357,7 +1360,9 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         // path. Another refresh worker needs no local files if all are remote.
         for (const upload of record.uploads || []) await this.uploadTempFile(upload, true);
       } catch (error: any) {
-        if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') return false;
+        if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') {
+          throw new MutationUnknownError(`Upload source unavailable for durable build ${table}; preserve its manifest for recovery`);
+        }
         throw error;
       }
       await this.preAggregationBuilds.save({ ...record, phase: 'uploaded' });
@@ -1368,7 +1373,9 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         try {
           await this.uploadTempFile(upload, true);
         } catch (error: any) {
-          if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') return false;
+          if (error.code === 'PRE_AGG_UPLOAD_SOURCE_MISSING') {
+            throw new MutationUnknownError(`Upload source unavailable for durable build ${table}; preserve its manifest for recovery`);
+          }
           throw error;
         }
       }

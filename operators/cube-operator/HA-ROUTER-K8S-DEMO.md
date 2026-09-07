@@ -657,3 +657,11 @@ Refresher harness 28 项、预检单测 7 项通过；真实认证 Cube API `/me
 完整原始证据：[Rust 编译](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-build.log)、[新授权测试](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-authority.log)、[RPC 回归](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-task4-rpc.log)、[Go 引导测试](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/go-authority-bootstrap.log)、[预聚合回归](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/preaggregation-regression.log)。修复范围和剩余风险见 [闭环报告](HA-CLOSURE-2026-09-07.md) 的“三处定向修复”小节。
 
 这不是八项整改全部完成：Driver false 语义仍不够精确，权威恢复/并发清理仍未闭环，真实 strict 部署、数据库恢复及故障 E2E 尚未验收。本轮没有构建镜像、部署、提交或推送，生产仍为 `NO-GO`。
+
+## 最新增量：恢复契约、持久授权和安装入口
+
+本轮 Driver 将 false 限定为已有 selected 构建；缺记录/缺上传源保留 UNKNOWN。44 项源码测试及类型检查通过，正常首次构建不被统一阻断。授权安装现在只保留当前 grant，并通过续约、128 次轮换、失败保持及真实关闭重开 RocksDB 测试；authority 5/5、RPC 2/2 通过。
+
+`run-cubecluster.sh` 已接入 authority RBAC，接线测试和三个 RBAC 资源 server dry-run 通过；未真实创建 RBAC、部署新镜像或操作现有工作负载。原始日志见 `demo/k8s/evidence/2026-09-07-production-closure/`，完整结论见 [闭环报告](HA-CLOSURE-2026-09-07.md) 末尾“恢复边界与持久授权整改”。
+
+原子构建账本、发布/引用/回收事务依旧未实现；普通 DB reopen 不等于快照回退或磁盘故障恢复。真实切主 E2E、多节点和发布验收也未完成，因此不能将本轮增量更新为生产 GO。

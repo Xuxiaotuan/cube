@@ -1,0 +1,11 @@
+yarn run v1.22.22
+$ /Users/xujiawei/magic/workbench/cube/node_modules/.bin/jest --runInBand --runTestsByPath test/PreAggregationRecovery.test.ts
+No tests found, exiting with code 1
+Run with `--passWithNoTests` to exit with code 0
+No files found in /Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver.
+Make sure Jest's configuration does not exclude this directory.
+To set up Jest, make sure a package.json file exists.
+Jest Documentation: https://jestjs.io/docs/configuration
+Files: "test/PreAggregationRecovery.test.ts"
+error Command failed with exit code 1.
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.

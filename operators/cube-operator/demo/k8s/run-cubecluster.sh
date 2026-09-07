@@ -23,6 +23,9 @@ echo "[3/6] object store dependency"
 apply_namespaced demo/k8s/minio.yaml
 echo "[4/6] operator RBAC"
 apply_namespaced demo/k8s/operator-rbac.yaml
+# Requires an RBAC installer identity. Grants only binding of the dedicated
+# TokenReview role; does not enable strict mode on the submitted CubeCluster.
+apply_namespaced config/rbac/authority.yaml
 echo "[5/6] operator"
 apply_namespaced config/manager/manager.yaml
 echo "[6/6] CubeCluster"

@@ -49,6 +49,38 @@ function harness() {
 describe('durable pre-aggregation recovery', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('returns false for a durable selected build without blocking its first source strategy', async () => {
+    const { driver, creates } = harness();
+    await driver.resolvePreAggregationBuild('first-build', versionEntry, ['s.old_ready']);
+    await expect(driver.resumePreAggregationBuild(table)).resolves.toBe(false);
+    expect((await (driver as any).preAggregationBuilds.read(table)).phase).toBe('selected');
+    expect(creates).toHaveLength(0);
+  });
+
+  it('does not treat missing durable identity as permission to start a fresh build', async () => {
+    const { driver, cache, creates } = harness();
+    await expect(driver.resumePreAggregationBuild(table)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect(cache.size).toBe(0);
+    expect(creates).toHaveLength(0);
+  });
+
+  it.each(['uploading', 'uploaded'] as const)('preserves %s evidence when recovery has no upload source', async phase => {
+    const { driver, cache, creates } = harness();
+    const selected = await driver.resolvePreAggregationBuild('missing-source', versionEntry, ['s.old_ready']);
+    const store = (driver as any).preAggregationBuilds as PreAggregationBuildStore;
+    await store.save({ ...selected!, phase,
+      uploads: [{ name: 'immutable.csv.gz', sha256: 'immutable', size: 10, path: '/unavailable/source.csv.gz' }],
+      create: { sql: 'CREATE TABLE t LOCATION ?', params: ['temp://immutable.csv.gz'] } });
+    const before = [...cache.entries()];
+    jest.spyOn(driver as any, 'uploadTempFile').mockRejectedValue(Object.assign(new Error('source missing'), {
+      code: 'PRE_AGG_UPLOAD_SOURCE_MISSING',
+    }));
+    await expect(driver.resumePreAggregationBuild(table)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect([...cache.entries()]).toEqual(before);
+    expect(creates).toHaveLength(0);
+    expect(await driver.getProtectedPreAggregationTables()).toContain('s.old_ready');
+  });
+
   it('keeps the selected target across workers and protects old ready versions without TTL', async () => {
     const { driver, cache } = harness();
     const first = await driver.resolvePreAggregationBuild('logical', versionEntry, ['s.old_ready']);
@@ -358,16 +390,21 @@ describe('real gzip manifests after refresh worker loss', () => {
     expect((await (driver as any).preAggregationBuilds.read(table)).phase).toBe('ready');
   });
 
-  it('re-extracts only when remote and local inputs are missing, and accepts only identical compressed inputs', async () => {
+  it('keeps UNKNOWN while inputs are missing and resumes when the same remote manifest is restored', async () => {
     const { driver, record, onCreate, status } = await interrupted();
     for (const upload of record.uploads) await unlink(upload.path);
-    jest.spyOn(driver as any, 'routerRecoveryJson').mockResolvedValue({ state: 'missing' });
-    await expect(driver.resumePreAggregationBuild(table)).resolves.toBe(false);
-    jest.spyOn(driver as any, 'uploadTempFile').mockImplementation(async (upload: any) => upload.name);
+    const remote = jest.spyOn(driver as any, 'routerRecoveryJson').mockResolvedValue({ state: 'missing' });
+    await expect(driver.resumePreAggregationBuild(table)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect((await (driver as any).preAggregationBuilds.read(table)).phase).toBe('uploading');
+    remote.mockImplementation(async (url: any) => {
+      const upload = record.uploads.find(u => url.includes(u.sha256));
+      return { state: 'uploaded', sha256: upload.sha256, size: upload.size };
+    });
     onCreate(async () => { status.mockResolvedValue(await readyStatus(driver, 42)); return []; });
-    await driver.uploadTableWithIndexes(table, [{ name: 'x', type: 'int' }], { rows: [{ x: 1 }] }, [], null, { preAggregationBuildId: table });
+    await expect(driver.resumePreAggregationBuild(table)).resolves.toBe(true);
     const current = await (driver as any).preAggregationBuilds.read(table);
     expect(current.manifestHash).toBe(record.manifestHash);
+    expect(current.phase).toBe('ready');
   });
 
   it('does not mix regenerated changed inputs and moves a failed attempt to a new target', async () => {

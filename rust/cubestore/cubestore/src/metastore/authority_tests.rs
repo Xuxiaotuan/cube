@@ -49,6 +49,116 @@ fn authority_secret_debug_is_redacted() {
     assert_eq!(format!("{:?}", Secret("must-not-appear".into())), "[REDACTED]");
 }
 
+// Retain the last DB owner until every queued operation/store clone releases it.
+// Unwrapping and dropping the DB synchronously proves close, not just State detach.
+async fn close_authority_test_store(store: Arc<RocksMetaStore>) {
+    let db = store.store.db.clone();
+    store.stop_processing_loops().await;
+    drop(store);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while Arc::strong_count(&db) != 1 {
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("RocksDB still owned after store shutdown; reopen not proven");
+    drop(Arc::try_unwrap(db).unwrap_or_else(|_| panic!("RocksDB gained another owner before close")));
+}
+
+fn test_fence() -> Fence {
+    Fence { cluster_uid: "cube-uid".into(), lease_cluster_id: "cube/router".into(),
+        lease_uid: "lease-uid".into(), lease_generation: 1, epoch: 20,
+        holder_pod_name: "router-a".into(), holder_pod_uid: "router-a-uid".into(),
+        fence_digest: "sha256:test-first-fence".into() }
+}
+
+// Exercise the real durable writer with the same serialization as install_handler.
+// Authentication/instant Lease checks remain covered by the HTTPS matrix below.
+async fn install_test_fence(store: &Arc<RocksMetaStore>, state: &Arc<State>, fence: Fence,
+    until: Instant) -> Result<InstallAck, CubeError> {
+    let _lock = state.install_lock.lock().await;
+    store.install_authority(state.clone(), fence, until, "test-rv".into()).await
+}
+
+#[tokio::test]
+async fn authority_durability_renew_same_id_updates_validity() -> Result<(), CubeError> {
+    let dir = pki();
+    let name = "authority_durability_renew_same_id_updates_validity";
+    let (_, store) = RocksMetaStore::prepare_test_metastore(name);
+    let state = State::attach(&store, settings("https://127.0.0.1:1".into(), dir.path()));
+    let until = Instant::now() + Duration::from_secs(30);
+    let first = install_test_fence(&store, &state, test_fence(), until).await?;
+    for renewal in 1..=20 {
+        let deadline = until + Duration::from_secs(renewal);
+        let ack = install_test_fence(&store, &state, test_fence(), deadline).await?;
+        assert_eq!(ack.grant_id, first.grant_id);
+        let grants = state.grants.lock().unwrap();
+        assert_eq!(grants.len(), 1);
+        assert_eq!(grants.get(&ack.grant_id), Some(&(deadline, 0)));
+    }
+    drop(state);
+    close_authority_test_store(store).await;
+    RocksMetaStore::cleanup_test_metastore(name);
+    Ok(())
+}
+
+#[tokio::test]
+async fn authority_durability_rotations_keep_only_current_grant() -> Result<(), CubeError> {
+    let dir = pki();
+    let name = "authority_durability_rotations_keep_only_current_grant";
+    let (_, store) = RocksMetaStore::prepare_test_metastore(name);
+    let state = State::attach(&store, settings("https://127.0.0.1:1".into(), dir.path()));
+    let mut previous = None;
+    for rotation in 0..128 {
+        let mut fence = test_fence();
+        // Both same-epoch token rotation and advancing epochs allocate new IDs.
+        fence.epoch += rotation / 2;
+        fence.fence_digest = format!("sha256:test-rotation-{}", rotation);
+        let until = Instant::now() + Duration::from_secs(30);
+        let ack = install_test_fence(&store, &state, fence, until).await?;
+        {
+            let grants = state.grants.lock().unwrap();
+            assert_eq!(grants.len(), 1);
+            assert_eq!(grants.get(&ack.grant_id), Some(&(until, 0)));
+            if let Some(old) = previous { assert!(!grants.contains_key(&old)); }
+        }
+        let durable = store.read_operation("authority_rotation_record", |db| read_record(&db)).await?.unwrap();
+        assert_eq!(durable.ack.grant_id, ack.grant_id);
+        previous = Some(ack.grant_id);
+    }
+    drop(state);
+    close_authority_test_store(store).await;
+    RocksMetaStore::cleanup_test_metastore(name);
+    Ok(())
+}
+
+#[tokio::test]
+async fn authority_durability_failed_install_preserves_grant_and_deadline() -> Result<(), CubeError> {
+    let dir = pki();
+    let name = "authority_durability_failed_install_preserves_grant_and_deadline";
+    let (_, store) = RocksMetaStore::prepare_test_metastore(name);
+    let state = State::attach(&store, settings("https://127.0.0.1:1".into(), dir.path()));
+    let until = Instant::now() + Duration::from_secs(30);
+    let ack = install_test_fence(&store, &state, test_fence(), until).await?;
+    let before = state.grants.lock().unwrap().clone();
+    let durable_before = store.store.db.get(record_key())?;
+    let mut older = test_fence(); older.epoch -= 1;
+    let conflict = install_test_fence(&store, &state, older, until + Duration::from_secs(30)).await;
+    assert_eq!(conflict.err().unwrap().message, "AUTHORITY_STATE_CONFLICT");
+    assert_eq!(*state.grants.lock().unwrap(), before);
+    assert_eq!(store.store.db.get(record_key())?, durable_before);
+    let expired = install_test_fence(&store, &state, test_fence(), Instant::now() - Duration::from_secs(1)).await;
+    assert_eq!(expired.err().unwrap().message, "GRANT_STALE");
+    assert_eq!(*state.grants.lock().unwrap(), before);
+    assert_eq!(store.store.db.get(record_key())?, durable_before);
+    // The preserved grant still authorizes the real writer after both failures.
+    let context = RequestContext::Router { state: state.clone(), fence: test_fence(),
+        grant_id: ack.grant_id, until, revision: 0 };
+    REQUEST.scope(Some(context), store.create_schema("preserved-grant".into(), false)).await?;
+    drop(state);
+    close_authority_test_store(store).await;
+    RocksMetaStore::cleanup_test_metastore(name);
+    Ok(())
+}
+
 #[tokio::test]
 async fn authority_https_identity_grant_and_worker_matrix() -> Result<(), CubeError> {
     let dir = pki();
@@ -82,7 +192,7 @@ async fn authority_https_identity_grant_and_worker_matrix() -> Result<(), CubeEr
     let api_task = AbortingJoinHandle::new(tokio::spawn(api_future));
     let api_url = format!("https://{}", api_addr);
     let name = "authority_https_identity_grant_and_worker_matrix";
-    let (_, store) = RocksMetaStore::prepare_test_metastore(name);
+    let (remote_fs, store) = RocksMetaStore::prepare_test_metastore(name);
     store.create_schema("input".into(), false).await?;
     let table = store.create_table("input".into(), "rows".into(), vec![Column::new("n".into(),ColumnType::Int,0)],
         Some(vec!["file.csv".into()]), None, vec![], false, None,None,None,None,None,None,None,None,None,false,None).await?;
@@ -90,7 +200,7 @@ async fn authority_https_identity_grant_and_worker_matrix() -> Result<(), CubeEr
     let partition = store.get_active_partitions_by_index_id(index).await?[0].get_id();
     store.add_job(Job::new(RowKey::Table(TableId::Tables,table.get_id()),JobType::TableImportCSV("file.csv".into()),"worker".into())).await?;
     let state = State::attach(&store, settings(api_url.clone(), dir.path()));
-    let (address, listener) = listen(state.clone(), store.clone(), "127.0.0.1:0".parse().unwrap(), cert.clone(), key.clone());
+    let (address, mut listener) = listen(state.clone(), store.clone(), "127.0.0.1:0".parse().unwrap(), cert.clone(), key.clone());
     let url = format!("https://{}", address);
     let http = tls_client(&url, &dir.path().join("ca.crt").to_string_lossy(), Duration::from_secs(10))?;
     let install = json!({"protocolVersion":1});
@@ -137,16 +247,40 @@ async fn authority_https_identity_grant_and_worker_matrix() -> Result<(), CubeEr
     let publication:RpcReply=serde_json::from_value(publication).unwrap();
     assert!(matches!(publication.result,MetaStoreRpcMethodResult::publishImportChunks(Ok(()))));
     assert!(store.get_chunk(chunk.get_id()).await?.get_row().active());
-    // New process incarnation retains the same durable epoch high-water mark.
+    // Close the HTTPS task and the actual DB before reopening the identical path.
+    // This is local DB reopen, not snapshot recovery or missing-record recovery.
+    let db_path = store.store.db.path().to_path_buf();
+    let config = store.store.config.clone();
+    let durable_before = store.store.db.get(record_key())?.expect("durable grant missing before close");
+    listener._task.abort();
+    assert!((&mut listener._task).await.unwrap_err().is_cancelled());
     drop(listener);
+    drop(state);
+    close_authority_test_store(store).await;
+    let store = RocksMetaStore::new(&db_path,
+        crate::metastore::BaseRocksStoreFs::new_for_metastore(remote_fs, config.clone()), config)?;
+    assert_eq!(store.store.db.get(record_key())?.as_deref(), Some(durable_before.as_slice()));
     let restarted=State::attach(&store,settings(api_url,dir.path()));
-    let (address,new_listener)=listen(restarted,store.clone(),"127.0.0.1:0".parse().unwrap(),cert,key);
+    assert_ne!(restarted.incarnation, ack_b["serverIncarnation"].as_str().unwrap());
+    assert!(restarted.grants.lock().unwrap().is_empty());
+    let (address,mut new_listener)=listen(restarted.clone(),store.clone(),"127.0.0.1:0".parse().unwrap(),cert,key);
     let new_url=format!("https://{}",address);
     assert_eq!(post(&http,&new_url,"/v1/metastore/rpc",Some("router-b"),envelope(MetaStoreRpcMethodCall::createSchema("restart-old".into(),false),Some(&ack_b),None)).await.0,409);
     { let mut api=api_state.lock().unwrap(); api.holder="router-a".into(); api.epoch=20; api.token="first-token".into(); }
-    assert_eq!(post(&http,&new_url,"/v1/router-authority/install",Some("router-a"),install).await.0,409);
-    drop(new_listener); drop(state); drop(store); drop(api_task);
-    tokio::task::yield_now().await;
+    let (status, rejected) = post(&http,&new_url,"/v1/router-authority/install",Some("router-a"),install.clone()).await;
+    assert_eq!(status,409); assert_eq!(rejected["code"],"AUTHORITY_STATE_CONFLICT");
+    assert_eq!(store.store.db.get(record_key())?.as_deref(), Some(durable_before.as_slice()));
+    { let mut api=api_state.lock().unwrap(); api.holder="router-b".into(); api.epoch=21; api.token="second-token".into(); }
+    let (status, fresh) = post(&http,&new_url,"/v1/router-authority/install",Some("router-b"),install).await;
+    assert_eq!(status,200); assert_ne!(fresh["grantId"],ack_b["grantId"]);
+    assert_eq!(fresh["serverIncarnation"],restarted.incarnation);
+    let (_, good) = post(&http,&new_url,"/v1/metastore/rpc",Some("router-b"),envelope(MetaStoreRpcMethodCall::createSchema("reopened-authorized".into(),false),Some(&fresh),None)).await;
+    assert!(good["result"]["createSchema"]["Ok"].is_object(),"{}",good);
+    assert!(store.get_schema("restart-old".into()).await.is_err());
+    new_listener._task.abort();
+    assert!((&mut new_listener._task).await.unwrap_err().is_cancelled());
+    drop(new_listener); drop(restarted); drop(api_task);
+    close_authority_test_store(store).await;
     RocksMetaStore::cleanup_test_metastore(name);
     Ok(())
 }

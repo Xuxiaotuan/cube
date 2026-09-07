@@ -330,3 +330,46 @@ Go 新增断言还覆盖“已预留但 UID 尚未持久化时 Lease 丢失不�
 - Rust 编译仍有警告；Jest 有异步句柄延迟退出警告，最终正常退出，未开展额外句柄诊断。
 
 结论：上一检查点的三处定向问题已修复并通过对应测试；仍为整体 `implementation_incomplete / evidence_incomplete`，生产 `NO-GO`。不能把 76 项单测或本地 HTTPS fixture 提升成真实业务恢复证明。
+
+## 2026-09-07 恢复边界与持久授权整改
+
+本节是最新增量结果。已推进真实实现与测试，但未完成整套生产 HA；未部署或提交推送，未清理已有 UNKNOWN、业务表或数据卷。
+
+### 本轮已完成的局部工作
+
+| 范围 | 修复与验证 | 证据层级 |
+| --- | --- | --- |
+| Driver 恢复契约 | `resumePreAggregationBuild` 的 false 仅用于已有 selected 记录；缺 identity 或缺上传源保留 UNKNOWN，不触发原有重建策略；相同远端内容恢复后继续原 manifest | 44/44 源码测试通过，`tsc --noEmit` 通过；不是多实例 claim 的原子性证明 |
+| 授权 grant 有界存储 | 持久安装成功后在现有串行安装锁内仅保留当前 grant；失败不破坏原授权/deadline，不减少 Lease 校验 | 覆盖 20 次续约、128 次轮换和安装失败；不是性能压测 |
+| 实际 RocksDB 重开 | 等待 listener 退出，释放数据库引用并关闭原 DB，再同路径 reopen；校验持久记录、旧 incarnation/epoch 拒绝与新授权写入 | Rust authority 5/5 PASS；不是旧快照恢复、磁盘故障或授权记录丢失证明 |
+| Rust 编译和 RPC | lib/bins 编译退出 0，451.76 秒；authority 阶段 10.04 秒、用例执行 1.36 秒；task4_rpc 2/2 PASS、0.50 秒 | 本地编译与测试，没有新 Linux 镜像 |
+| Operator 安装入口 | `run-cubecluster.sh` 安装 authority RBAC，补 finalizers 权限，管理绑定名称按命名空间区分 | 1 个 Go 接线测试、2 个命名空间子用例 PASS；bash 语法通过 |
+| Kubernetes 接受清单 | orbstack、cube-ha-remediation 命名空间替换，3 个 authority RBAC 资源 server dry-run 通过 | 未真实创建对象，未测试实际 MetaStore SA 的 TokenReview 请求 |
+
+原始证据位于 `demo/k8s/evidence/2026-09-07-production-closure/`：
+
+- `driver-recovery-tests.log`、`driver-typecheck.log`：44 项测试与类型检查。
+- `driver-test-discovery-failure.log`、`driver-test-import-failure.log`：先前测试入口失败保留，均没有执行用例，不计为通过。
+- `driver-source-jest.cjs`：本机源码测试配置，包含此工作区绝对路径；其他机器需替换 root，依赖现有 ts-jest，不修改生成代码或 dist。
+- `rust-authority-durability.log`：完整编译、授权测试命令及输出。
+- `rust-task4-rpc.log`：本轮 RPC 回归。
+- `operator-install-wiring.log`：接线测试及 server dry-run。
+
+源码改动范围：Driver 及其恢复测试；`authority.rs`、`authority_tests.rs`；`run-cubecluster.sh`、`operator-rbac.yaml`、`config/rbac/authority.yaml` 和 `config/install_wiring_test.go`。
+
+### 仍需实现的核心事务，而不是环境借口
+
+现有 `PreAggregationBuildStore` 使用多个 CACHE SET NX 键保存身份、阶段、manifest、tableId 与 active 选择，保护表扫描也不是事务快照。因此，本轮 false 语义修复不能替代：
+
+1. MetaStore 单次串行写事务内的权威构建 claim、generation 与重放判断。
+2. generation、manifest、tableId 校验与发布的原子提交。
+3. 查询/构建引用与 retirement 的原子互斥，以及持有精确删除许可后的回收。
+4. 旧执行结果不确定时的安全对账，而不是看到 absent 就认定旧请求不可能再生效。
+
+这些属于 `implementation_incomplete`。不引入额外 Redis/PostgreSQL，也不能用另一个本地内存标记来冒充事务。历史 ledger 向新权威账本迁移需要明确维护边界；已向用户询问保留旧记录、停写迁移或在线兼容要求，尚未据此操作数据。
+
+### 运行及外部条件
+
+本轮只读确认仍为单节点 orbstack，本机可用磁盘约 17 GiB。没有擅自清理缓存、镜像或数据卷来腾空间，也没有进行大型镜像构建。构建资源与多节点测试环境已向用户询问。
+
+真实 strict 部署、暂停旧主/断网验收、Refresher 故障 E2E、快照/磁盘故障恢复、完整监控、负载、升级回滚与 RPO/RTO 仍未完成。环境条件不足记为 `external_blocked / evidence_incomplete`，不能掩盖上述事务代码尚未实现。
