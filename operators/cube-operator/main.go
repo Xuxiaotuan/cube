@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 
@@ -76,7 +75,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := mgr.Start(context.Background()); err != nil {
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		os.Exit(1)
 	}
 }

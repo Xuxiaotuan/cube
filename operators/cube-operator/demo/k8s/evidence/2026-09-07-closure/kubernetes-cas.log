@@ -1,0 +1,24 @@
+=== RUN   TestKubernetesLiveLeaseCAS
+    kubernetes_live_test.go:102: AUDIT context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-a2ef01b0-6b3a-4b68-b5ca-5d4c8c1ba283 contenders=8
+    kubernetes_live_test.go:149: AUDIT created uid=721cd3ab-c779-4e5f-8435-ed3020509ef7 epoch=1 lease=cube-ha-cas-test-a2ef01b0-6b3a-4b68-b5ca-5d4c8c1ba283
+I0907 11:51:27.906941    4346 request.go:697] Waited for 1.175729125s due to client-side throttling, not priority and fairness, request: GET:https://127.0.0.1:26443/apis/coordination.k8s.io/v1/namespaces/cube-ha-remediation/leases/cube-ha-cas-test-a2ef01b0-6b3a-4b68-b5ca-5d4c8c1ba283?timeout=10s
+    kubernetes_live_test.go:204: AUDIT concurrent winners=1 epoch=3 writes=8 apiConflicts=7
+    kubernetes_live_test.go:247: AUDIT staleRenew=rejected staleRelease=rejected release=epoch-preserved nextEpoch=4 cancelledWrites=0
+    kubernetes_live_test.go:130: AUDIT cleanup=deleted uidPrecondition=721cd3ab-c779-4e5f-8435-ed3020509ef7 lease=cube-ha-cas-test-a2ef01b0-6b3a-4b68-b5ca-5d4c8c1ba283
+--- PASS: TestKubernetesLiveLeaseCAS (3.22s)
+=== RUN   TestKubernetesLiveLeaseCAS
+    kubernetes_live_test.go:102: AUDIT context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-5945851a-04a4-407c-b5e8-26fe817b44a0 contenders=8
+    kubernetes_live_test.go:149: AUDIT created uid=fcd71784-5130-47d6-a587-bda1eaa14543 epoch=1 lease=cube-ha-cas-test-5945851a-04a4-407c-b5e8-26fe817b44a0
+    kubernetes_live_test.go:204: AUDIT concurrent winners=1 epoch=3 writes=8 apiConflicts=7
+    kubernetes_live_test.go:247: AUDIT staleRenew=rejected staleRelease=rejected release=epoch-preserved nextEpoch=4 cancelledWrites=0
+    kubernetes_live_test.go:130: AUDIT cleanup=deleted uidPrecondition=fcd71784-5130-47d6-a587-bda1eaa14543 lease=cube-ha-cas-test-5945851a-04a4-407c-b5e8-26fe817b44a0
+--- PASS: TestKubernetesLiveLeaseCAS (3.21s)
+=== RUN   TestKubernetesLiveLeaseCAS
+    kubernetes_live_test.go:102: AUDIT context=orbstack server=https://127.0.0.1:26443 namespace=cube-ha-remediation lease=cube-ha-cas-test-0f16c4f0-12fb-4b4e-bfb0-6b6c7bd6af1b contenders=8
+    kubernetes_live_test.go:149: AUDIT created uid=d5ef3279-5440-438d-8b5d-01b1eb6a4185 epoch=1 lease=cube-ha-cas-test-0f16c4f0-12fb-4b4e-bfb0-6b6c7bd6af1b
+    kubernetes_live_test.go:204: AUDIT concurrent winners=1 epoch=3 writes=8 apiConflicts=7
+    kubernetes_live_test.go:247: AUDIT staleRenew=rejected staleRelease=rejected release=epoch-preserved nextEpoch=4 cancelledWrites=0
+    kubernetes_live_test.go:130: AUDIT cleanup=deleted uidPrecondition=d5ef3279-5440-438d-8b5d-01b1eb6a4185 lease=cube-ha-cas-test-0f16c4f0-12fb-4b4e-bfb0-6b6c7bd6af1b
+--- PASS: TestKubernetesLiveLeaseCAS (3.21s)
+PASS
+ok  	github.com/cube-js/cube-operator/internal/leadership	10.104s

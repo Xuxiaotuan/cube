@@ -1,5 +1,9 @@
 # Cube Router HA 故障矩阵与可观测性
 
+## 版本和证据说明
+
+下文保留早期完整故障矩阵的目标与当时 NOT EXECUTED 状态，不代表当前“只测过 SELECT 1”。`e94954f2c4` 已有六项限定文件导入场景的分批真实数据证据；`87020e400f` 的控制面源码修改没有继承这些 PASS。后续工作区新增真实 Kubernetes CAS、Operator 接管及 API 数据核对，详见 [逐项收尾记录](HA-CLOSURE-2026-09-07.md)。这些均不能替代完整矩阵、多节点隔离或全局 SQL exactly-once 的验收。Kubernetes Lease 是当前部署选主介质；下文 Redis/PG 专属故障只适用于显式选择这些后端的部署，不是 Kubernetes 模式的必选组件。
+
 本文件是 Task 13 的执行与证据约定。它描述应如何检测故障、什么结果才算安全、如何回滚，以及必须归档什么证据。**本轮仅新增文档，以下所有条目均未执行；不得把预期结果当作实际结果。**
 
 ## 判定规则
@@ -48,3 +52,18 @@
 ```
 
 Task 13 的整体 acceptance 是至少 100 次重复 failover，并且 `rpo=0`、`duplicateCommitted=0`、`holders.overlap=0`，同时记录 agreed/measured RTO。当前没有任何该格式的归档输出，因此本文件中的结果字段全部保持未执行状态。
+
+## 2026-09-07 最新增量结果
+
+- 观测器缺失 data 漏判已修，6/6 测试通过。
+- Refresher 授权变量拼写已修，13/13 helper/wire 测试通过，但真实 Refresher 崩溃恢复仍未执行。
+- Rust RPC 类型错误已修，编译通过；TCP 旧 attempt 拒绝通过；CSV fixture 初始化失败，不能记 PASS。
+- Operator 重启与已有 rollup 的 Cube API 消费：60 秒，59 成功，0 不可用，0 数据偏差；leader/epoch 不变、EndpointSlice 匹配。
+- 当前不满足全矩阵/生产 GO。详情见 HA-CLOSURE-2026-09-07.md 本轮授权修复后的更新。
+
+### 同日第二轮修复增量
+
+- CSV fixture 初始化失败已修：当前源码编译成功，task4_rpc_ 两项真实 RPC 测试 2/2 通过，退出码 0。
+- Completed Job Pod 被误要求 Ready 已修：Refresher helper/wire 20/20 通过，语法检查通过。
+- 上述结果覆盖前文对应失败状态，但不替代真实 Refresher 崩溃恢复、最新 Linux 镜像部署或完整 K8s 故障矩阵。整体仍非生产 GO。
+- 原始日志：demo/k8s/evidence/2026-09-07-closure/approved-fixes/rust-rpc-setup-fix.log、refresher-completed-job-fix.log。

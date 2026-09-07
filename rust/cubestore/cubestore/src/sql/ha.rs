@@ -64,7 +64,7 @@ impl MutationGate {
         )
     }
 
-    pub(super) fn with_checker(strict: bool, check: Arc<Check>) -> Arc<Self> {
+    pub(crate) fn with_checker(strict: bool, check: Arc<Check>) -> Arc<Self> {
         Arc::new(Self {
             admission: Arc::new(Admission::default()),
             check,
@@ -113,6 +113,12 @@ impl MutationGate {
 }
 
 impl MutationGuard {
+    /// Propagate admission to a child without changing its output type. Publication
+    /// must still revalidate this identity; merely holding a permit is not a fence.
+    pub(crate) async fn scope<T>(&self, future: impl Future<Output = T>) -> T {
+        CURRENT_MUTATION.scope(self.clone(), future).await
+    }
+
     pub fn check(&self) -> Result<(), CubeError> {
         if (self.0.gate.check)()? != self.0.identity {
             return Err(CubeError::wrong_connection(

@@ -11,6 +11,10 @@ use std::io::{Cursor, Write};
 use std::future::Future;
 use crate::CubeError;
 
+#[cfg(test)]
+#[path = "job_attempt_rpc_tests.rs"]
+mod rpc_tests;
+
 /// Worker ownership, deliberately independent of the router leadership epoch.
 /// The job id is never reused; reclaim preserves it and advances generation.
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
@@ -35,7 +39,20 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    datafusion::cube_ext::spawn(JOB_ATTEMPT.scope(current_job_attempt(), future))
+    let attempt = current_job_attempt();
+    // This helper also serves router ingestion. Do not turn its children into
+    // unguarded writes. Durable job owners, however, survive router epoch changes.
+    let mutation = if attempt.is_none() {
+        crate::sql::ha::current_mutation()
+    } else {
+        None
+    };
+    datafusion::cube_ext::spawn(JOB_ATTEMPT.scope(attempt, async move {
+        match mutation {
+            Some(guard) => guard.scope(future).await,
+            None => future.await,
+        }
+    }))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]

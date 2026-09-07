@@ -1,0 +1,11 @@
+?   	github.com/cube-js/cube-operator	[no test files]
+?   	github.com/cube-js/cube-operator/api/v1alpha1	[no test files]
+ok  	github.com/cube-js/cube-operator/cmd/lease-agent	0.686s
+ok  	github.com/cube-js/cube-operator/controllers	1.130s
+--- FAIL: TestPromotionLeaseReadTimeoutFencesPreviousMarker (0.05s)
+    promotion_test.go:283: context deadline exceeded
+2026/09/07 11:43:49 lease sync failed: context canceled
+FAIL
+FAIL	github.com/cube-js/cube-operator/internal/agent	2.486s
+ok  	github.com/cube-js/cube-operator/internal/leadership	8.911s
+FAIL

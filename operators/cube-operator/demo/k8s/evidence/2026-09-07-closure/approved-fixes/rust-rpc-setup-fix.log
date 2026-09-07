@@ -1,0 +1,126 @@
+cwd=/Users/xujiawei/magic/workbench/cube/rust/cubestore
+CARGO_TARGET_DIR=/Users/xujiawei/magic/workbench/cube/rust/cubestore/target
+command=cargo +nightly-2025-08-01 test --locked --offline -p cubestore --lib task4_rpc_ -j 1 -- --test-threads=1 --nocapture
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.54s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 2 tests
+test metastore::job::rpc_tests::task4_rpc_old_attempt_is_rejected_after_tcp_pause ... ok
+test metastore::job::rpc_tests::task4_rpc_source_import_reconciles_lost_publish_and_finish_responses ... 2026-09-07T05:07:47.304Z INFO  [cubestore::metastore::rocks_fs] Creating metastore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/metastore
+2026-09-07T05:07:47.307Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: started
+2026-09-07T05:07:47.308Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: done
+2026-09-07T05:07:47.310Z TRACE [cubestore::metastore] create_table; schema_name="task4_rpc" table_name="rows" source_coulumns=None trace_obj=None drop_if_exists=false extension=None
+2026-09-07T05:07:47.311Z TRACE [cubestore::metastore] add_job; job=Job { row_reference: Table(Tables, 1), job_type: TableImportCSV("http://127.0.0.1:53551/rows.csv"), last_heart_beat: 2026-09-07T05:07:47.311437Z, status: Scheduled("task4-fixture-worker"), attempt: None, completed_imports: [] }
+2026-09-07T05:07:47.311Z TRACE [cubestore::metastore] start_processing_job; server_name="task4-fixture-worker" pool=Regular
+2026-09-07T05:07:47.312Z TRACE [cubestore::metastore] get_table_indexes; table_id=1
+2026-09-07T05:07:47.316Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-07T05:07:47.316Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-07T05:07:47.317Z TRACE [cubestore::metastore] get_partition; partition_id=1
+2026-09-07T05:07:47.317Z TRACE [cubestore::metastore] get_job; job_id=1
+2026-09-07T05:07:47.317Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-07T05:07:47.318Z TRACE [cubestore::metastore] add_job; job=Job { row_reference: Table(Tables, 1), job_type: TableImportCSV("http://127.0.0.1:53551/rows.csv"), last_heart_beat: 2026-09-07T05:07:47.317959Z, status: Scheduled("localhost"), attempt: None, completed_imports: [] }
+2026-09-07T05:07:47.326Z INFO  [cubestore::import] Import downloaded http://127.0.0.1:53551/rows.csv (9 bytes)
+2026-09-07T05:07:47.326Z TRACE [cubestore::metastore] update_location_download_size; id=1 location="http://127.0.0.1:53551/rows.csv" download_size=9
+2026-09-07T05:07:47.327Z TRACE [cubestore::metastore] get_table_indexes_out_of_queue; table_id=1
+2026-09-07T05:07:47.328Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-07T05:07:47.328Z TRACE [cubestore::store] partition_rows_for_index; index=IdRow { id: 1, row: Index { name: "default", table_id: 1, columns: [Column { name: "n", column_type: Int, column_index: 0 }], sort_key_size: 1, partition_split_key_size: None, multi_index_id: None, index_type: Regular } } table=IdRow { id: 1, row: Table { table_name: "rows", schema_id: 1, columns: [Column { name: "n", column_type: Int, column_index: 0 }], locations: Some(["http://127.0.0.1:53551/rows.csv"]), import_format: Some(CSVNoHeader), has_data: false, import_error: None, is_ready: false, created_at: Some(2026-09-07T05:07:47.311023Z), build_range_end: None, seal_at: None, sealed: false, select_statement: None, source_columns: None, stream_offset: None, unique_key_column_indices: None, aggregate_column_indices: [], seq_column_index: None, location_download_sizes: Some([9]), partition_split_threshold: None, extension: None } } preset_partitions=None in_memory=false
+2026-09-07T05:07:47.328Z TRACE [cubestore::metastore] get_active_partitions_by_index_id; index_id=1
+2026-09-07T05:07:47.330Z TRACE [cubestore::metastore] create_chunk; partition_id=1 row_count=3 min=Some(Row { values: [Int(11)] }) max=Some(Row { values: [Int(33)] }) in_memory=false
+2026-09-07T05:07:47.330Z TRACE [cubestore::store] New chunk allocated during partitioning: IdRow { id: 1, row: Chunk { partition_id: 1, row_count: 3, uploaded: false, active: false, job_id: Some(1), job_generation: Some(1), last_used: None, in_memory: false, created_at: Some(2026-09-07T05:07:47.330294Z), oldest_insert_at: Some(2026-09-07T05:07:47.330294Z), deactivated_at: None, suffix: Some("isvnxawf"), file_size: None, replay_handle_id: None, min: Some(Row { values: [Int(11)] }), max: Some(Row { values: [Int(33)] }) } }
+2026-09-07T05:07:47.334Z TRACE [cubestore::util::lock] Wait for lock; name="upload loop deleted"
+2026-09-07T05:07:47.334Z DEBUG [cubestore::remotefs] Uploading 1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.337Z TRACE [cubestore::metastore] get_job; job_id=1
+2026-09-07T05:07:47.337Z TRACE [cubestore::metastore] get_active_partitions_and_chunks_by_index_id_for_select; index_id=[1]
+2026-09-07T05:07:47.338Z TRACE [cubestore::metastore] table_ready; id=1 is_ready=true
+2026-09-07T05:07:47.338Z TRACE [cubestore::metastore] get_job; job_id=1
+2026-09-07T05:07:47.339Z TRACE [cubestore::metastore] start_processing_job; server_name="task4-fixture-worker" pool=Regular
+2026-09-07T05:07:47.339Z TRACE [cubestore::metastore] get_table_by_id; table_id=1
+2026-09-07T05:07:47.340Z TRACE [cubestore::metastore] get_job; job_id=1
+2026-09-07T05:07:47.340Z TRACE [cubestore::metastore] get_job; job_id=1
+2026-09-07T05:07:47.341Z TRACE [cubestore::metastore] table_ready; id=1 is_ready=true
+2026-09-07T05:07:47.341Z TRACE [cubestore::metastore] get_active_partitions_and_chunks_by_index_id_for_select; index_id=[1]
+2026-09-07T05:07:47.343Z TRACE [cubestore::sql] exec_query_unfenced; context=SqlQueryContext { user: None, inline_tables: [], trace_obj: None, process_id: None, parameters: None } query="SELECT n FROM task4_rpc.rows ORDER BY n"
+2026-09-07T05:07:47.343Z TRACE [cubestore::sql] Query: 'SELECT n FROM task4_rpc.rows ORDER BY n'
+2026-09-07T05:07:47.347Z TRACE [cubestore::metastore] get_tables_with_path; include_non_ready=false
+2026-09-07T05:07:47.351Z TRACE [cubestore::queryplanner] Initial Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "task4_rpc", table: "rows" }), name: "n" }), asc: true, nulls_first: false }]
+  Projection, [task4_rpc.rows.n:n]
+    Scan task4_rpc.rows, source: CubeTableLogical, fields: *
+2026-09-07T05:07:47.353Z TRACE [cubestore::queryplanner] Logical Plan: Sort, by: [Sort { expr: Column(Column { relation: Some(Partial { schema: "task4_rpc", table: "rows" }), name: "n" }), asc: true, nulls_first: false }]
+  Scan task4_rpc.rows, source: CubeTableLogical, fields: *
+2026-09-07T05:07:47.354Z TRACE [cubestore::metastore] get_tables_with_indexes; table_name=[("task4_rpc", "rows")]
+2026-09-07T05:07:47.355Z TRACE [cubestore::metastore] get_active_partitions_and_chunks_by_index_id_for_select; index_id=[1]
+2026-09-07T05:07:47.355Z TRACE [cubestore::queryplanner::planning] Extracted partition filter is PartitionFilter { min_max: [] }
+2026-09-07T05:07:47.355Z TRACE [cubestore::queryplanner::planning] Pruned 0 of 1 partitions
+2026-09-07T05:07:47.356Z TRACE [cubestore::metastore] get_multi_partition_subtree; multi_part_ids=[]
+2026-09-07T05:07:47.358Z TRACE [cubestore::sql::cache] Missing cache for 'SELECT n FROM task4_rpc.rows ORDER BY n'
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_check_memory_exec:
+Sort, by: [n@0 nulls last]
+  ClusterSend, partitions: [[1]]
+    Scan, index: default:1:[1]:sort_on[n], fields: *
+      Sort, by: [n@0]
+        Empty
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_trace_data_loaded_exec:
+Sort, by: [n@0 nulls last]
+  ClusterSend, partitions: [[1]]
+    Scan, index: default:1:[1]:sort_on[n], fields: *
+      Sort, by: [n@0]
+        Empty
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_limit_to_workers:
+Sort, by: [n@0 nulls last]
+  ClusterSend, partitions: [[1]]
+    Scan, index: default:1:[1]:sort_on[n], fields: *
+      Sort, by: [n@0]
+        Empty
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by replace_suboptimal_merge_sorts:
+Sort, by: [n@0 nulls last]
+  ClusterSend, partitions: [[1]]
+    Scan, index: default:1:[1]:sort_on[n], fields: *
+      Sort, by: [n@0]
+        Empty
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by push_worker_sort_and_limit:
+Sort, by: [n@0 nulls last]
+  ClusterSend, partitions: [[1]]
+    Scan, index: default:1:[1]:sort_on[n], fields: *
+      Sort, by: [n@0]
+        Empty
+2026-09-07T05:07:47.362Z TRACE [cubestore::queryplanner::query_executor] Router Query Physical Plan: Sort
+  ClusterSend, partitions: [[1]]
+2026-09-07T05:07:47.363Z DEBUG [cubestore::cluster] Running select
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_check_memory_exec:
+Worker
+  Scan, index: default:1:[1]:sort_on[n], fields: *
+    ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_trace_data_loaded_exec:
+Worker
+  Scan, index: default:1:[1]:sort_on[n], fields: *
+    TraceDataLoadedExec
+      ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by add_limit_to_workers:
+Worker
+  Scan, index: default:1:[1]:sort_on[n], fields: *
+    TraceDataLoadedExec
+      ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by replace_suboptimal_merge_sorts:
+Worker
+  Scan, index: default:1:[1]:sort_on[n], fields: *
+    TraceDataLoadedExec
+      ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::optimizations] Rewrote physical plan by push_worker_sort_and_limit:
+Worker
+  Scan, index: default:1:[1]:sort_on[n], fields: *
+    TraceDataLoadedExec
+      ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.365Z TRACE [cubestore::queryplanner::query_executor] Partition Query Physical Plan: Scan, index: default:1:[1]:sort_on[n], fields: *
+  TraceDataLoadedExec
+    ParquetScan, files: Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/1-isvnxawf.chunk.parquet
+2026-09-07T05:07:47.367Z DEBUG [cubestore::queryplanner::query_executor] Partition Query data processing time: 1.697ms
+2026-09-07T05:07:47.367Z INFO  [cubestore::cluster] Running select completed (3.854ms)
+2026-09-07T05:07:47.368Z DEBUG [cubestore::queryplanner::query_executor] Query data processing time: 5.711ms
+2026-09-07T05:07:47.371Z DEBUG [cubestore::remotefs] Deleting 1-isvnxawf.chunk.parquet
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 356 filtered out; finished in 0.10s
+
+
+exit_code=0 elapsed_seconds=47.84

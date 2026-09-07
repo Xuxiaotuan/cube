@@ -1,0 +1,30 @@
+✔ topology permits unchanged Succeeded Job without Ready, alongside ready services (2.034125ms)
+✔ topology does not exempt Failed Job even with a stale Ready condition (0.520041ms)
+✔ topology does not exempt a running not-Ready Job (0.088625ms)
+✔ topology does not exempt Succeeded service or ownerless Pod (0.182583ms)
+✔ topology rejects missing service and replacement with the same name but different UID (0.110084ms)
+✔ completed Job exemption preserves presence, deletion, image and restart checks (1.088792ms)
+✔ topology still rejects an ordinary running service losing readiness (0.073125ms)
+✔ classifier matches exact run, CACHE key and CREATE tracing, not embedded text (5.650333ms)
+✔ uploaded: gate holds subsequent/reconnected traffic until explicit release (0.327792ms)
+✔ create-sent: gate holds subsequent/reconnected traffic until explicit release (0.142625ms)
+✔ physical-ready-ledger-unacked: gate holds subsequent/reconnected traffic until explicit release (0.113084ms)
+✔ gate rejects missing process attribution, invalid modes and premature release (0.17125ms)
+✔ recovery evidence accepts stable identity, immutable manifest and real table identity (0.127291ms)
+✔ recovery evidence rejects fork, manifest drift, missing ack and table replacement (0.919667ms)
+✔ scheduler proof refuses API activity and wrong pod/process/run (0.222ms)
+✔ bounded integer and deadline helpers fail rather than fabricate completion (0.686875ms)
+✔ controller authorization is exact and checked before any kubectl call (622.226666ms)
+✔ uploaded: external wire gate survives client death and discards held writes (75.419125ms)
+✔ create-sent: external wire gate survives client death and discards held writes (287.748959ms)
+✔ physical-ready-ledger-unacked: external wire gate survives client death and discards held writes (38.350917ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1139.532084
+
+RESULT helper=0 runner_syntax=0 test_syntax=0 shell_syntax=0

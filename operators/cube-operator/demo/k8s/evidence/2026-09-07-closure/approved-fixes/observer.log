@@ -1,0 +1,14 @@
+✔ checks exact aggregate totals and canonical order (16.617083ms)
+✔ rejects missing and duplicated groups (0.162375ms)
+✔ rejects incorrect business totals (0.158292ms)
+✔ does not silently round large integer aggregates (0.552875ms)
+✔ rejects non-integer values (0.076666ms)
+✔ HTTP success without data fails the CLI even after valid queries resume (10142.811041ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10262.71125

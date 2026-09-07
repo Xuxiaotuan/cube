@@ -1,0 +1,11 @@
+{"event":"query","elapsedMs":0,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":1444,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":2476,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":3506,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":4531,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":5563,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":6603,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":7641,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":8673,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"query","elapsedMs":9710,"totals":["4096","142653440","22914881536"],"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784"}
+{"event":"result","status":"PASS","run":"rf8f47788f4d404f8","good":10,"unavailable":0,"mismatch":0,"maxRecoveryMs":0,"hash":"2cc18a091c142902cc2af305542fe869977e259e071d155313df90d8bc189784","scope":"Cube API consumption of an existing rollup; cache may serve reads; not fresh-build recovery or per-query Router execution proof"}

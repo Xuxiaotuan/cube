@@ -19,6 +19,9 @@ var errLeaseStateLost = errors.New("LeaseStateLost: missing authoritative Lease 
 // block bootstrap rather than silently recreate epoch 1. This is deliberately
 // fail-closed, not a cross-resource transaction or an automatic restore protocol.
 func (r *CubestoreRouterReconciler) reserveLeaseBootstrap(ctx context.Context, cr *v1alpha1.CubestoreRouter) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if r.APIReader == nil {
 		return errors.New("Lease bootstrap requires an uncached APIReader")
 	}
@@ -45,6 +48,17 @@ func (r *CubestoreRouterReconciler) reserveLeaseBootstrap(ctx context.Context, c
 	}
 	if err == nil && (cm.Annotations[leaseEpochAnnotation] != "" || cm.Annotations[leaseTokenAnnotation] != "" || len(cm.Data) > 0) {
 		return errLeaseStateLost
+	}
+	// Surviving Pods can retain fencing history even when the CR or marker
+	// has been restored from an older backup. Never bootstrap over that history.
+	pods := &corev1.PodList{}
+	if err := r.APIReader.List(ctx, pods, client.InNamespace(namespace), client.MatchingLabels(fresh.Spec.Selector)); err != nil {
+		return err
+	}
+	for _, pod := range pods.Items {
+		if pod.Annotations[leaseEpochAnnotation] != "" || pod.Annotations[leaseTokenAnnotation] != "" {
+			return errLeaseStateLost
+		}
 	}
 	if fresh.Annotations == nil {
 		fresh.Annotations = map[string]string{}

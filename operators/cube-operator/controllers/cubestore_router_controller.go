@@ -95,6 +95,9 @@ func (r *CubestoreRouterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return ctrl.Result{}, err
+	}
 	log := ctrl.Log.WithValues("cubestore-router", req.NamespacedName)
 
 	var cr v1alpha1.CubestoreRouter
@@ -220,6 +223,9 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *v1alpha1.CubestoreRouter, candidates []candidate) (*candidate, leadership.LeaseRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, leadership.LeaseRecord{}, err
+	}
 	store, closeStore, err := r.routerLeaseStore(ctx, cr)
 	if err != nil {
 		return nil, leadership.LeaseRecord{}, err
@@ -249,14 +255,14 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 				local, owned = current, true
 			}
 		}
-		if owned && local.HolderID == current.HolderID && local.Token == current.Token {
+		if owned && leadership.ValidateLeaseFence(current, local) == nil {
 			renewed, renewedOK, renewErr := store.Renew(ctx, local, routerLeaseTTL(cr))
 			if renewErr != nil {
 				return nil, current, renewErr
 			}
 			if !renewedOK {
 				r.clearLocalRouterLease(clusterID, local.Token)
-				return nil, current, nil
+				return nil, current, leadership.ErrStaleLease
 			}
 			r.setLocalRouterLease(clusterID, renewed)
 			current = renewed

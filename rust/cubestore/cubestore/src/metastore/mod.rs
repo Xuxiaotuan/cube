@@ -1765,11 +1765,26 @@ impl RocksMetaStore {
         // Capture before queueing: the RocksDB writer runs on another task/thread.
         // Ownership validation and the actual publication share one serial write.
         let attempt = current_job_attempt();
+        let mutation = if attempt.is_none() {
+            crate::sql::ha::current_mutation()
+        } else {
+            None
+        };
         self.store
             .write_operation_impl(&self.store.rw_loop_default_cf, op_name, move |db, pipe| {
+                if let Some(ref mutation) = mutation {
+                    // Recheck after queueing, not only at SQL admission. This is
+                    // local lease validation, not an atomic remote-router fence.
+                    mutation.check()?;
+                }
                 if let Some(ref attempt) = attempt {
-                    JobRocksTable::new(db.clone()).get_row_or_not_found(attempt.job_id)?
-                        .get_row().check_owner(attempt)?;
+                    // Completion validates its explicit token below and permits
+                    // the same terminal result after a lost RPC response. The
+                    // generic ProcessingBy check would reject that safe retry.
+                    if op_name != "finish_job_attempt" {
+                        JobRocksTable::new(db.clone()).get_row_or_not_found(attempt.job_id)?
+                            .get_row().check_owner(attempt)?;
+                    }
                 }
                 JOB_ATTEMPT.sync_scope(attempt, || f(db, pipe))
             }, self.clone())

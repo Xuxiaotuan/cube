@@ -635,6 +635,12 @@ export class RefreshScheduler {
                   throw e;
                 }
 
+                // Unknown is not a source failure. Keep the iterator on the same
+                // logical build so the next tick reconciles its durable identity.
+                if (e.code === 'MUTATION_UNKNOWN' || e.name === 'MutationUnknownError') {
+                  throw e;
+                }
+
                 // Real datasource error - apply exponential backoff
                 for (const p of currentQuery.preAggregations) {
                   let backoffData = await preAggsInstance.getPreAggBackoff(p.tableName);

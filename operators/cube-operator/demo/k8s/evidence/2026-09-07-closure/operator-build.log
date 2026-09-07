@@ -1,0 +1,68 @@
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 593B done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 DONE 1.4s
+
+#3 docker-image://docker.io/docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#3 CACHED
+
+#4 [internal] load metadata for gcr.io/distroless/static:nonroot
+#4 ...
+
+#5 [internal] load metadata for docker.io/library/golang:1.25
+#5 DONE 0.4s
+
+#4 [internal] load metadata for gcr.io/distroless/static:nonroot
+#4 DONE 1.4s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.0s
+
+#7 [build 1/7] FROM docker.io/library/golang:1.25@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80
+#7 DONE 0.0s
+
+#8 [stage-1 1/4] FROM gcr.io/distroless/static:nonroot@sha256:1c2c046bc09ed40fad370b599a0b1ae7987f55b01e247cf27a7c27cd97e5bbc7
+#8 DONE 0.0s
+
+#9 [internal] load build context
+#9 transferring context: 2.32MB 0.1s done
+#9 DONE 0.1s
+
+#10 [build 2/7] WORKDIR /src
+#10 CACHED
+
+#11 [build 3/7] COPY go.mod go.sum ./
+#11 CACHED
+
+#12 [build 4/7] RUN go mod download
+#12 CACHED
+
+#13 [build 5/7] COPY . ./
+#13 DONE 0.3s
+
+#14 [build 6/7] RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/cube-operator .
+#14 DONE 41.1s
+
+#15 [build 7/7] RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /out/lease-agent ./cmd/lease-agent
+#15 DONE 2.6s
+
+#8 [stage-1 1/4] FROM gcr.io/distroless/static:nonroot@sha256:1c2c046bc09ed40fad370b599a0b1ae7987f55b01e247cf27a7c27cd97e5bbc7
+#8 CACHED
+
+#16 [stage-1 2/4] COPY --from=build /out/cube-operator /usr/local/bin/cube-operator
+#16 DONE 0.1s
+
+#17 [stage-1 3/4] COPY --from=build /out/lease-agent /usr/local/bin/lease-agent
+#17 DONE 0.1s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 0.2s done
+#18 writing image sha256:fe9c58cbe3ea516a5b522cd3b160730646bfc3c45bde743629392cd466efbcb9 done
+#18 naming to docker.io/library/cube-operator:ha-closure-20260907 done
+#18 DONE 0.2s

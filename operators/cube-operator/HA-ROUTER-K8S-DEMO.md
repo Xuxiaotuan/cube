@@ -1,5 +1,13 @@
 # Cube Router 主备 HA：Kubernetes 演示与验证报告
 
+## 12 项收尾工作最新状态：仍未全部完成
+
+本次在 `87020e400f` 之后继续修改，当前为未提交工作区，不能作为生产发布。详见 [12 项逐项记录](HA-CLOSURE-2026-09-07.md) 和 [本次原始证据](demo/k8s/evidence/2026-09-07-closure/README.md)。下文“控制面评审后的源码优化（尚未运行验收）”描述的是上一个提交的历史状态，不是本次新增测试的结果。
+
+已执行：全量 Go 测试通过；真实 Kubernetes Lease CAS 3 轮通过，每轮 8 个竞争者、1 个胜者、7 次冲突；新 Operator 镜像已部署到本地演示命名空间，接管前后 Router leader 相同、epoch 均为 20。随后 Cube API 返回 16 个分组，行数/金额/校验和分别为 4096、142653440、22914881536，核对通过。
+
+未完成：新增 Rust RPC 测试仍有编译错误，新增 Refresher 崩溃脚本有语法错误，查询观测器有漏判边界；完整 GC、积压与容量监控、统一发布产物故障矩阵、多节点灾备仍未闭环。因此 **ProductionReady=False，不能宣布 12/12 完成**。仅 Operator 镜像更新，Router/API/Worker/MetaStore/Refresher 未部署本次新增代码；旧六项 PASS 不继承到本次工作区。
+
 ## 控制面评审后的源码优化（尚未运行验收）
 
 本节是对基线 `e94954f2c4d0b99b8547f540ea7ae00ede937f4c` 的后续修改，不改变下文历史六项 PASS 的版本归属。本轮未运行测试、构建镜像或部署；状态为 **evidence_incomplete**，不能据此改为 ProductionReady=True。
@@ -570,3 +578,32 @@ kubectl -n cube-operator-demo get endpointslice -l kubernetes.io/service-name=cu
 ## 11. 汇报用一句话
 
 > 我们已经把 Cube Router 做成了 Kubernetes 上的单写主备：Operator 负责选主和任期，Service 只暴露 leader，两个 Router 共享对象存储；真实 Cube API 在删除 leader 后切换到新 leader，切换前后 12 行数据、金额 780 和结果 hash 全部一致。当前默认运行在 Kubernetes lease 后端，生产发布前还必须补齐非幂等写恢复、任务接管、MetaStore/对象存储高可用以及完整故障回归。
+
+## 2026-09-07 授权修复及重跑更新
+
+本节覆盖此前三个测试问题的旧状态；详细说明见 [本轮闭环记录](HA-CLOSURE-2026-09-07.md)。
+
+| 验证 | 本轮实际结果 |
+| --- | --- |
+| 查询观测器 | 6/6，通过真实 HTTP CLI 验证缺失 data 不再漏判 |
+| Refresher 演示脚本 | 授权变量拼写已修；13/13 helper/wire 测试通过；真实崩溃恢复未执行 |
+| Rust RPC | 类型错误已修，编译通过；旧 attempt 拒绝通过；CSV 初始化失败，尚未通过 |
+| Operator 重启 + Cube API | 60 秒、59 次成功、0 次不可用、0 次偏差；4096 行、amount=142653440、checksum=22914881536 |
+| Router 状态 | leader 保持 analytics-router-69457448dc-vm9nn，epoch 保持 20，EndpointSlice 匹配 |
+
+该重启测试消费已有 rollup，允许缓存命中；不是 Router 切主、新建 pre-aggregation 或 Refresher 崩溃恢复的替代证据。新发现 CSV fixture 事件订阅初始化顺序、Completed Job Pod 被误要求 Ready 两个阻塞，尚未修复。仍不能给出生产 GO；本轮未提交或推送。
+
+原始证据目录：`demo/k8s/evidence/2026-09-07-closure/approved-fixes/`。
+
+### 同日第二轮授权修复：最新结果
+
+上一节新发现的两个测试阻塞现已修复：
+
+| 项目 | 最新结果 |
+| --- | --- |
+| Rust CSV fixture 初始化顺序 | 修正后编译成功；两项真实 RPC 测试 2/2 通过，含旧 attempt 拒绝及 CSV 导入响应丢失恢复 |
+| Completed Job Pod Ready 误判 | 仅豁免成功完成的 Job Pod；20/20 helper/wire 测试及语法检查通过 |
+
+原始日志保存在 `demo/k8s/evidence/2026-09-07-closure/approved-fixes/`，详情见 [闭环记录](HA-CLOSURE-2026-09-07.md)。此前失败记录作为历史保留。
+
+这些是本地测试层的修复与验收，不是最新镜像的完整 K8s 验收。真实 Refresher 崩溃恢复仍未执行，屏障/Ready 依赖、unfinished ledger 门禁及固定 API Pod IP 限制仍需确认；整体仍不能判定生产 GO。本轮未提交、未推送。

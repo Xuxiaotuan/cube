@@ -402,6 +402,78 @@ describe('real gzip manifests after refresh worker loss', () => {
   });
 });
 
+describe('shared ledger maintenance after refresher restart', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['uploading', 'uploaded', 'create'] as const)('recovers %s in a new driver without local queue state', async phase => {
+    const h = harness();
+    const selected = await h.driver.resolvePreAggregationBuild('restart', versionEntry, ['s.old']);
+    const store = (h.driver as any).preAggregationBuilds as PreAggregationBuildStore;
+    await store.save({ ...selected!, phase, uploads: [],
+      create: { sql: 'CREATE TABLE t LOCATION ?', params: ['temp://immutable.csv.gz'] } });
+    // Upload completion / dispatched CREATE / physical ready without ready marker.
+    if (phase === 'create') h.status.mockResolvedValue(await readyStatus(h.driver, 42));
+    h.onCreate(async () => { h.status.mockResolvedValue(await readyStatus(h.driver, 42)); return []; });
+    const restarted = new CubeStoreDriver({ host: 'localhost' });
+    jest.spyOn(restarted, 'query').mockImplementation((h.driver.query as jest.Mock).getMockImplementation() as any);
+    jest.spyOn(restarted, 'getPreAggregationBuildStatus').mockImplementation(name => h.driver.getPreAggregationBuildStatus(name));
+    jest.spyOn(restarted as any, 'sleep').mockResolvedValue(undefined);
+    await expect(restarted.resumePreAggregationBuild(table)).resolves.toBe(true);
+    expect(await store.read(table)).toMatchObject({ buildId: table, phase: 'ready', tableId: '42' });
+    expect(h.creates).toHaveLength(phase === 'create' ? 0 : 1);
+    await expect(restarted.resumePreAggregationBuild(table)).resolves.toBe(true);
+    expect(h.creates).toHaveLength(phase === 'create' ? 0 : 1);
+  });
+
+  it('preserves UNKNOWN and shared references during targeted recovery', async () => {
+    const { driver, cache, status } = harness();
+    const selected = await driver.resolvePreAggregationBuild('unknown', versionEntry, ['s.old']);
+    const store = (driver as any).preAggregationBuilds as PreAggregationBuildStore;
+    await store.save({ ...selected!, phase: 'create', create: { sql: 'CREATE TABLE t LOCATION ?', params: ['temp://same'] } });
+    status.mockResolvedValue({ state: 'unknown' });
+    const before = [...cache.entries()];
+    await expect(driver.resumePreAggregationBuild(table)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect([...cache.entries()]).toEqual(before);
+    expect(await store.protectedTables()).toEqual([table, 's.old']);
+  });
+
+  it('scans all 257 identities with at most eight in-flight reads, matching serial protection', async () => {
+    const records = Array.from({ length: 257 }, (_, i) => ({
+      buildId: `s.t${i}`, versionEntry, phase: i % 3 ? 'selected' : 'ready', protectedTables: [`s.old${i}`],
+    }));
+    let inFlight = 0;
+    let peak = 0;
+    const store = new PreAggregationBuildStore(async (sql, values) => {
+      if (sql === 'CACHE KEYS ?') return records.map(r => ({ key: `PRE_AGG_BUILD_V1:${r.buildId}` }));
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise(resolve => setImmediate(resolve));
+      inFlight--;
+      const key = values[0];
+      const record = records.find(r => key === `PRE_AGG_BUILD_V1:${r.buildId}` ||
+        (r.phase === 'ready' && key === `PRE_AGG_PHASE_V1:${r.buildId}:ready`));
+      return record ? [{ value: JSON.stringify(record) }] : [];
+    });
+    const expected = records.filter(r => r.phase === 'selected').flatMap(r => [r.buildId, ...r.protectedTables]);
+    expect((await store.protectedTables()).sort()).toEqual(expected.sort());
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  it('follows more than 100 terminal attempts without treating history as absent', async () => {
+    const { driver } = harness();
+    const store = (driver as any).preAggregationBuilds as PreAggregationBuildStore;
+    const candidate = { buildId: table, versionEntry, protectedTables: [], phase: 'selected' as const };
+    for (let i = 0; i < 105; i++) {
+      const selected = await store.resolve('long-chain', candidate);
+      await store.save({ ...selected, phase: 'failed' });
+    }
+    const next = await store.resolve('long-chain', candidate);
+    expect(next.phase).toBe('selected');
+    expect(next.versionEntry.last_updated_at).toBe(106000);
+  });
+});
+
 describe('content-addressed upload recovery', () => {
   let dir: string;
   let upload: { path: string; name: string; sha256: string; size: number };

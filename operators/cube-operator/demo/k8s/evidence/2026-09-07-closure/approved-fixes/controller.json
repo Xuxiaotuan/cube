@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "exitCode": 0,
+  "leader": "analytics-router-69457448dc-vm9nn",
+  "epoch": 20,
+  "apiPod": "analytics-api-8d47d47-52mxd",
+  "scope": "operator restart plus existing rollup consumption"
+}

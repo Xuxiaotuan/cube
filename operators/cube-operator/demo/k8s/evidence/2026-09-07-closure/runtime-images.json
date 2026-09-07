@@ -1,0 +1,169 @@
+{
+  "observedAt": "2026-09-07T03:55:24Z",
+  "items": [
+    {
+      "name": "analytics-api-8d47d47-52mxd",
+      "uid": "40ff853a-59c0-413b-a760-66e47ef35817",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "analytics-api",
+          "image": "cube-studio-api:ha-remediation-20260907-refresher",
+          "imageID": "docker://sha256:93e4da2a3f7683e0ebfca054b8bb4b9a76e6e0003d2ec67ba171cc25e4eb47ec",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-metastore-0",
+      "uid": "8708c27d-72cf-4f23-8733-631b9c116a50",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "analytics-metastore",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "imageID": "docker://sha256:c150d9bd1c091035cf07de8bd70efeda3d506cacd20a0b256dc373df9c30355f",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-refresher-7d4bfb9b78-mqhfg",
+      "uid": "03712823-ffc3-4ca1-8803-1d68a52ef2cf",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "analytics-refresher",
+          "image": "cube-studio-api:ha-remediation-20260907-refresher",
+          "imageID": "docker://sha256:93e4da2a3f7683e0ebfca054b8bb4b9a76e6e0003d2ec67ba171cc25e4eb47ec",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-router-69457448dc-fx9nc",
+      "uid": "ce53c1af-5c9e-49b1-88cd-3a4f9922663d",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "cube-studio-router",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "imageID": "docker://sha256:c150d9bd1c091035cf07de8bd70efeda3d506cacd20a0b256dc373df9c30355f",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "lease-agent",
+          "image": "cube-operator:ha-remediation-20260907-cutover",
+          "imageID": "docker://sha256:8edd49c362235bff66cd80a39159cc1f4ba8ed54ad063f83f2b05136fdb45b69",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-router-69457448dc-vm9nn",
+      "uid": "f4e8a417-ff2b-4f24-9069-5798efbf8357",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "cube-studio-router",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "imageID": "docker://sha256:c150d9bd1c091035cf07de8bd70efeda3d506cacd20a0b256dc373df9c30355f",
+          "ready": true,
+          "restartCount": 0
+        },
+        {
+          "name": "lease-agent",
+          "image": "cube-operator:ha-remediation-20260907-cutover",
+          "imageID": "docker://sha256:8edd49c362235bff66cd80a39159cc1f4ba8ed54ad063f83f2b05136fdb45b69",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-worker-0",
+      "uid": "3ed798d2-ece8-4536-a07c-3e35af5d4805",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "analytics-worker",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "imageID": "docker://sha256:c150d9bd1c091035cf07de8bd70efeda3d506cacd20a0b256dc373df9c30355f",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "analytics-worker-1",
+      "uid": "6e68fa6b-d32f-45cf-bf84-3bee833f6838",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "analytics-worker",
+          "image": "cube-studio-router:ha-remediation-20260907-final",
+          "imageID": "docker://sha256:c150d9bd1c091035cf07de8bd70efeda3d506cacd20a0b256dc373df9c30355f",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "cube-operator-7f75595ccb-krrk5",
+      "uid": "67edc153-3ce5-41b7-8fc4-54059fb115d9",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "manager",
+          "image": "cube-operator:ha-closure-20260907",
+          "imageID": "docker://sha256:fe9c58cbe3ea516a5b522cd3b160730646bfc3c45bde743629392cd466efbcb9",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "cube-router-object-store-7469cd6f9f-vfrxh",
+      "uid": "cfd57275-2959-4fa9-b0d3-aa1947f01303",
+      "node": "orbstack",
+      "phase": "Running",
+      "images": [
+        {
+          "name": "minio",
+          "image": "minio/minio:latest",
+          "imageID": "docker-pullable://minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+          "ready": true,
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "name": "cube-router-object-store-init-j9znp",
+      "uid": "aeaca7e9-dba0-4592-aebe-857c7066ca4b",
+      "node": "orbstack",
+      "phase": "Succeeded",
+      "images": [
+        {
+          "name": "init-bucket",
+          "image": "minio/mc:latest",
+          "imageID": "docker-pullable://minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+          "ready": false,
+          "restartCount": 0
+        }
+      ]
+    }
+  ]
+}

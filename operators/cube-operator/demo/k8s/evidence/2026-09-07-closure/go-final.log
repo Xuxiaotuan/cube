@@ -1,0 +1,6 @@
+?   	github.com/cube-js/cube-operator	[no test files]
+?   	github.com/cube-js/cube-operator/api/v1alpha1	[no test files]
+ok  	github.com/cube-js/cube-operator/cmd/lease-agent	0.713s
+ok  	github.com/cube-js/cube-operator/controllers	1.376s
+ok  	github.com/cube-js/cube-operator/internal/agent	2.745s
+ok  	github.com/cube-js/cube-operator/internal/leadership	9.107s

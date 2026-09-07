@@ -2,8 +2,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cubestore-router-operator
-  namespace: default
+  namespace: cube-operator-demo
 rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["" ]
     resources: ["pods", "pods/status", "events", "configmaps", "services", "endpoints", "secrets", "serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]

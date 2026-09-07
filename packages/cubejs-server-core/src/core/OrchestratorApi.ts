@@ -167,6 +167,9 @@ export class OrchestratorApi {
         requestId: query.requestId
       });
 
+      if ((err as any).code === 'MUTATION_UNKNOWN' || (err as any).name === 'MutationUnknownError') {
+        throw { error: err.toString(), code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError' };
+      }
       throw { error: err.toString() };
     }
   }

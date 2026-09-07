@@ -1,0 +1,28 @@
+cwd=/Users/xujiawei/magic/workbench/cube/rust/cubestore
+CARGO_TARGET_DIR=/Users/xujiawei/magic/workbench/cube/rust/cubestore/target
+command=cargo +nightly-2025-08-01 test --locked --offline -p cubestore --lib task4_rpc_ -j 1 -- --test-threads=1 --nocapture
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 46s
+     Running unittests src/lib.rs (target/debug/deps/cubestore-d60dd1fcadae4be1)
+
+running 2 tests
+test metastore::job::rpc_tests::task4_rpc_old_attempt_is_rejected_after_tcp_pause ... ok
+test metastore::job::rpc_tests::task4_rpc_source_import_reconciles_lost_publish_and_finish_responses ... 2026-09-07T04:04:51.612Z INFO  [cubestore::metastore::rocks_fs] Creating metastore from scratch in /Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore/task4_rpc_source_import_reconciles_lost_publish_and_finish_responses-local-store/metastore
+2026-09-07T04:04:51.616Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: started
+2026-09-07T04:04:51.617Z TRACE [cubestore::metastore::rocks_store] Migration for metastore: done
+
+thread 'metastore::job::rpc_tests::task4_rpc_source_import_reconciles_lost_publish_and_finish_responses' panicked at cubestore/src/metastore/job_attempt_rpc_tests.rs:217:97:
+called `Result::unwrap()` on an `Err` value: CubeError { message: "SendError(Insert(Schemas, 1))", backtrace: "disabled backtrace", cause: Internal }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    metastore::job::rpc_tests::task4_rpc_source_import_reconciles_lost_publish_and_finish_responses
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 356 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p cubestore --lib`
+
+exit_code=101 elapsed_seconds=110.06

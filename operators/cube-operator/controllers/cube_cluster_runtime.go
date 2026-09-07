@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cube-js/cube-operator/api/v1alpha1"
+	"github.com/prometheus/client_golang/prometheus"
 	apps "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,10 +28,42 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const cubeComponentRefresher = "refresher"
 const configurationAnnotation = "cubestore.io/configuration-hash"
+
+// These are observations, not business recovery or production certification.
+var clusterConditionMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "cube_cluster_condition", Help: "Current-generation condition: 1 true, 0 false, -1 unknown or stale; use observation timestamp for freshness.",
+}, []string{"namespace", "cluster", "condition"})
+var clusterObservationMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "cube_cluster_observation_timestamp_seconds", Help: "Time of the last successful full cluster status observation, not reconcile activity.",
+}, []string{"namespace", "cluster"})
+
+func init() {
+	metrics.Registry.MustRegister(clusterConditionMetric, clusterObservationMetric)
+}
+
+func observeClusterConditions(c *v1alpha1.CubeCluster, complete bool) {
+	for _, name := range []string{"ResourcesReady", "RouterServingReady", "JobRecovery", "MutationReconcile", "RefresherRecovery", "ProductionReady", "UpgradeReady"} {
+		value := float64(-1)
+		condition := apiMeta.FindStatusCondition(c.Status.Conditions, name)
+		if condition != nil && condition.ObservedGeneration == c.Generation {
+			if condition.Status == metav1.ConditionTrue {
+				value = 1
+			}
+			if condition.Status == metav1.ConditionFalse {
+				value = 0
+			}
+		}
+		clusterConditionMetric.WithLabelValues(c.Namespace, c.Name, name).Set(value)
+	}
+	if complete {
+		clusterObservationMetric.WithLabelValues(c.Namespace, c.Name).SetToCurrentTime()
+	}
+}
 
 func componentSpecs(c *v1alpha1.CubeCluster) map[string]v1alpha1.CubeComponentSpec {
 	specs := map[string]v1alpha1.CubeComponentSpec{
@@ -103,6 +136,28 @@ func refresherPodOptions(c *v1alpha1.CubeCluster) v1alpha1.CubePodSpec {
 }
 
 func validateClusterOptions(c *v1alpha1.CubeCluster) error {
+	// Digest-pinned releases are atomic artifact sets. Equal Rust digests are
+	// necessary here, but do NOT prove API/agent or rolling RPC compatibility.
+	images := []string{c.Spec.Images.API, c.Spec.Images.Router, c.Spec.Images.MetaStore, c.Spec.Images.Worker, c.Spec.Images.LeaseAgent}
+	pinned := false
+	for _, image := range images {
+		pinned = pinned || strings.Contains(image, "@")
+	}
+	if pinned {
+		for _, image := range images {
+			parts := strings.Split(image, "@sha256:")
+			if len(parts) != 2 || parts[0] == "" || len(parts[1]) != 64 {
+				return fmt.Errorf("digest-pinned releases require every component image to use repository@sha256:<64 hex digits>")
+			}
+			if _, err := hex.DecodeString(parts[1]); err != nil {
+				return fmt.Errorf("invalid image digest: %w", err)
+			}
+		}
+		digest := func(image string) string { return strings.Split(image, "@sha256:")[1] }
+		if digest(c.Spec.Images.Router) != digest(c.Spec.Images.MetaStore) || digest(c.Spec.Images.Router) != digest(c.Spec.Images.Worker) {
+			return fmt.Errorf("router, metaStore and worker must use the same frozen Rust digest; mixed Rust artifacts require a separately implemented compatibility policy")
+		}
+	}
 	for name, count := range map[string]int32{"api": c.Spec.API.Replicas, "router": c.Spec.Router.Replicas, "metaStore": c.Spec.MetaStore.Replicas, "workers": c.Spec.Workers.Replicas} {
 		if count < 0 {
 			return fmt.Errorf("%s.replicas must be positive or omitted", name)
@@ -700,14 +755,21 @@ func (r *CubeClusterReconciler) reconcileStatus(ctx context.Context, c *v1alpha1
 	}
 	sort.Slice(next.Status.Conditions, func(i, j int) bool { return next.Status.Conditions[i].Type < next.Status.Conditions[j].Type })
 	if statusEqualCubeCluster(c.Status, next.Status) {
+		observeClusterConditions(next, true)
 		return nil
 	}
-	return r.Status().Update(ctx, next)
+	if err := r.Status().Update(ctx, next); err != nil {
+		return err
+	}
+	observeClusterConditions(next, true)
+	return nil
 }
 
 // Only an empty installation may bootstrap together. Existing workloads roll
-// strictly MetaStore -> Workers -> Router -> API -> Refresher, so new RPC
-// clients never precede the MetaStore implementing their protocol.
+// strictly MetaStore -> Workers -> Router -> API -> Refresher. This ordering
+// does not prove old clients can speak to a new MetaStore. A frozen release
+// transition needs mixed-version evidence or an explicitly fenced maintenance
+// window before changing the CR; Ready alone is not protocol negotiation.
 func (r *CubeClusterReconciler) isBootstrap(ctx context.Context, c *v1alpha1.CubeCluster) (bool, error) {
 	reader := client.Reader(r.Client)
 	if r.APIReader != nil {
@@ -763,6 +825,7 @@ func (r *CubeClusterReconciler) waitForUpgrade(ctx context.Context, c *v1alpha1.
 	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, "UpgradeReady", false, "WaitingForDependency", "Waiting for "+component+" observed generation, updated replicas and live readiness before rolling dependent RPC clients"))
 	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, cubeClusterConditionResources, false, "UpgradeInProgress", "Dependent components have not yet applied the desired generation"))
 	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, "ProductionReady", false, "EvidenceIncomplete", "An ordered upgrade is in progress"))
+	observeClusterConditions(next, false)
 	if statusEqualCubeCluster(c.Status, next.Status) {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}

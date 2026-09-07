@@ -3,6 +3,7 @@ package leadership
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -86,6 +87,9 @@ func (s *KubernetesStore) Acquire(ctx context.Context, clusterID, holderID strin
 		}
 		if !s.isExpired(current) {
 			return current, false, nil
+		}
+		if current.Epoch >= math.MaxInt32 {
+			return LeaseRecord{}, false, fmt.Errorf("Lease epoch exhausted; refusing rollback")
 		}
 
 		token, err := newLeaseToken()
@@ -203,7 +207,16 @@ func (s *KubernetesStore) Release(ctx context.Context, lease LeaseRecord) error 
 			return ErrStaleLease
 		}
 
-		if err := s.client.Delete(ctx, leaseObj); err != nil {
+		// Keep the durable epoch and identity. Deletion would allow a later
+		// acquisition to restart at epoch 1 (or strand a reserved bootstrap).
+		// A positive one-second TTL keeps the record parseable; timestamp zero
+		// expires it immediately without changing any fencing identity.
+		leaseObj.Spec.LeaseDurationSeconds = int32Ptr(1)
+		leaseObj.Spec.RenewTime = &metav1.MicroTime{Time: time.Unix(0, 0).UTC()}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.client.Update(ctx, leaseObj); err != nil {
 			if kmacErrors.IsConflict(err) {
 				continue
 			}
@@ -241,6 +254,9 @@ func (s *KubernetesStore) Get(ctx context.Context, clusterID string) (LeaseRecor
 }
 
 func (s *KubernetesStore) getLeaseObject(ctx context.Context, clusterID string) (LeaseRecord, *coordinationv1.Lease, error) {
+	if err := ctx.Err(); err != nil {
+		return LeaseRecord{}, nil, err
+	}
 	if s.reader == nil {
 		return LeaseRecord{}, nil, fmt.Errorf("authoritative Lease reader is required")
 	}

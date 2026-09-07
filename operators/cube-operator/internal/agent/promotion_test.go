@@ -18,6 +18,8 @@ import (
 
 type promotionReaderFunc func(context.Context) ([]byte, error)
 
+const promotionFaultTimeout = 30 * time.Millisecond
+
 func (f promotionReaderFunc) Read(ctx context.Context) ([]byte, error) { return f(ctx) }
 
 type contextLeaseStore struct {
@@ -47,7 +49,9 @@ func promotionAgent(t *testing.T, now *time.Time, store LeaseStore, source Promo
 	dir := t.TempDir()
 	a, err := New(Config{Store: store, ClusterID: "cube-router-demo", HolderID: "router-a",
 		Path: filepath.Join(dir, "leadership.json"), PromotionPath: filepath.Join(dir, "promotion.json"),
-		PromotionSource: source, RetryPeriod: time.Second, SyncTimeout: 30 * time.Millisecond,
+		// Healthy setup includes file and directory fsync. Use the production
+		// default deadline, not the short deadline for an injected API stall.
+		PromotionSource: source, RetryPeriod: time.Second,
 		Now: func() time.Time { return *now },
 	})
 	if err != nil {
@@ -194,6 +198,9 @@ func TestPromotionDisconnectAndTimeoutFenceBothFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			failing = true
+			if failure == "timeout" {
+				a.syncTimeout = promotionFaultTimeout
+			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if failure == "cancelled" {
@@ -271,8 +278,10 @@ func TestPromotionLeaseReadTimeoutFencesPreviousMarker(t *testing.T) {
 	now := time.Now().UTC()
 	record := validRecord("router-a", 9, "current-token", now)
 	blocked := false
+	blockedRead := false
 	store := contextLeaseStore{read: func(ctx context.Context) (leadership.LeaseRecord, error) {
 		if blocked {
+			blockedRead = true
 			<-ctx.Done()
 			return leadership.LeaseRecord{}, ctx.Err()
 		}
@@ -283,6 +292,7 @@ func TestPromotionLeaseReadTimeoutFencesPreviousMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocked = true
+	a.syncTimeout = promotionFaultTimeout
 	start := time.Now()
 	if err := a.Sync(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want bounded deadline error, got %v", err)
@@ -290,7 +300,36 @@ func TestPromotionLeaseReadTimeoutFencesPreviousMarker(t *testing.T) {
 	if time.Since(start) > time.Second {
 		t.Fatal("lease API timeout was not bounded")
 	}
+	if !blockedRead {
+		t.Fatal("deadline occurred before the injected Lease read")
+	}
 	assertPromotionFenced(t, a, now)
+}
+
+func TestPromotionHealthySetupDoesNotUseFaultDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	record := validRecord("router-a", 9, "current-token", now)
+	raw := promotionJSON(t, record)
+	a := promotionAgent(t, &now, fakeStore{get: func() (leadership.LeaseRecord, error) {
+		return record, nil
+	}}, promotionReaderFunc(func(ctx context.Context) ([]byte, error) {
+		// A healthy response slower than the injected fault deadline must not
+		// expire fixture setup before the failure under test is even enabled.
+		timer := time.NewTimer(2 * promotionFaultTimeout)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return raw, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}))
+	if err := a.Sync(context.Background()); err != nil {
+		t.Fatalf("healthy setup used injected fault deadline: %v", err)
+	}
+	if got := readLeadershipFile(t, a.path); got.HolderID != record.HolderID || got.Epoch != record.Epoch {
+		t.Fatalf("healthy setup did not publish leadership: %+v", got)
+	}
 }
 
 func TestPromotionShutdownFencesBothFiles(t *testing.T) {

@@ -46,7 +46,17 @@ if (process.env.CUBEJS_HA_DEMO === 'true') {
     driverFactory: context => runOf(context) ? new ReadOnlySource(context) : new CubeStoreDriver(),
     externalDriverFactory: context => runOf(context)
       && !(context.securityContext.haScheduled === true && !refresher)
-      ? new CubeStoreDriver({ host: '127.0.0.1', port: process.env.CUBEJS_HA_PROXY_PORT || '13330' })
+      ? new CubeStoreDriver({
+        host: context.securityContext.haRestart === true
+          ? (() => {
+            if (!refresher || context.securityContext.haScheduled !== true ||
+                !process.env.CUBEJS_HA_RESTART_PROXY_HOST) {
+              throw new Error('Restart harness requires scheduled refresher and external proxy host');
+            }
+            return process.env.CUBEJS_HA_RESTART_PROXY_HOST;
+          })() : '127.0.0.1',
+        port: context.securityContext.haRestart === true ? '13332' : process.env.CUBEJS_HA_PROXY_PORT || '13330',
+      })
       : new CubeStoreDriver(),
   });
   if (scheduledDemo) {

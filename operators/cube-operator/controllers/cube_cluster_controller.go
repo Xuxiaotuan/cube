@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,6 +75,10 @@ func (r *CubeClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cluster v1alpha1.CubeCluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			clusterConditionMetric.DeletePartialMatch(map[string]string{"namespace": req.Namespace, "cluster": req.Name})
+			clusterObservationMetric.DeleteLabelValues(req.Namespace, req.Name)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if err := validateCubeCluster(&cluster); err != nil {
@@ -505,6 +510,7 @@ func (r *CubeClusterReconciler) setClusterCondition(ctx context.Context, c *v1al
 	next.Status = v1alpha1.CubeClusterStatus{Phase: "Invalid", ObservedGeneration: c.Generation}
 	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, typ, status == metav1.ConditionTrue, reason, message))
 	apiMeta.SetStatusCondition(&next.Status.Conditions, newClusterCondition(c, "ProductionReady", false, reason, message))
+	observeClusterConditions(next, false)
 	if statusEqualCubeCluster(c.Status, next.Status) {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}

@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "name": "analytics-router",
+    "uid": "44546868-1292-4836-b5e8-8bd3ab1d6e0e"
+  },
+  "status": {
+    "candidates": [
+      {
+        "ip": "192.168.194.60",
+        "lastProbeTime": "2026-09-06T19:52:01Z",
+        "name": "analytics-router-69457448dc-fx9nc",
+        "namespace": "cube-ha-remediation",
+        "ready": true,
+        "role": "follower"
+      },
+      {
+        "ip": "192.168.194.59",
+        "lastProbeTime": "2026-09-06T19:52:01Z",
+        "name": "analytics-router-69457448dc-vm9nn",
+        "namespace": "cube-ha-remediation",
+        "ready": true,
+        "role": "leader"
+      }
+    ],
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Leader elected: analytics-router-69457448dc-vm9nn (candidates: 2)",
+        "observedGeneration": 1,
+        "reason": "LeaderSelected",
+        "status": "True",
+        "type": "LeaderElection"
+      },
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Role state and labels synchronized.",
+        "observedGeneration": 1,
+        "reason": "StateSyncSucceeded",
+        "status": "True",
+        "type": "RoleStateSync"
+      },
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Promoted runtime supports fenced Job attempts; this is not proof of zero lost work or successful recovery of every job",
+        "observedGeneration": 1,
+        "reason": "JobAttemptFencingSupported",
+        "status": "True",
+        "type": "JobRecovery"
+      },
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Promoted runtime supports durable upload receipts and authoritative pre-aggregation status for scoped CSV builds; arbitrary mutations are not exactly-once",
+        "observedGeneration": 1,
+        "reason": "BuildReconciliationSupported",
+        "status": "True",
+        "type": "MutationReconcile"
+      },
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Router acknowledged the exact lease epoch, token hash, and MetaStore readiness.",
+        "observedGeneration": 1,
+        "reason": "PromotionAcknowledged",
+        "status": "True",
+        "type": "PromotionReady"
+      },
+      {
+        "lastTransitionTime": "2026-09-06T19:52:01Z",
+        "message": "Rust Router does not own scheduled refresh processes; shared queue attempt recovery and scheduler ownership require separate evidence.",
+        "observedGeneration": 1,
+        "reason": "ManagedByCubeCluster",
+        "status": "Unknown",
+        "type": "RefresherReady"
+      }
+    ],
+    "lastSwitchedAt": "2026-09-06T19:52:01Z",
+    "leader": "analytics-router-69457448dc-vm9nn",
+    "leaderEpoch": 20,
+    "leaderIP": "192.168.194.59",
+    "leaderRole": "leader",
+    "recovery": {
+      "jobRecovery": {
+        "message": "Promoted runtime supports fenced Job attempts; this is not proof of zero lost work or successful recovery of every job",
+        "reason": "JobAttemptFencingSupported",
+        "state": "Ready"
+      },
+      "mutationReconcile": {
+        "message": "Promoted runtime supports durable upload receipts and authoritative pre-aggregation status for scoped CSV builds; arbitrary mutations are not exactly-once",
+        "reason": "BuildReconciliationSupported",
+        "state": "Ready"
+      },
+      "promotion": {
+        "message": "Router acknowledged the exact lease epoch, token hash, and MetaStore readiness.",
+        "reason": "PromotionAcknowledged",
+        "state": "Ready"
+      },
+      "refresher": {
+        "message": "Rust Router does not own scheduled refresh processes; shared queue attempt recovery and scheduler ownership require separate evidence.",
+        "reason": "ManagedByCubeCluster",
+        "state": "NeedsContext"
+      }
+    }
+  }
+}
