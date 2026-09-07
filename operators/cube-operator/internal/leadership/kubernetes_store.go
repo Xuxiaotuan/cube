@@ -29,17 +29,28 @@ type wallClock struct{}
 func (wallClock) Now() time.Time { return time.Now() }
 
 type KubernetesStore struct {
-	client    client.Client
-	namespace string
-	leaseName string
-	clock     kubernetesClock
+	client client.Client
+	reader client.Reader
+	// BeforeCreate must reserve bootstrap before a missing Lease is created.
+	BeforeCreate func(context.Context) error
+	namespace    string
+	leaseName    string
+	clock        kubernetesClock
 }
 
 func NewKubernetesStore(c client.Client, namespace, leaseName string, clock kubernetesClock) *KubernetesStore {
 	if clock == nil {
 		clock = wallClock{}
 	}
-	return &KubernetesStore{client: c, namespace: namespace, leaseName: leaseName, clock: clock}
+	return &KubernetesStore{client: c, reader: c, namespace: namespace, leaseName: leaseName, clock: clock}
+}
+
+// NewKubernetesStoreWithReader separates authoritative reads from cached writes.
+// The reader must be a direct API reader, never an informer-backed client.
+func NewKubernetesStoreWithReader(c client.Client, reader client.Reader, namespace, leaseName string) *KubernetesStore {
+	s := NewKubernetesStore(c, namespace, leaseName, nil)
+	s.reader = reader
+	return s
 }
 
 func (s *KubernetesStore) Acquire(ctx context.Context, clusterID, holderID string, ttl time.Duration) (LeaseRecord, bool, error) {
@@ -50,6 +61,11 @@ func (s *KubernetesStore) Acquire(ctx context.Context, clusterID, holderID strin
 	for i := 0; i < 8; i++ {
 		current, leaseObj, err := s.getLeaseObject(ctx, clusterID)
 		if kmacErrors.IsNotFound(err) {
+			if s.BeforeCreate != nil {
+				if err := s.BeforeCreate(ctx); err != nil {
+					return LeaseRecord{}, false, err
+				}
+			}
 			lease, err := s.newLeaseRecord(clusterID, holderID, leaseDefaultGeneration, 1, ttl)
 			if err != nil {
 				return LeaseRecord{}, false, err
@@ -225,8 +241,11 @@ func (s *KubernetesStore) Get(ctx context.Context, clusterID string) (LeaseRecor
 }
 
 func (s *KubernetesStore) getLeaseObject(ctx context.Context, clusterID string) (LeaseRecord, *coordinationv1.Lease, error) {
+	if s.reader == nil {
+		return LeaseRecord{}, nil, fmt.Errorf("authoritative Lease reader is required")
+	}
 	var lease coordinationv1.Lease
-	if err := s.client.Get(ctx, client.ObjectKey{Namespace: s.namespace, Name: s.leaseName}, &lease); err != nil {
+	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: s.namespace, Name: s.leaseName}, &lease); err != nil {
 		return LeaseRecord{}, nil, err
 	}
 	record, err := parseLeaseObject(&lease, clusterID)

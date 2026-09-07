@@ -79,6 +79,8 @@ return 1
 type CubestoreRouterReconciler struct {
 	client.Client
 	APIReader client.Reader
+	// Set only when this reconciler runs under Manager leader election.
+	ManagerLeaderElection bool
 	*runtime.Scheme
 	leaseMu      sync.Mutex
 	routerLeases map[string]leadership.LeaseRecord
@@ -161,6 +163,13 @@ func (r *CubestoreRouterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	nextStatus.Conditions = r.withSyncCondition(nextStatus.Conditions, syncStateErr, int64(cr.Generation))
 	nextStatus.Conditions = r.withRecoveryConditions(nextStatus.Conditions, nextStatus.Recovery, int64(cr.Generation))
 	nextStatus.Conditions = r.normalizeConditions(nextStatus.Conditions)
+	if errors.Is(leaseErr, errLeaseStateLost) {
+		nextStatus.Conditions = append(nextStatus.Conditions, metav1.Condition{
+			Type: "LeaseStateIntegrity", Status: metav1.ConditionFalse,
+			Reason: "LeaseStateLost", Message: leaseErr.Error(),
+			ObservedGeneration: cr.Generation, LastTransitionTime: metav1.Now(),
+		})
+	}
 
 	if promotionLeader != nil && promotionPhase == promotionPhaseServing {
 		nextStatus.Leader = promotionLeader.Name
@@ -228,7 +237,19 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 			r.clearLocalRouterLease(clusterID, current.Token)
 			return nil, current, nil
 		}
-		if local, ok := r.localRouterLease(clusterID); ok && local.HolderID == current.HolderID && local.Token == current.Token {
+		local, owned := r.localRouterLease(clusterID)
+		if !owned && r.ManagerLeaderElection && r.APIReader != nil {
+			// Manager starts this controller only after election and cancels
+			// reconcile contexts on shutdown. Adopt only an acknowledged holder;
+			// Renew re-reads the API and CAS-checks the full lease identity.
+			if err := ctx.Err(); err != nil {
+				return nil, current, err
+			}
+			if promotionAcknowledged(*currentCandidate, current) {
+				local, owned = current, true
+			}
+		}
+		if owned && local.HolderID == current.HolderID && local.Token == current.Token {
 			renewed, renewedOK, renewErr := store.Renew(ctx, local, routerLeaseTTL(cr))
 			if renewErr != nil {
 				return nil, current, renewErr
@@ -275,7 +296,12 @@ func (r *CubestoreRouterReconciler) routerLeaseStore(ctx context.Context, cr *v1
 	switch backend {
 	case leaderStateBackendKubernetes:
 		leaseName := kubernetesLeaseName(cr)
-		return leadership.NewKubernetesStore(r.Client, cr.Namespace, leaseName, nil), func() {}, nil
+		if r.APIReader == nil {
+			return nil, nil, errors.New("Kubernetes LeaseStore requires an uncached APIReader")
+		}
+		store := leadership.NewKubernetesStoreWithReader(r.Client, r.APIReader, cr.Namespace, leaseName)
+		store.BeforeCreate = func(ctx context.Context) error { return r.reserveLeaseBootstrap(ctx, cr) }
+		return store, func() {}, nil
 	case leaderStateStoreTypeRedis:
 		options, err := redis.ParseURL(dsn)
 		if err != nil {

@@ -1,5 +1,21 @@
 # Cube Router 主备 HA：Kubernetes 演示与验证报告
 
+## 控制面评审后的源码优化（尚未运行验收）
+
+本节是对基线 `e94954f2c4d0b99b8547f540ea7ae00ede937f4c` 的后续修改，不改变下文历史六项 PASS 的版本归属。本轮未运行测试、构建镜像或部署；状态为 **evidence_incomplete**，不能据此改为 ProductionReady=True。
+
+| 项目 | 本轮源码处理 | 尚需验收 |
+|---|---|---|
+| Lease 权威读取 | Controller 必须注入 APIReader；Get、Renew 的竞争重读和写前验证绕过缓存，无 APIReader 时拒绝启动该存储路径 | 旧缓存/新 epoch、API 不可达时禁止授权 |
+| Lease 丢失 | 首次创建前对 CR 做 resourceVersion CAS 预留；发现预留或历史 CR/角色 CM 时拒绝重置 epoch，并发布 LeaseStateIntegrity=False / LeaseStateLost | 仅删除 Lease、首次创建中断、竞争创建 |
+| Operator 重启 | Manager 选主默认开启；仅在选主模式下对已确认当前 epoch/token 的健康 Router 接管 CAS 续约 | Operator 重启和 Manager 换主期间业务连续性 |
+
+安全取舍：CR 预留成功而 Lease 创建失败也会阻断；这是避免不确定历史下重置任期的保守行为，不是自动恢复。不要删除预留标记、历史 fence 或降低 epoch 来解除告警。应先隔离全部旧 Router/控制器，保留 CR、角色 CM、Lease 备份和权威存储，经过人工恢复评审再处理；本轮没有交付自动恢复命令。已有 Lease 正常到期仍在原对象上递增 epoch，不走首次创建。通用 LeaseStore 的 Release 删除对象后，同样不允许已初始化 CR 自动从 epoch 1 重建。
+
+Manager 选主不是存储层原子 fencing；关闭 `--leader-elect` 会同时禁用重启接管。默认开启要求 Operator ServiceAccount 有 Manager Lease 所需权限，独立运行时需配置可用的选主命名空间。API Server 不可达仍采用 fail-closed，可能停止写入。旧版本初始化后尚未留下 CR/CM 历史的极小窗口，以及同时删除 CR、Lease、CM 的灾难恢复，不由本次预留协议证明。
+
+后续发布必须冻结 Operator/agent、Rust 各角色、API/Refresher、CRD 和镜像 digest，再重跑六项业务场景及控制面故障。Refresher 自身崩溃、Worker 提交边界失联、MetaStore/CacheStore 跨节点卷恢复、安全 GC 和长期容量仍是未完成门禁，未在本轮实现或验证。
+
 ## 2026-09-07 最新修复与真实验收
 
 本轮并行修复 Operator、lease-agent、CubeStore Rust、Driver、Orchestrator 和 Refresher 能力检查，实际构建并部署到本地 `orbstack / cube-ha-remediation`。六项真实场景分批通过，不是仅做选主或 mock 测试。

@@ -35,7 +35,7 @@ func init() {
 func main() {
 	var enableLeaderElection bool
 
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", true, "Enable leader election for controller manager (required for lease adoption).")
 	flag.Parse()
 
 	opts := zap.Options{Development: true}
@@ -60,9 +60,10 @@ func main() {
 	}
 
 	if err = (&controllers.CubestoreRouterReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		ManagerLeaderElection: enableLeaderElection,
+		Client:                mgr.GetClient(),
+		APIReader:             mgr.GetAPIReader(),
+		Scheme:                mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		os.Exit(1)
 	}
