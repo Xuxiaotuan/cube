@@ -1,84 +1,127 @@
-# cube-operator：Cube 编排与 Router 主备实验
+# Cube Operator 与 CubeStore Router HA
 
-> **当前生产结论：NO-GO。** Operator 已支持整套 Cube 编排及 Router 单主/备节点切换；最新授权与恢复修复通过了相关本地测试，但尚未完成新协议的真实部署、业务故障恢复及多节点验收。不能将 Pod Ready、Service 切换或单测通过等同于生产级数据一致性。
+> **当前生产结论：NO-GO。** 已形成 Router 主备切换、MetaStore 服务端写入授权和文件导入型预聚合恢复保护的实现，并取得多项本地验证结果；完整业务恢复事务、新协议真实部署及多节点容灾仍未完成。
 >
-> 状态更新：2026-09-07。本页优先说明最新结论；详细文档中的失败、修复及历史演练是不同时间的检查点，不可混用。最近运行环境观察不是持续监控，也不是本次文档修改后重新执行的验证。
+> 本页功能与证据基线为分支 `codex/ha-router-experiment` 的代码提交 [`78f2d6bb39`](https://github.com/Xuxiaotuan/cube/commit/78f2d6bb39)（2026-09-07）。后续仅修改文档的提交不等于新的构建、部署或运行验收。历史测试不自动升级为当前版本的完整验收。
 
-## 先看哪些文档
+## 阅读入口
 
-| 目的 | 入口 |
+| 目的 | 文档 |
 | --- | --- |
-| 看当前修复结果、未完成项与证据边界 | [HA-CLOSURE-2026-09-07.md](HA-CLOSURE-2026-09-07.md)，以末尾“恢复边界与持久授权整改”小节为最新检查点 |
-| 看 K8s 演示过程、架构、部署与数据流说明 | [HA-ROUTER-K8S-DEMO.md](HA-ROUTER-K8S-DEMO.md)，历史日志不代表当前新协议已部署 |
-| 看 Kubernetes authority 协议设计 | [HA-PROTOCOL-V2-DESIGN.md](HA-PROTOCOL-V2-DESIGN.md)，设计不等于实现或验收完成 |
-| 看生产条件、发布门禁与故障覆盖 | [PRODUCTION-DEPLOYMENT.md](PRODUCTION-DEPLOYMENT.md)、[RELEASE-ACCEPTANCE.md](RELEASE-ACCEPTANCE.md)、[HA-FAILURE-MATRIX.md](HA-FAILURE-MATRIX.md) |
-| 看 Lease 丢失及恢复边界 | [LEASE-RECOVERY.md](LEASE-RECOVERY.md) |
-| 看最近真实 API/环境预检 | [原始报告](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/REPORT.md) |
+| 最新修复、剩余工作和原始证据 | [闭环报告](HA-CLOSURE-2026-09-07.md)，以末尾“恢复边界与持久授权整改”为最新代码检查点 |
+| 逻辑架构、K8s 部署关系、请求与切主数据流、演示过程 | [K8s 演示文档](HA-ROUTER-K8S-DEMO.md) |
+| 新授权协议及实现边界 | [HA-PROTOCOL-V2-DESIGN.md](HA-PROTOCOL-V2-DESIGN.md) |
+| 生产条件、发布门禁、故障覆盖 | [部署条件](PRODUCTION-DEPLOYMENT.md)、[发布验收](RELEASE-ACCEPTANCE.md)、[故障矩阵](HA-FAILURE-MATRIX.md) |
+| Lease 丢失及恢复约束 | [LEASE-RECOVERY.md](LEASE-RECOVERY.md) |
+| 最近真实 API 基线及环境预检 | [检查报告](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/REPORT.md) |
 
-## 能做什么，不能保证什么
+## 一、这套 HA 如何工作
 
-| 层级 | 当前能力 | 不代表什么 |
+目标是 **一个 Active Router 加备用 Router**，不是多个持有独立状态的 Router 同时写入。主备协调使用 Kubernetes，不强制新增 Redis/PostgreSQL；业务状态仍由 CubeStore 的 MetaStore、CacheStore 和对象存储承载。
+
+| 层次 | 当前职责 | 验证边界 |
 | --- | --- | --- |
-| `CubeCluster` CRD/CR | 编排 Cube API、Router、MetaStore、Worker，可配置单实例 Refresher；管理 Service、PVC、RBAC 等依赖 | 不等于所有组件都具备 HA，尤其不是多副本 MetaStore 或 Refresher 选主证明 |
-| `CubestoreRouter` CRD/CR | 管理 Router 主备角色及流量切换 | 不是让 2-3 个独立 MetaStore 的 Router 同时写入 |
-| Kubernetes Lease/CAS | 主备选举使用 Kubernetes 协调，不要求新增 Redis/PostgreSQL | Lease 不存业务数据，不能替代 MetaStore、对象存储或写入幂等协议 |
-| Router/Worker authority | 基于身份、Lease 和写入上下文约束访问；相关本地测试已通过 | 不代表已在真实 Kubernetes 中通过断网、暂停旧主和后台任务兼容性验收 |
-| 预聚合恢复保护 | 保留明确 UNKNOWN 和身份异常保护，正常首次构建及清理回归通过 | 权威代次、发布/引用/回收事务与 UNKNOWN 对账仍未闭环 |
-| leader Service | 为业务提供稳定路由入口 | Service 不同步内存、临时上传文件、构建记录或持久化数据 |
+| Cube Operator / `CubeCluster` CRD、CR | 编排 API、Router、MetaStore、Worker 及可选的单实例 Refresher，管理 Service、PVC、RBAC 和配置 | 整套组件可编排，不等于每个组件都具备 HA |
+| `CubestoreRouter` CRD、CR / Kubernetes Lease、CAS | 协调主备身份与任期，由 Router 控制器执行晋升及流量切换 | Lease 保存协调状态，不保存业务数据 |
+| Leader Service + Router | 提供稳定业务入口，结合角色核验、拒绝新变更和停机排空 | Service 不同步内存、临时上传、构建状态或数据文件 |
+| MetaStore authority | 服务端核验调用者身份、Lease 和授权上下文，约束写入 | 新协议有本地验证，真实 TLS/权限/晋升/后台任务链路未整体验收 |
+| Worker Job attempt | 独立管理任务执行所有权；健康 Worker 不因 Router 任期变化自动作废，限制失去所有权的旧执行者发布 | 不等于所有 Job 和故障窗口均已验证 |
+| 文件导入型预聚合恢复 | 记录构建身份、不可变上传清单、阶段及目标表身份；查询实际状态后恢复或保持 UNKNOWN | 尚无完整的构建领取、发布、引用及回收原子事务 |
 
-目标是单个 active Router 和 standby Router，而非独立状态的多主写入。允许切主期间短暂不可用，可以为恢复和隔离留出时间，但不能替代旧主写入隔离及数据一致性证明。
+默认方向是 Kubernetes 原生协调，Redis/PostgreSQL 后端仅为历史兼容选项。MetaStore 和对象存储依旧需要可靠的持久化与备份恢复能力，不能用 Lease 或单副本临时 MinIO 替代。
 
-默认方向为 Kubernetes 原生协调；Redis/PostgreSQL 后端仅为历史兼容选项，不是本方案的必需组件。MetaStore 持久化和业务对象存储仍然需要可靠的数据层。
+允许切主时短暂不可用，可以为隔离和恢复留出时间，但不免除旧写者隔离、已确认数据保护和结果一致性要求。
 
-## 最新验证结果
+## 二、最新实现及验证结果
 
-下表保留上一轮定向修复的本地基线；最新增量结果见随后小节。两者均不是运行集群的新镜像验收：
+### 最新提交补齐的四项问题
 
-| 检查 | 结果 | 原始证据 |
+| 改进 | 已取得的结果 | 不能据此推导的结论 |
 | --- | --- | --- |
-| Rust lib/tests/bin 编译 | PASS，1 分 05 秒，仍有警告 | [rust-build.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-build.log) |
-| 新授权测试 `authority_` | 2/2 PASS | [rust-authority.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-authority.log) |
-| RPC 回归 `task4_rpc_` | 2/2 PASS | [rust-task4-rpc.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-task4-rpc.log) |
-| Go controllers/agent | PASS；API package 无测试文件 | [go-authority-bootstrap.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/go-authority-bootstrap.log) |
-| 预聚合/队列三套回归 | 76/76 PASS；有延迟退出警告，最终退出 0 | [preaggregation-regression.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/preaggregation-regression.log) |
-| Refresher harness / 预检单测 | 28/28、7/7 PASS | [检查报告](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/REPORT.md) |
-| 最近真实 Cube API 基线 | 认证 `/meta`、`/load` 为 HTTP 200，保留查询数据 | [api-readonly-baseline.json](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/api-readonly-baseline.json) |
-| 生产环境预检 | BLOCKED / `productionGo=false` | [production-preflight.json](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/production-preflight.json) |
+| 收紧预聚合恢复返回值 | false 只用于已有 selected 记录；缺构建身份或上传源时保持 UNKNOWN，不自动进入重建；Driver 44/44 测试、类型检查通过 | 多执行者构建领取已经原子化 |
+| 限制 grant 内存保留 | 持久安装成功后仅保留当前 grant；覆盖 20 次续约、128 次轮换和失败保持，不放宽 Lease 校验 | 长期负载或 Kubernetes API 开销已达标 |
+| 真正关闭并重开 RocksDB | 释放数据库引用、关闭原 DB、同路径重开；核对持久记录、旧 incarnation/epoch 拒绝及新授权写入；authority 5/5 通过 | 旧快照、磁盘故障或授权记录丢失已经安全恢复 |
+| 接通 authority RBAC 安装入口 | `run-cubecluster.sh` 已接入权限清单；1 个接线测试含 2 个命名空间子用例通过，3 个资源 server dry-run 通过 | 新权限已经部署，实际 MetaStore ServiceAccount 调用链已通过 |
 
-本轮定向修复了三处问题：Worker `create_chunk` 写操作标签错误；首次 Lease 引导使用错误注释键名；预聚合补丁过度阻断首次构建并全面暂停清理。修复没有放宽 Worker 白名单，也没有取消 Lease 丢失时的 fail-closed 保护。
+最新 RPC 回归为 **2/2 通过**。此前修复首次预聚合构建阻塞及正常清理的三套回归为 **76/76 通过**，属于上一代码检查点，不冒充最新整套验收。
 
-历史 74 项测试通过的预聚合候选补丁仍有首次构建阻塞回退，不能作为成功证据；76 项结果对应其后修复。此后新增 Driver 恢复边界和实际数据库重开验证如下，不能将普通重开提升为快照恢复证明。
+因此，“恢复返回值混用”“grant 无界保留”“只重建 State，没有真实 DB 重开”“RBAC 未接入安装入口”不能再原样列为尚未修改；其对应的更高层业务和生产门禁仍需完成。
 
-### 最新增量：恢复边界与持久授权整改
+### 原始证据
 
-| 增量 | 实际结果 | 证据 |
-| --- | --- | --- |
-| Driver 恢复返回值 | false 仅用于已有 selected 记录；缺记录或缺上传源抛出 UNKNOWN，不自动进入重建；源恢复后可继续原 manifest | [44/44 测试通过](demo/k8s/evidence/2026-09-07-production-closure/driver-recovery-tests.log)、[类型检查通过](demo/k8s/evidence/2026-09-07-production-closure/driver-typecheck.log) |
-| grant 内存有界性 | 安装持久提交成功后只保留当前 grant；20 次续约、128 次轮换和失败保持均覆盖；未放宽 Lease 校验 | [Rust 编译与 5/5 authority 测试](demo/k8s/evidence/2026-09-07-production-closure/rust-authority-durability.log) |
-| 数据库普通重开 | 关闭并释放实际 RocksDB 后同路径打开，校验持久记录、旧 incarnation/epoch 拒绝和新授权写入 | 同上；没有验证磁盘故障、旧快照恢复或授权记录丢失 |
-| RPC 回归 | 2/2 PASS | [回归日志](demo/k8s/evidence/2026-09-07-production-closure/rust-task4-rpc.log) |
-| 安装入口 | `run-cubecluster.sh` 接入 authority RBAC；1 个接线测试含 2 个命名空间子用例通过，三个 RBAC 资源 server dry-run 通过 | [安装验证日志](demo/k8s/evidence/2026-09-07-production-closure/operator-install-wiring.log) |
+| 检查 | 归档日志 |
+| --- | --- |
+| Driver 44 项恢复测试 | [driver-recovery-tests.log](demo/k8s/evidence/2026-09-07-production-closure/driver-recovery-tests.log) |
+| TypeScript 类型检查 | [driver-typecheck.log](demo/k8s/evidence/2026-09-07-production-closure/driver-typecheck.log) |
+| Rust lib/bins 编译、5 项授权测试 | [rust-authority-durability.log](demo/k8s/evidence/2026-09-07-production-closure/rust-authority-durability.log) |
+| 最新 2 项 RPC 回归 | [rust-task4-rpc.log](demo/k8s/evidence/2026-09-07-production-closure/rust-task4-rpc.log) |
+| 安装接线及 RBAC server dry-run | [operator-install-wiring.log](demo/k8s/evidence/2026-09-07-production-closure/operator-install-wiring.log) |
+| 上一轮 76 项预聚合/队列回归 | [preaggregation-regression.log](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/preaggregation-regression.log) |
+| 最近认证 API 查询数据 | [api-readonly-baseline.json](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/api-readonly-baseline.json) |
+| 生产环境预检 BLOCKED | [production-preflight.json](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/production-preflight.json) |
 
-没有真实创建新 RBAC 或部署新镜像；dry-run 未验证实际 MetaStore ServiceAccount 的 TokenReview 请求。原子构建代次、发布/引用/回收事务仍未实现，生产仍为 NO-GO。
+测试入口失败日志与通过日志分别保存，没有使用“找不到测试也算通过”。源码测试配置使用本机绝对路径，其他机器需调整 root。Rust 编译仍有警告；上一轮 Jest 有延迟退出警告，最终退出成功，不等于这些告警已经排除。
 
-## 运行环境与源码必须分开看
+### 历史切换证据的使用方式
 
-最近观察的环境为本地 `orbstack`、命名空间 `cube-ha-remediation`、集群 CR `analytics`：API 1、Refresher 1、Router 2、Worker 2、MetaStore 1。它是单节点，PVC 使用 `local-path`，没有命名空间 NetworkPolicy，`ProductionReady=False`。
+已有历史主备和限定业务演练记录，包括上传、排空、文件导出及独立 Refresher 构建过程中 Router 切主。具体场景、输入、镜像和结果应回到 [演示文档](HA-ROUTER-K8S-DEMO.md) 的对应记录核对。
 
-最新 authority 代码修复尚未构建成部署镜像并在该集群完成验收。旧部署的 API 正常或历史切主成功，不能为新协议背书。版本验收应记录源码提交、镜像 digest、实际 Pod imageID、环境和测试时间，不能只写可变镜像 tag。
+这些场景分批运行，并非最新 authority 版本的一次完整验收。历史“数十秒接流量”测量不等于业务查询已恢复，更不是当前版本 SLA 或“无感切换”承诺。不能合并历史通过次数来代替统一版本的故障矩阵。
 
-只读查看该演示环境：
+## 三、最核心的代码缺口：原子业务恢复事务
 
-```bash
-kubectl --context orbstack -n cube-ha-remediation get cubecluster analytics -o yaml
-kubectl --context orbstack -n cube-ha-remediation get deploy,sts,svc,pvc
-kubectl --context orbstack -n cube-ha-remediation get cubestorerouter analytics-router -o yaml
-kubectl --context orbstack -n cube-ha-remediation get endpointslices
-```
+目前 `PreAggregationBuildStore` 仍使用多条独立 `CACHE SET NX` 保存构建身份、阶段、manifest、tableId 和 active 选择。受保护表扫描也不是事务快照。
 
-这些命令仅观察资源状态，不能代替业务验收。
+**状态保存下来了，不等于并发恢复和清理已经安全协调。**
 
-## 本地开发与演示入口
+| 待实现的核心事务 | 要解决的问题 |
+| --- | --- |
+| 权威构建领取与 generation | 哪个执行者有权推进构建，旧执行者何时失效；不能用各进程自己的计数器代替 |
+| 校验与发布原子提交 | generation、manifest、tableId 和 ready 结果必须在发布时共同校验 |
+| 引用与 retirement 互斥 | 查询/构建仍引用的表不能被删除；退休后旧执行者不能重新发布 |
+| UNKNOWN 安全对账 | 一次看到 absent，不等于此前请求不可能稍后产生效果；缺证据不能自动重放 |
+
+这些是 **`implementation_incomplete`**，不是单纯缺少测试环境。自动安全 GC 不能绕过这部分上线，也不能通过删除 UNKNOWN、放宽保护或无条件重试来“闭环”。
+
+下一步需要把关键决定放入 MetaStore 的串行写事务，而不是继续增加客户端状态标记。历史未终态构建的迁移边界尚待确认：保留旧记录和数据、停写维护后迁移，或承担在线兼容迁移的额外设计与验收。尚未据此操作旧数据。
+
+## 四、代码进展与运行部署必须分开汇报
+
+最近记录的环境是单节点 `orbstack`、命名空间 `cube-ha-remediation`、CR `analytics`：API 1、Refresher 1、Router 2、Worker 2、MetaStore 1；PVC 为 `local-path`，没有命名空间 NetworkPolicy，`ProductionReady=False`。
+
+**最新 authority 修复尚未构建成统一部署镜像并在该环境完成验收。** 最近旧部署认证 `/meta`、`/load` 返回 HTTP 200，只证明查询基线；不代表新协议、切主后数据一致性或 Refresher 崩溃恢复通过。
+
+Refresher 自身重启 E2E 还缺代理 Service，并有物理表 ready 但 ledger 未终结的历史记录。未删除这些记录来制造 PASS。单节点 PVC 也不能证明节点级容灾。
+
+| 维度 | 当前状态 |
+| --- | --- |
+| Router 主备及历史业务切换 | 已实现，有限定场景历史实测 |
+| 新服务端授权及恢复边界 | 有实现，多项本地回归通过 |
+| 数据库普通关闭重开 | 已实测，不含快照回退和磁盘故障 |
+| 预聚合全流程并发一致性 | 核心事务仍需开发 |
+| 新协议真实部署与故障恢复 | 未完成整体验收 |
+| 整套 Cube 生产级 HA | 无放行依据，NO-GO |
+
+发布记录必须关联源码提交、镜像 digest、实际 Pod imageID、测试环境和时间，不能只写可变镜像 tag。
+
+## 五、剩余生产门禁
+
+| 优先级 | 未完成项 |
+| --- | --- |
+| P0 | 构建 claim/generation、发布/引用/retirement 原子事务及 UNKNOWN 对账 |
+| P0 | 新 strict authority 的真实 TLS、RBAC、TokenReview、晋升及 Scheduler/GC 等后台任务兼容性 |
+| P0 | 暂停旧主、网络隔离、Lease 失效时的实际写入拒绝与业务恢复 |
+| P0 | Refresher 自身崩溃恢复及真实 Cube API 数据一致性 E2E |
+| P0 | 快照回退、磁盘故障、授权记录缺失的安全处理 |
+| P1 | Kubernetes API 开销、长期负载、积压/UNKNOWN 年龄/容量及恢复阶段监控 |
+| P1 | 统一镜像、升级回滚、备份恢复、多节点故障验收 |
+| 验收前提 | RPO/RTO、保留期、迁移方式及生产等价测试资源定标 |
+
+最近本机可用空间约 17 GiB；没有擅自清理缓存、镜像或数据卷来腾空间，也没有据此启动大型镜像构建。构建资源和多节点环境不足属于外部条件，不能掩盖上面的事务代码未完成。
+
+本项目当前不承诺零丢失、exactly-once 或自动恢复所有 Job/upload/preaggregation/Refresher 工作。
+
+## 六、开发与演示入口
 
 从仓库根目录进入：
 
@@ -88,57 +131,37 @@ go mod download
 go test ./controllers ./api/... ./internal/agent -count=1 -timeout=90s
 ```
 
-项目保留两类演示入口，运行前阅读对应清单与 [演示文档](HA-ROUTER-K8S-DEMO.md)：
+只读查看最近的本地演示环境：
 
-| 入口 | 用途 | 边界 |
-| --- | --- | --- |
-| `./demo/k8s/run-cubecluster.sh` | 演示通过顶层 CR 编排 Cube | 会操作资源；不是新 authority 的自动迁移或生产安装证明 |
-| `./demo/k8s/run.sh` | 历史 Router 主备演示 | 不可用旧镜像演练结果替代新协议验收 |
-| `./ha-validate.sh` | 本地依赖、Driver 静态检查/构建、Go 测试、Rust 检查 | 不是“完整生产验收”，不包含所有真实故障 E2E |
+```bash
+kubectl --context orbstack -n cube-ha-remediation get cubecluster analytics -o yaml
+kubectl --context orbstack -n cube-ha-remediation get deploy,sts,svc,pvc
+kubectl --context orbstack -n cube-ha-remediation get cubestorerouter analytics-router -o yaml
+kubectl --context orbstack -n cube-ha-remediation get endpointslices
+```
 
-只在隔离的本地测试环境执行会修改资源的脚本，确认脚本实际使用的 kube-context、命名空间、镜像及对象存储，不要直接用于生产。MinIO 演示实例不是生产数据层；kind/minikube 等环境还需按相应工具导入镜像或使用可访问仓库。
+| 入口 | 用途和限制 |
+| --- | --- |
+| `./demo/k8s/run-cubecluster.sh` | 顶层 CR 编排演示；已接入 authority RBAC，但不是新协议的运行验收或旧集群自动迁移 |
+| `./demo/k8s/run.sh` | 历史 Router 主备演示；未在本轮扩展新 authority 安装接线 |
+| `./ha-validate.sh` | 本地依赖、静态检查、构建与测试；不是完整故障 E2E 或生产验收 |
+| [authority-canary.yaml](config/samples/authority-canary.yaml) | 需填入真实镜像、存储和时序预算的候选配置，不是已验证的一键部署文件 |
 
-### 新 authority 安装特别说明
+会修改资源的脚本只能在确认了 kube-context、命名空间、镜像和存储的隔离测试环境运行。不要直接用于生产。已有非 strict 集群不能通过普通滚动更新直接开启新协议，需要停写、隔离旧写者和维护迁移；strict 是约束模式，不是生产认证。
 
-`spec.authority` 是新安装的显式配置，包含 API 超时、校验窗口、时钟偏差预算；不能把参数随便填写后认为已满足 fencing 条件。
+历史 `data-consistency-check.sh` 默认的 `SELECT 1` 只是连通性冒烟。跳过 leader Service 路径不能算业务入口验收通过；同一 SQL 两次 hash 相同，也可能两次都命中旧缓存。真实验收需要已知源数据、预期结果、构建身份、物理表身份和明确故障点。
 
-[authority-canary.yaml](config/samples/authority-canary.yaml) 是待填入真实镜像及存储参数的候选示例，不是已验收的一键部署文件。[authority RBAC](config/rbac/authority.yaml) 已接入 `run-cubecluster.sh` 并通过接线测试及 server dry-run；旧 `run.sh` 入口未在本轮扩展。不要只照旧 RBAC 命令安装后就开启 strict，实际 MetaStore SA 权限与运行链路仍需验证。
+## 七、给领导汇报的口径
 
-已有非 strict 集群需要单独批准的停写、隔离旧写者和维护迁移流程，不应直接通过滚动更新开启新协议。`strict` 是安全约束模式，不是生产认证标签。
-
-## 如何验收数据，而不只是验收切换
-
-| 层次 | 可以证明什么 | 不能证明什么 |
-| --- | --- | --- |
-| Pod Ready、Lease epoch、Service EndpointSlice | 组件就绪及入口角色切换 | 已确认写入不丢、旧主停止写入、业务数据正确 |
-| `SELECT 1` | SQL 请求能够返回 | 任何业务表、预聚合或上传数据的一致性 |
-| 同一业务 SQL 切前切后 hash 相同 | 本次查询结果相同 | 两次都读旧缓存、未消费新预聚合、并发写丢失等情况已被排除 |
-| 真实 Cube API + 已知源数据 + 构建身份 | 经业务入口查询及实际预聚合身份关联 | 未覆盖的故障窗口和多节点场景也安全 |
-
-历史 `data-consistency-check.sh` 的默认 `SELECT 1` 只能用于连通性冒烟。跳过 leader Service 路径不能视为业务入口验收通过。真实验收必须固定输入、预期数据、buildId/generation、物理表身份、故障点和镜像版本，并保存切换前后结果以及旧主被拒绝的证据。
-
-当前 Refresher 重启 E2E 还缺代理 Service，且 ledger 存在物理表 ready 但未终结的记录。不得删除 UNKNOWN、放宽全局静默条件或跳过数据检查来换取 PASS。
-
-## 尚未通过的生产门禁
-
-| 优先级 | 未完成项 | 状态 |
-| --- | --- | --- |
-| P0 | 新 authority 的真实 TLS/RBAC/TokenReview/晋升与后台任务兼容性 | `evidence_incomplete` |
-| P0 | 暂停旧主、网络隔离、Lease 失效时拒绝旧写者 | 新协议真实 K8s 故障验收未完成 |
-| P0 | 快照恢复、磁盘故障及授权记录缺失的安全处理 | 普通数据库关闭重开测试已过，其余仍为 `implementation_incomplete / evidence_incomplete` |
-| P0 | 构建代次、UNKNOWN 对账及发布/引用/回收原子协调 | `implementation_incomplete`；Driver false 歧义已收紧，不替代权威 claim 或事务化清理 |
-| P0 | Refresher 崩溃恢复及真实 Cube API 数据一致性 E2E | 未通过 |
-| P1 | 访问 Kubernetes API 的开销与负载优化 | grant 状态有界清理已实现并测试；API 调用开销优化及负载验收未完成 |
-| P1 | 完整监控、统一镜像、升级/回滚及多节点故障验收 | 未完成；当前单节点环境不足以验收节点级容灾 |
-| 验收前提 | RPO/RTO、保留期、真实测试集群及备份恢复条件 | 尚未完成定标和实证 |
-
-本页不承诺零丢失、exactly-once 或自动恢复所有 Job/upload/preaggregation/Refresher 工作。允许短暂不可用也不改变这些数据保护门禁。满足条件并取得对应运行证据后，才能更新生产结论。
+> Cube Router HA 已形成主备切换、控制面加固和文件导入型预聚合恢复保护，并将写入授权校验推进到 MetaStore 服务端。最新一轮修复了恢复状态判断、授权内存保留、数据库真实重开及权限安装接线问题，相关本地测试通过。
+>
+> 当前仍有两类工作：一是完成预聚合构建领取、结果发布、引用保护和回收的原子协调；二是将统一版本部署到测试集群，完成新授权协议、故障恢复及多节点验收。项目已有实质性能力和验证进展，但尚不能宣布整套 Cube 达到生产级高可用。
 
 ## 目录
 
-- `api/`：`CubeCluster`、`CubestoreRouter` 类型定义。
-- `controllers/`：整套 Cube 编排、主备协调及 authority 接入。
+- `api/`：CubeCluster、CubestoreRouter 类型定义。
+- `controllers/`：Cube 编排、主备协调及 authority 接入。
 - `config/crd/`：CRD 清单。
 - `config/manager/`：Operator 部署对象。
-- `config/rbac/`：权限清单，安装完整性必须单独核验。
+- `config/rbac/`：权限清单。
 - `demo/k8s/`：演示、检查脚本及分日期原始证据。
