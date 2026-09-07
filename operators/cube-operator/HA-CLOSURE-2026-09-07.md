@@ -253,3 +253,80 @@ cargo +nightly-2025-08-01 test --locked --offline -p cubestore --lib --bins --no
 运行环境本轮只读快照：`orbstack` / `cube-ha-remediation` / `analytics` 的 `spec.authority` 为 null；API 镜像为 `cube-studio-api:ha-remediation-20260907-refresher`，lease-agent 为 `cube-operator:ha-remediation-20260907-cutover`，MetaStore/Router/Worker 为 `cube-studio-router:ha-remediation-20260907-final`。它们不包含本轮新授权协议的部署证明。`ProductionReady=False`，原因为 `EvidenceIncomplete`。
 
 结论：已有入口选主和切换能力，不等于已完成生产级写一致性及预聚合恢复。上述门禁未通过前，不宣布生产 GO。
+
+## 2026-09-07 八项整改执行检查点：候选代码禁止发布
+
+本节记录 `972faa85a0` 提交之后的本地执行结果，覆盖此前“Rust 编译超时、实际测试数为 0”的最新状态。历史日志仍保留。本轮未提交、推送、构建镜像或变更 Kubernetes 工作负载。
+
+### 实际验证
+
+| 检查 | 结果 | 证据及边界 |
+| --- | --- | --- |
+| Rust lib/tests/bin 编译 | PASS，2 分 20 秒 | `demo/k8s/evidence/2026-09-07-eight-items/rust-baseline-build.log`；仍有警告 |
+| Rust `authority_` | 1 PASS / 1 FAIL | `rust-baseline-authority-tests.log`；Worker staging 失败，未到后续重启断言 |
+| Rust `task4_rpc_` | 2 PASS，0.64 秒 | `rust-baseline-task4-rpc-tests.log`；不是新协议完整验收 |
+| Go controllers/API/agent | 编译通过；controllers FAIL；agent PASS | `TestAuthorityIntegrationInitialCandidateAndMissingLease` 返回 `lease state is unknown`；API 无测试文件 |
+| TS Recovery/PreAggregations/QueryQueue | 74 PASS，但发现新增可用性回退 | 来自子任务执行输出，没有落盘完整原始日志；不得以测试通过认定正常首次构建可用 |
+| Refresher harness | 28/28 PASS | 本轮修复结构化证据输出去敏，输出文件限制为 0600；不保证任意自由文本 stderr 无敏感信息 |
+| 生产预检单测 | 7/7 PASS | 收集器单测，不代表环境通过 |
+| 真实部署 Cube API `/meta`、`/load` | 认证后 HTTP 200，查询数据留存 | 只读基线，不是切主后复查、Refresher 重启或源数据独立对账 |
+| 真实生产预检 | BLOCKED / productionGo=false | 单节点、local-path、无 NetworkPolicy、镜像未固定 digest、缺 RPO/RTO 定标 |
+
+Refresher/API 原始证据及精确故障提案：`demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/REPORT.md`。
+
+### 三个阻止继续部署的具体问题
+
+1. Rust 已定位的现有缺陷：`create_chunk()` 使用通用 `write_operation` 标签，而 Worker admission 白名单要求 `create_chunk`，导致合法 Worker 请求被拒绝。不能通过允许通用写入标签绕过授权。拟修复操作标签并保留真实 RPC 错误信息；本轮尚未修改。
+2. 本轮 TS 补丁引入回退：对 `resumePreAggregationBuild() !== true` 一律保持 UNKNOWN，会同时阻断正常首次 `selected` 构建。重新调度不会自动解除该阻塞。另两处清理按 Driver 是否提供保护接口整体暂停，影响范围不只新 durable 构建。候选补丁仍留在本地，已向用户报告并等待对精准撤回/修复的决定；不部署、不宣称安全恢复闭环。
+3. 本轮 Operator 候选接入的首次 Lease 引导测试失败。已有 API/CRD、TLS/token/RBAC 渲染和引导代码不等于运行可用；错误根因尚未完成诊断，不能忽略测试或自动启用当前 analytics。
+
+### 八项任务逐项状态
+
+| 项目 | 当前状态 | 下一门禁 |
+| --- | --- | --- |
+| Rust 编译及新授权协议 | 编译完成，协议测试失败 | 修正 Worker 操作标签，重跑完整授权矩阵 |
+| Operator 自动安全接入 | 候选实现已写入，引导测试失败 | 修复引导并通过定向测试，再做真实 TLS/RBAC/TokenReview/晋升联调 |
+| 旧主暂停/断网/Lease 失效 | 新协议真实 K8s 故障验收未执行 | 前两项通过，隔离测试环境与精确故障对象确定后执行 |
+| 数据库重开/快照/授权缺失 | implementation_incomplete | 补齐真实关闭、释放数据库引用、同路径重开及恢复安全契约；State 重建不能替代 |
+| 预聚合代次/发布回收/UNKNOWN | implementation_incomplete，候选补丁有新回退 | 先恢复正常首次构建；权威 claim/generation、发布/引用/retirement 事务接口仍缺，不能用 TS 本地状态替代 |
+| Refresher + Cube API E2E | 只读 API 正常，故障恢复未通过 | 缺 `analytics-refresher-restart-proxy:13332`；历史非终态 ledger 需安全对账，不删除 UNKNOWN 换 PASS |
+| 授权内存/访问 API 性能 | 尚未修改 | 单 grant 有界保留、失败不破坏旧授权、续期测试；再进行安全前提下的开销优化 |
+| 监控/镜像/升级回滚/多节点 | 未完成；环境验收受阻 | 固定可验收镜像，补监控，完成真实兼容性及升级回滚，多节点部署与 RPO/RTO 定标 |
+
+真实 ledger 中至少有 tableId 6、12 物理状态 ready 但未标记 ready/failed/retired，已保留原状。这证明当前运行状态需要对账，不足以确定根因，也不能归因于尚未部署的新 authority。
+
+结论：本轮不是“八项已完成”。当前为 `evidence_incomplete`、相关实现 `implementation_incomplete`；本地候选代码存在已知回退，禁止发布。运行中的旧版本未被本轮修改。
+
+## 2026-09-07 三处定向修复：相关测试通过，生产门禁仍未完成
+
+用户批准修复上一检查点暴露的 Worker 标签、首次 Lease 引导及预聚合过度阻塞问题。本节更新这三项的最新状态，不删除此前失败证据，不代表八项整改全部完成。
+
+| 修复 | 根因与修改 | 本轮验证 |
+| --- | --- | --- |
+| Worker 合法写入被拒绝 | `create_chunk()` 写操作标签由通用 `write_operation` 改为 `create_chunk`；不放宽 Worker 白名单 | Rust lib/tests/bin 编译 PASS（1 分 05 秒）；`authority_` 2/2 PASS（0.22 秒），`task4_rpc_` 2/2 PASS（0.08 秒） |
+| 首次 Lease 引导失败 | 引导误用 CR/Pod 的 `cubestore.io/*` 键；改为 LeaseStore 的 `cubejs.io/lease-cluster-id`、`cubejs.io/lease-token`；保留 CR/Pod 原键、UID/所有权及 MissingLease fail-closed | `go test ./controllers ./api/... ./internal/agent -count=1 -timeout=90s` 退出 0；controllers 1.332 秒、agent 1.630 秒；API 无测试文件 |
+| 正常首次预聚合构建持续阻塞 | 撤销对 boolean false 的全面阻塞；恢复首次构建策略；保留身份不符、缺恢复入口、非法返回及显式 UNKNOWN 保护 | Recovery、PreAggregations、QueryQueue 三套测试 76/76 PASS，退出 0 |
+| 正常表清理被全面暂停 | 撤销按 Driver 能力全面停用清理，恢复对具体受保护表的过滤 | 同组三套测试覆盖首次构建、正常清理、受保护表保留和 UNKNOWN 不进入构建策略 |
+
+Go 新增断言还覆盖“已预留但 UID 尚未持久化时 Lease 丢失不得重建”。以上为本地测试，不是 Kubernetes API 真实竞态或节点故障验收。
+
+本轮源码范围：
+
+- `rust/cubestore/cubestore/src/metastore/mod.rs`
+- `operators/cube-operator/controllers/cube_cluster_authority.go`
+- `operators/cube-operator/controllers/cube_cluster_authority_test.go`
+- `packages/cubejs-query-orchestrator/src/orchestrator/PreAggregationLoader.ts`
+- `packages/cubejs-query-orchestrator/test/unit/PreAggregationRecovery.test.ts`
+
+完整原始日志位于 `demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/`：`rust-build.log`、`rust-authority.log`、`rust-task4-rpc.log`、`go-authority-bootstrap.log`、`preaggregation-regression.log`。
+
+### 不因本轮通过而消失的风险
+
+- 预聚合仅恢复既有行为：Driver 的 false 仍混合 selected、无记录、缺上传源，后两类仍可能进入旧构建策略；权威 generation/claim、UNKNOWN 对账、发布/引用/retirement 事务未完成，非事务清理竞态未闭环。
+- Rust restart fixture 仍是 authority State 重建，不是数据库完全关闭重开、旧快照恢复或丢失授权记录的证明。
+- Operator strict 的真实 TLS/RBAC/TokenReview/晋升、后台 Scheduler/GC 兼容性尚未通过。新增 authority RBAC manifest 的安装入口未在本轮接线或验收。
+- grant 内存有界清理、API 调用性能、完整监控、统一镜像、升级/回滚、多节点故障验收仍待完成。
+- 本轮未重跑真实 Cube API、未做 Refresher/Router 故障注入、未构建镜像、未部署、未提交或推送。现有运行环境未改变。
+- Rust 编译仍有警告；Jest 有异步句柄延迟退出警告，最终正常退出，未开展额外句柄诊断。
+
+结论：上一检查点的三处定向问题已修复并通过对应测试；仍为整体 `implementation_incomplete / evidence_incomplete`，生产 `NO-GO`。不能把 76 项单测或本地 HTTPS fixture 提升成真实业务恢复证明。

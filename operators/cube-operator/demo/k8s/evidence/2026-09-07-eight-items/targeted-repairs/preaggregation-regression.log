@@ -1,0 +1,931 @@
+yarn run v1.22.22
+$ /Users/xujiawei/magic/workbench/cube/node_modules/.bin/jest --runInBand --coverage=false --watch=false --runTestsByPath test/unit/PreAggregationRecovery.test.ts test/unit/PreAggregations.test.ts test/unit/QueryQueue.test.ts
+(node:63806) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/unit/QueryQueue.test.ts (29.246 s)
+  ● Console
+
+    console.log
+      Added to queue {"queueId":0,"priority":0,"queueSize":1,"queryKey":["select * from",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772137294,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":0,"processingId":2,"queueSize":0,"queryKey":["select * from",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":84,"addedToQueueTime":1788772137294}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":0,"processingId":2,"queueSize":0,"duration":6,"queryKey":["select * from",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":84,"addedToQueueTime":1788772137294}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":0,"queryKey":["select * from",[]],"queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["c592e0ebeceeea090daecef4a03ce9ce"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":1,"priority":0,"queueSize":1,"queryKey":"instant","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772137391,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Performing query {"queueId":1,"processingId":1,"queueSize":0,"queryKey":"instant","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772137391}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":1,"queryKey":"instant","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["instant"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Waiting for query {"queueId":2,"queryKey":"instant","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["instant"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Performing query completed {"queueId":1,"processingId":1,"queueSize":0,"duration":404,"queryKey":"instant","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772137391}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":3,"priority":1,"queueSize":1,"queryKey":"11","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772137799,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Added to queue {"queueId":4,"priority":0,"queueSize":2,"queryKey":"12","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772137799,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Added to queue {"queueId":5,"priority":10,"queueSize":3,"queryKey":"13","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772137799,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Performing query {"queueId":5,"processingId":5,"queueSize":2,"queryKey":"13","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":3,"processingId":3,"queryKey":"11","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":3,"queryHandler":"delay","query":{"delay":600,"result":"1"},"queryKey":"11","priority":1,"addedToQueueTime":1788772137799},"insertedCount":0,"activeKeys":["13"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":3,"queryKey":"11","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["13"],"toProcessQueryKeys":["11","12"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Waiting for query {"queueId":4,"queryKey":"12","queuePrefix":"f209b96162c9#test_query_queue","queueSize":2,"activeQueryKeys":["13"],"toProcessQueryKeys":["11","12"],"active":false,"queueIndex":1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Waiting for query {"queueId":5,"queryKey":"13","queuePrefix":"f209b96162c9#test_query_queue","queueSize":3,"activeQueryKeys":["13"],"toProcessQueryKeys":["11","12"],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Performing query completed {"queueId":5,"processingId":5,"queueSize":2,"duration":101,"queryKey":"13","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":3,"processingId":3,"queueSize":1,"queryKey":"11","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":103,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":3,"processingId":3,"queueSize":1,"duration":602,"queryKey":"11","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":103,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":4,"processingId":4,"queueSize":0,"queryKey":"12","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":706,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":4,"processingId":4,"queueSize":0,"duration":102,"queryKey":"12","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":706,"addedToQueueTime":1788772137799}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":6,"priority":0,"queueSize":1,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772138610,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":6,"processingId":6,"queueSize":0,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772138610}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":6,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["ef8311dd0d65b42c992121e632043bc7"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Finished waiting for query {"queueId":6,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":7,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","queueSize":0,"activeQueryKeys":["ef8311dd0d65b42c992121e632043bc7"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Error while querying {"queueId":6,"processingId":6,"queueSize":0,"duration":2002,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772138610,"reconciliationRequired":false,"error":"Error: Query execution timeout after 0.03333333333333333 min of waiting\n    at Timeout.<anonymous> (/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/src/orchestrator/QueryQueue.ts:624:18)\n    at listOnTimeout (node:internal/timers:605:17)\n    at processTimers (node:internal/timers:541:7)"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Cancelling query due to timeout {"queueId":6,"processingId":6,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772138610}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      cancel call: {"queueId":6,"queryHandler":"delay","query":{"delay":3000,"result":"1"},"queryKey":["select * from 2",[]],"priority":0,"addedToQueueTime":1788772138610,"startQueryTime":1788772138610,"cancelHandler":"10"}
+
+      at Object.delay (test/unit/QueryQueue.abstract.ts:77:19)
+
+    console.log
+      Finished waiting for query {"queueId":7,"queryKey":["select * from 2",[]],"queuePrefix":"f209b96162c9#test_query_queue"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":8,"priority":0,"queueSize":1,"queryKey":["select * from 3",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772140652,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":8,"processingId":8,"queueSize":0,"queryKey":["select * from 3",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":2,"addedToQueueTime":1788772140652}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":8,"queryKey":["select * from 3",[]],"queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["b4912ae594b9277aeb0d01e7c2d7b3d6"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Error while querying {"queueId":8,"processingId":8,"queueSize":0,"duration":2002,"queryKey":["select * from 3",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":2,"addedToQueueTime":1788772140652,"reconciliationRequired":false,"error":"Error: Query execution timeout after 0.03333333333333333 min of waiting\n    at Timeout.<anonymous> (/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/src/orchestrator/QueryQueue.ts:624:18)\n    at listOnTimeout (node:internal/timers:605:17)\n    at processTimers (node:internal/timers:541:7)"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Cancelling query due to timeout {"queueId":8,"processingId":8,"queryKey":["select * from 3",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772140652}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      cancel call: {"queueId":8,"queryHandler":"delay","query":{"delay":5000,"result":"1","isJob":true},"queryKey":["select * from 3",[]],"priority":0,"addedToQueueTime":1788772140652,"startQueryTime":1788772140654,"cancelHandler":"10"}
+
+      at Object.delay (test/unit/QueryQueue.abstract.ts:77:19)
+          at async Promise.all (index 0)
+
+    console.log
+      Added to queue {"queueId":9,"spanId":"span-id","priority":0,"queueSize":1,"queryKey":"1","queuePrefix":"f209b96162c9#test_query_queue","requestId":"9f056234-aa57-4702-ab30-145221da6a46-span-1","addedToQueueTime":1788772142659,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":9,"processingId":9,"queueSize":0,"queryKey":"1","queuePrefix":"f209b96162c9#test_query_queue","requestId":"9f056234-aa57-4702-ab30-145221da6a46-span-1","timeInQueue":1,"addedToQueueTime":1788772142659}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":9,"spanId":"span-id","queryKey":"1","queuePrefix":"f209b96162c9#test_query_queue","requestId":"9f056234-aa57-4702-ab30-145221da6a46-span-1","waitingForRequestId":"9f056234-aa57-4702-ab30-145221da6a46-span-1","queueSize":1,"activeQueryKeys":["1"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":9,"processingId":9,"queueSize":0,"duration":202,"queryKey":"1","queuePrefix":"f209b96162c9#test_query_queue","requestId":"9f056234-aa57-4702-ab30-145221da6a46-span-1","timeInQueue":1,"addedToQueueTime":1788772142659}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":10,"spanId":"span-id","priority":20,"queueSize":1,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","requestId":"4274691a-5f4c-480e-89c4-d2b9d989891c-span-1","addedToQueueTime":1788772142866,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":10,"processingId":10,"queueSize":0,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","requestId":"4274691a-5f4c-480e-89c4-d2b9d989891c-span-1","timeInQueue":1,"addedToQueueTime":1788772142866}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":10,"spanId":"span-id","queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","requestId":"4274691a-5f4c-480e-89c4-d2b9d989891c-span-1","waitingForRequestId":"4274691a-5f4c-480e-89c4-d2b9d989891c-span-1","queueSize":1,"activeQueryKeys":["31"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":11,"spanId":"span-id","priority":10,"queueSize":1,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","addedToQueueTime":1788772142916,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":11,"processingId":11,"queryKey":"32","requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":11,"queryHandler":"delay","query":{"delay":200,"result":"1"},"queryKey":"32","stageQueryKey":"12","priority":10,"requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","addedToQueueTime":1788772142916},"insertedCount":0,"activeKeys":["31"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":11,"spanId":"span-id","queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","waitingForRequestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","queueSize":1,"activeQueryKeys":["31"],"toProcessQueryKeys":["32"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":10,"processingId":10,"queueSize":0,"duration":205,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","requestId":"4274691a-5f4c-480e-89c4-d2b9d989891c-span-1","timeInQueue":1,"addedToQueueTime":1788772142866}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":11,"processingId":11,"queueSize":0,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","timeInQueue":158,"addedToQueueTime":1788772142916}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":11,"processingId":11,"queueSize":0,"duration":206,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","requestId":"000bce99-b987-4649-ae5e-1178532929f5-span-1","timeInQueue":158,"addedToQueueTime":1788772142916}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":12,"priority":-10,"queueSize":1,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772143281,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":12,"processingId":12,"queueSize":0,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772143281}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":12,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["31"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":13,"priority":-9,"queueSize":1,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772143483,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Added to queue {"queueId":14,"priority":-8,"queueSize":2,"queryKey":"33","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772143483,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Added to queue {"queueId":15,"priority":-7,"queueSize":3,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772143483,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Skip processing {"queueId":15,"processingId":15,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":15,"queryHandler":"delay","query":{"delay":100,"result":"1"},"queryKey":"34","priority":-7,"addedToQueueTime":1788772143483},"insertedCount":0,"activeKeys":["31"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":15,"processingId":15,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":15,"queryHandler":"delay","query":{"delay":100,"result":"1"},"queryKey":"34","priority":-7,"addedToQueueTime":1788772143483},"insertedCount":0,"activeKeys":["31"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":13,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["31"],"toProcessQueryKeys":["34","33","32"],"active":false,"queueIndex":2}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Waiting for query {"queueId":14,"queryKey":"33","queuePrefix":"f209b96162c9#test_query_queue","queueSize":2,"activeQueryKeys":["31"],"toProcessQueryKeys":["34","33","32"],"active":false,"queueIndex":1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Waiting for query {"queueId":15,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","queueSize":3,"activeQueryKeys":["31"],"toProcessQueryKeys":["34","33","32"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Performing query completed {"queueId":12,"processingId":12,"queueSize":0,"duration":402,"queryKey":"31","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772143281}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":15,"processingId":15,"queueSize":2,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":207,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":15,"processingId":15,"queueSize":2,"duration":102,"queryKey":"34","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":207,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":14,"processingId":14,"queueSize":1,"queryKey":"33","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":311,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":14,"processingId":14,"queueSize":1,"duration":106,"queryKey":"33","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":311,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":13,"processingId":13,"queueSize":0,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":418,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":13,"processingId":13,"queueSize":0,"duration":100,"queryKey":"32","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":418,"addedToQueueTime":1788772143483}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":16,"priority":0,"queueSize":1,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144003,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Performing query {"queueId":16,"processingId":16,"queueSize":0,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772144003}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":16,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["111"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Added to queue {"queueId":17,"priority":0,"queueSize":1,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144059,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Skip processing {"queueId":17,"processingId":17,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":17,"queryHandler":"delay","query":{"delay":50,"result":"2"},"queryKey":"112","priority":0,"addedToQueueTime":1788772144059},"insertedCount":0,"activeKeys":["111"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":17,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["111"],"toProcessQueryKeys":["112"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 1)
+
+    console.log
+      Performing query completed {"queueId":16,"processingId":16,"queueSize":0,"duration":63,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772144003}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":17,"processingId":17,"queueSize":0,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":8,"addedToQueueTime":1788772144059}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":18,"priority":0,"queueSize":1,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144086,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Skip processing {"queueId":18,"processingId":18,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":18,"queryHandler":"delay","query":{"delay":50,"result":"3"},"queryKey":"113","priority":0,"addedToQueueTime":1788772144086},"insertedCount":0,"activeKeys":["112"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":18,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["112"],"toProcessQueryKeys":["113"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 2)
+
+    console.log
+      Added to queue {"queueId":19,"priority":0,"queueSize":2,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144113,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 3)
+
+    console.log
+      Skip processing {"queueId":18,"processingId":18,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":18,"queryHandler":"delay","query":{"delay":50,"result":"3"},"queryKey":"113","priority":0,"addedToQueueTime":1788772144086},"insertedCount":0,"activeKeys":["112"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":19,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","queueSize":2,"activeQueryKeys":["112"],"toProcessQueryKeys":["113","114"],"active":false,"queueIndex":1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 3)
+
+    console.log
+      Performing query completed {"queueId":17,"processingId":17,"queueSize":0,"duration":50,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":8,"addedToQueueTime":1788772144059}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":18,"processingId":18,"queueSize":1,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":32,"addedToQueueTime":1788772144086}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":18,"processingId":18,"queueSize":1,"duration":55,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":32,"addedToQueueTime":1788772144086}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":19,"processingId":19,"queueSize":0,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":61,"addedToQueueTime":1788772144113}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":19,"processingId":19,"queueSize":0,"duration":51,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":61,"addedToQueueTime":1788772144113}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":20,"priority":0,"queueSize":1,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144229,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":20,"processingId":20,"queueSize":0,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772144229}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":20,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["111"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":20,"processingId":20,"queueSize":0,"duration":54,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772144229}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":21,"priority":0,"queueSize":1,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144285,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":21,"processingId":21,"queueSize":0,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144285}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":21,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["112"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":21,"processingId":21,"queueSize":0,"duration":54,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144285}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":22,"priority":0,"queueSize":1,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144340,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":22,"processingId":22,"queueSize":0,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144340}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":22,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["113"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":22,"processingId":22,"queueSize":0,"duration":50,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144340}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":23,"priority":0,"queueSize":1,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144391,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":23,"processingId":23,"queueSize":0,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144391}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":23,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["114"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":23,"processingId":23,"queueSize":0,"duration":55,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144391}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":24,"priority":0,"queueSize":1,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144447,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":24,"processingId":24,"queueSize":0,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144447}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":24,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["111"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":25,"priority":0,"queueSize":1,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144500,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":25,"processingId":25,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":25,"queryHandler":"delay","query":{"delay":800,"result":"2"},"queryKey":"112","priority":0,"addedToQueueTime":1788772144500},"insertedCount":0,"activeKeys":["111"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":25,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["111"],"toProcessQueryKeys":["112"],"active":false,"queueIndex":0}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":26,"priority":0,"queueSize":2,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144524,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":25,"processingId":25,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":25,"queryHandler":"delay","query":{"delay":800,"result":"2"},"queryKey":"112","priority":0,"addedToQueueTime":1788772144500},"insertedCount":0,"activeKeys":["111"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":26,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","queueSize":2,"activeQueryKeys":["111"],"toProcessQueryKeys":["112","113"],"active":false,"queueIndex":1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":27,"priority":0,"queueSize":3,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144548,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":25,"processingId":25,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":25,"queryHandler":"delay","query":{"delay":800,"result":"2"},"queryKey":"112","priority":0,"addedToQueueTime":1788772144500},"insertedCount":0,"activeKeys":["111"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":27,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","queueSize":3,"activeQueryKeys":["111"],"toProcessQueryKeys":["112","113","114"],"active":false,"queueIndex":2}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":24,"processingId":24,"queueSize":0,"duration":802,"queryKey":"111","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772144447}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":25,"processingId":25,"queueSize":2,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":752,"addedToQueueTime":1788772144500}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":26,"processingId":26,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":26,"queryHandler":"delay","query":{"delay":800,"result":"3"},"queryKey":"113","priority":0,"addedToQueueTime":1788772144524},"insertedCount":0,"activeKeys":["112"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":28,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","queueSize":3,"activeQueryKeys":["112"],"toProcessQueryKeys":["113","114"],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Finished waiting for query {"queueId":25,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Finished waiting for query {"queueId":26,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Finished waiting for query {"queueId":27,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue"}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":25,"processingId":25,"queueSize":2,"duration":803,"queryKey":"112","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":752,"addedToQueueTime":1788772144500}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":26,"processingId":26,"queueSize":1,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1532,"addedToQueueTime":1788772144524}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Skip processing {"queueId":27,"processingId":27,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":{"queueId":27,"queryHandler":"delay","query":{"delay":900,"result":"4"},"queryKey":"114","priority":0,"addedToQueueTime":1788772144548},"insertedCount":0,"activeKeys":["113"],"activated":false,"queryExists":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":29,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","queueSize":2,"activeQueryKeys":["113"],"toProcessQueryKeys":["114"],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":26,"processingId":26,"queueSize":1,"duration":838,"queryKey":"113","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1532,"addedToQueueTime":1788772144524}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Removing orphaned query {"queueId":27,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772144548}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      cancel call: {"queueId":27,"queryHandler":"delay","query":{"delay":900,"result":"4"},"queryKey":"114","priority":0,"addedToQueueTime":1788772144548}
+
+      at Object.delay (test/unit/QueryQueue.abstract.ts:77:19)
+          at async Promise.all (index 0)
+
+    console.log
+      Added to queue {"queueId":30,"priority":0,"queueSize":1,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772147434,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":30,"processingId":30,"queueSize":0,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772147434}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":30,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["114"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":30,"processingId":30,"queueSize":0,"duration":54,"queryKey":"114","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772147434}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":31,"priority":0,"queueSize":1,"queryKey":["select * from table",[]],"queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772150009,"persistent":true}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":31,"processingId":31,"queueSize":0,"queryKey":["select * from table",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772150009}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":31,"queryKey":["select * from table",[]],"queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":["bc6c8a93a7dca1e97320577af064f4b5@4c44b15f-22ca-55c1-9f43-81ea7c2dea30"],"toProcessQueryKeys":[],"active":true,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":31,"processingId":31,"queueSize":0,"duration":261,"queryKey":["select * from table",[]],"queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":1,"addedToQueueTime":1788772150009}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+          at async Promise.all (index 0)
+
+    console.log
+      Skip processing {"queueId":null,"processingId":3,"queryKey":"c592e0ebeceeea090daecef4a03ce9ce","requestId":null,"queuePrefix":"f209b96162c9#test_query_queue","processingLockAcquired":true,"query":null,"insertedCount":1,"activeKeys":["c592e0ebeceeea090daecef4a03ce9ce"],"activated":true,"queryExists":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Added to queue {"queueId":32,"priority":0,"queueSize":1,"queryKey":"c592e0ebeceeea090daecef4a03ce9ce","queuePrefix":"f209b96162c9#test_query_queue","addedToQueueTime":1788772150278,"persistent":false}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query {"queueId":32,"processingId":32,"queueSize":0,"queryKey":"c592e0ebeceeea090daecef4a03ce9ce","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772150278}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Performing query completed {"queueId":32,"processingId":32,"queueSize":0,"duration":0,"queryKey":"c592e0ebeceeea090daecef4a03ce9ce","queuePrefix":"f209b96162c9#test_query_queue","timeInQueue":0,"addedToQueueTime":1788772150278}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      Waiting for query {"queueId":32,"queryKey":"c592e0ebeceeea090daecef4a03ce9ce","queuePrefix":"f209b96162c9#test_query_queue","queueSize":1,"activeQueryKeys":[],"toProcessQueryKeys":[],"active":false,"queueIndex":-1}
+
+      at QueryQueueExtended.<anonymous> (test/unit/QueryQueue.abstract.ts:34:56)
+
+    console.log
+      [
+        0,
+        null,
+        [ 'race2' ],
+        1,
+        {
+          queueId: undefined,
+          queryHandler: 'handler',
+          query: [ 'select' ],
+          queryKey: 'race',
+          stageQueryKey: 'race',
+          priority: 10,
+          requestId: undefined,
+          addedToQueueTime: 1788772150283
+        },
+        true
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:399:15)
+
+    console.log
+      [
+        {
+          queueId: undefined,
+          queryHandler: 'handler',
+          query: [ 'select' ],
+          queryKey: 'race',
+          stageQueryKey: 'race',
+          priority: 10,
+          requestId: undefined,
+          addedToQueueTime: 1788772150283
+        }
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:402:15)
+
+    console.log
+      [
+        {
+          queueId: undefined,
+          queryHandler: 'handler2',
+          query: [ 'select2' ],
+          queryKey: 'race2',
+          stageQueryKey: 'race2',
+          priority: 10,
+          requestId: undefined,
+          addedToQueueTime: 1788772150283
+        }
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:403:15)
+
+    console.log
+      [
+        1,
+        null,
+        [ 'activated1' ],
+        1,
+        {
+          queueId: undefined,
+          queryHandler: 'handler',
+          query: [ 'select' ],
+          queryKey: 'activated1',
+          stageQueryKey: 'race',
+          priority: 10,
+          requestId: '1',
+          addedToQueueTime: 1788772150289
+        },
+        true
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:431:15)
+
+    console.log
+      [
+        0,
+        null,
+        [ 'activated1' ],
+        1,
+        {
+          queueId: undefined,
+          queryHandler: 'handler2',
+          query: [ 'select2' ],
+          queryKey: 'activated2',
+          stageQueryKey: 'race2',
+          priority: 10,
+          requestId: '1',
+          addedToQueueTime: 1788772150289
+        },
+        true
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:433:15)
+
+    console.log
+      undefined
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:434:15)
+
+    console.log
+      null
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:436:15)
+
+    console.log
+      undefined
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:437:15)
+
+    console.log
+      false
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:438:15)
+
+    console.log
+      undefined
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:439:15)
+
+    console.log
+      [
+        1,
+        null,
+        [ 'activated2' ],
+        0,
+        {
+          queueId: undefined,
+          queryHandler: 'handler2',
+          query: [ 'select2' ],
+          queryKey: 'activated2',
+          stageQueryKey: 'race2',
+          priority: 10,
+          requestId: '1',
+          addedToQueueTime: 1788772150289
+        },
+        true
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:442:15)
+
+    console.log
+      [
+        {
+          queueId: undefined,
+          queryHandler: 'handler',
+          query: [ 'select' ],
+          queryKey: 'activated1',
+          stageQueryKey: 'race',
+          priority: 10,
+          requestId: '1',
+          addedToQueueTime: 1788772150289
+        }
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:446:15)
+
+    console.log
+      [
+        {
+          queueId: undefined,
+          queryHandler: 'handler2',
+          query: [ 'select2' ],
+          queryKey: 'activated2',
+          stageQueryKey: 'race2',
+          priority: 10,
+          requestId: '1',
+          addedToQueueTime: 1788772150289
+        }
+      ]
+
+      at Object.<anonymous> (test/unit/QueryQueue.abstract.ts:447:15)
+
+PASS test/unit/PreAggregationRecovery.test.ts
+PASS test/unit/PreAggregations.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       76 passed, 76 total
+Snapshots:   0 total
+Time:        34.417 s
+Ran all test suites within paths "test/unit/PreAggregationRecovery.test.ts", "test/unit/PreAggregations.test.ts", "test/unit/QueryQueue.test.ts".
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+Done in 47.03s.

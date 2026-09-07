@@ -1,0 +1,38 @@
+# Fresh, isolated installation only. Never use this to patch existing analytics.
+# Replace the three image variables with built, verified artifact references.
+# These are inputs, NOT claims that an authority-compatible image was released.
+# If using digest pins, pin every image; use the SAME Rust digest in all 3 roles.
+# Install config/rbac/authority.yaml through the cluster RBAC administrator first.
+# This namespace matches the existing Operator Role/RoleBinding manifests.
+# The new name and object-store subpath isolate this from analytics history.
+# Timing values below are example budgets, not measured environment guarantees.
+apiVersion: cubestore.io/v1alpha1
+kind: CubeCluster
+metadata:
+  name: authority-canary
+  namespace: cube-operator-demo
+spec:
+  images:
+    api: "${API_IMAGE}"
+    router: "${CUBESTORE_IMAGE}"
+    metaStore: "${CUBESTORE_IMAGE}"
+    worker: "${CUBESTORE_IMAGE}"
+    leaseAgent: "${LEASE_AGENT_IMAGE}"
+  authority:
+    apiTimeoutMs: 1000
+    validationTimeoutMs: 3000
+    maxClockSkewMs: 250
+  router:
+    highAvailability: true
+    replicas: 2
+  metaStore:
+    replicas: 1
+  workers:
+    replicas: 2
+  storage:
+    endpoint: "${OBJECT_STORE_ENDPOINT}"
+    bucket: "${OBJECT_STORE_BUCKET}"
+    subPath: authority-canary
+    objectStoreSecretRef:
+      name: "${OBJECT_STORE_SECRET}"
+    dataSize: 10Gi

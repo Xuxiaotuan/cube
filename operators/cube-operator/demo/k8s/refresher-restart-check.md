@@ -161,3 +161,13 @@ Evidence files include `before.json`, `after.json`, `events.jsonl`,
 runtime events, stderr, and `summary.json`. A helper-test PASS or shell exit code
 does not satisfy task 5/10; the parent must inspect the actual barrier, durable
 identity, table identity, scheduler origin, result hashes and topology evidence.
+
+## Evidence confidentiality
+
+Structured controller snapshots and runtime events omit `env`, `envFrom`,
+annotations, managedFields, and credential-named fields recursively, including
+Pod objects nested in release/verification proofs. Saved JSON files use mode
+0600. Assertions still use the original in-memory Kubernetes objects. This is
+not a general free-text log scrubber: do not log tokens, Secrets, environment
+values, or authentication headers; arbitrary upstream error text is not certified
+secret-free by this filter. Tokens remain inside the API runtime.

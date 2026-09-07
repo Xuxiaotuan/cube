@@ -132,6 +132,106 @@ describe('pre-aggregation queue/refresher failover', () => {
     expect(driver.dropTable.mock.calls).toEqual([[orphan]]);
   });
 
+  it.each([undefined, null, 1])('does not interpret an invalid resume result (%s) as permission to rebuild', async result => {
+    const { loader, driver, preAggregations, loadCache } = setup();
+    driver.resumePreAggregationBuild.mockResolvedValue(result);
+    const download = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy');
+    await expect(loader.refresh(entry, [], {}, target)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect(download).not.toHaveBeenCalled();
+    expect(loadCache.fetchTables).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableTouched).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableUsed).not.toHaveBeenCalled();
+  });
+
+  it('executes the first build strategy when a selected durable build returns false', async () => {
+    const { loader, driver, preAggregations } = setup();
+    // The existing driver returns false for selected. This exercises that
+    // first-build contract, not proof that every false result is safe to replay.
+    driver.resumePreAggregationBuild.mockResolvedValue(false);
+    const download = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy').mockResolvedValue(undefined);
+    await loader.refresh(entry, [], {}, target);
+    expect(driver.resumePreAggregationBuild).toHaveBeenCalledWith(target);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(download).toHaveBeenCalledWith({}, entry, expect.any(Function), []);
+    expect(preAggregations.removeTableTouched).not.toHaveBeenCalled();
+  });
+
+  it('does not enter the first-build fallback after an explicit UNKNOWN reconciliation error', async () => {
+    const { loader, driver, preAggregations } = setup();
+    const unknown = Object.assign(new Error('manifest outcome unresolved'), { code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError' });
+    driver.resumePreAggregationBuild.mockRejectedValue(unknown);
+    const download = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy');
+    await expect(loader.refresh(entry, [], {}, target)).rejects.toBe(unknown);
+    expect(download).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableTouched).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableUsed).not.toHaveBeenCalled();
+  });
+
+  it('rejects a build identity that differs from the requested target before reconciliation', async () => {
+    const { loader, driver, preAggregations } = setup();
+    await expect(loader.refresh(entry, [], {}, 's.other')).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect(driver.resumePreAggregationBuild).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableTouched).not.toHaveBeenCalled();
+  });
+
+  it('keeps a durable build unresolved when the driver has no recovery entry point', async () => {
+    const { loader, driver, preAggregations } = setup();
+    delete (driver as any).resumePreAggregationBuild;
+    const download = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy');
+    await expect(loader.refresh(entry, [], {}, target)).rejects.toMatchObject({ code: 'MUTATION_UNKNOWN' });
+    expect(download).not.toHaveBeenCalled();
+    expect(preAggregations.removeTableTouched).not.toHaveBeenCalled();
+  });
+
+  it('allows legacy source work without a durable build identity', async () => {
+    const { loader, driver } = setup();
+    const download = jest.spyOn(loader as any, 'refreshReadOnlyExternalStrategy').mockResolvedValue(undefined);
+    await loader.refresh(entry, [], {});
+    expect(driver.resumePreAggregationBuild).not.toHaveBeenCalled();
+    expect(download).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves normal orphan cleanup when the protection snapshot is empty', async () => {
+    const { loader, driver } = setup();
+    driver.getTablesQuery.mockResolvedValue([{ table_name: 'other_dddd4444_aaaa1111_3' }]);
+    await (loader as any).dropOrphanedTables(driver, target, (p: any) => p, true, {});
+    expect(driver.getProtectedPreAggregationTables).toHaveBeenCalled();
+    expect(driver.dropTable.mock.calls).toEqual([['s.other_dddd4444_aaaa1111_3']]);
+  });
+
+  it('preserves normal source temp table cleanup when the target is not protected', async () => {
+    const { loader, driver } = setup();
+    driver.getTablesQuery.mockResolvedValue([{ table_name: target.slice(2) }]);
+    await (loader as any).cleanupWriteStrategy(driver, target, {}, (p: any) => p, true, true);
+    expect(driver.dropTable.mock.calls).toEqual([[target]]);
+    expect(driver.getTablesQuery).toHaveBeenCalled();
+  });
+
+  it('still retains a source temp table explicitly protected by a pending build', async () => {
+    const { loader, driver } = setup();
+    driver.getProtectedPreAggregationTables.mockResolvedValue([target]);
+    await (loader as any).cleanupWriteStrategy(driver, target, {}, (p: any) => p, true, true);
+    expect(driver.dropTable).not.toHaveBeenCalled();
+    expect(driver.getTablesQuery).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when protection enumeration fails', async () => {
+    const { loader, driver } = setup();
+    driver.getTablesQuery.mockResolvedValue([{ table_name: 'other_dddd4444_aaaa1111_3' }]);
+    driver.getProtectedPreAggregationTables.mockRejectedValue(new Error('ledger unavailable'));
+    await expect((loader as any).dropOrphanedTables(driver, target, (p: any) => p, true, {})).rejects.toThrow('ledger unavailable');
+    expect(driver.dropTable).not.toHaveBeenCalled();
+  });
+
+  it('preserves legacy orphan cleanup for drivers without the durable protection contract', async () => {
+    const { loader, driver } = setup();
+    delete (driver as any).getProtectedPreAggregationTables;
+    const orphan = 's.other_dddd4444_aaaa1111_3';
+    driver.getTablesQuery.mockResolvedValue([{ table_name: orphan.slice(2) }]);
+    await (loader as any).dropOrphanedTables(driver, target, (p: any) => p, true, {});
+    expect(driver.dropTable.mock.calls).toEqual([[orphan]]);
+  });
+
   it.each([true, false])('preserves UNKNOWN across queue serialization (skipQueue=%s)', async (skipQueue) => {
     const queue = new QueryQueue(`recovery-${skipQueue}`, {
       cacheAndQueueDriver: 'memory', logger: jest.fn(), skipQueue,

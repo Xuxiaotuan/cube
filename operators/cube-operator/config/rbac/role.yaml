@@ -23,5 +23,5 @@ rules:
     resources: ["endpointslices"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["cubestore.io"]
-    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers", "cubeclusters", "cubeclusters/status"]
+    resources: ["cubestorerouters", "cubestorerouters/status", "cubestorerouters/finalizers", "cubeclusters", "cubeclusters/status", "cubeclusters/finalizers"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

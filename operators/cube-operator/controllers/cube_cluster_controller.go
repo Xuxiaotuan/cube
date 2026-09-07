@@ -83,11 +83,14 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	if !cluster.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, r.cleanupAuthorityBinding(ctx, &cluster)
+	}
 	if err := validateCubeCluster(&cluster); err != nil {
 		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "InvalidSpec", err.Error())
 	}
-	if !cluster.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+	if err := r.validateAuthorityTransition(ctx, &cluster); err != nil {
+		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "AuthorityMaintenanceRequired", err.Error())
 	}
 	if err := r.validateStorageTransition(ctx, &cluster); err != nil {
 		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "StorageTransitionBlocked", err.Error())
@@ -110,6 +113,14 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if err := r.reconcileRouterRBAC(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
+	}
+	if cluster.Spec.Authority != nil {
+		if err := r.prepareAuthority(ctx, &cluster); err != nil {
+			return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "AuthorityPrerequisitesUnavailable", err.Error())
+		}
+		// A partially created fresh strict installation must finish creating
+		// dependencies, rather than wait for readiness of a circular RPC graph.
+		bootstrap = cluster.Status.ObservedGeneration == 0
 	}
 	if err := r.reconcileMetaStore(ctx, &cluster); err != nil {
 		return ctrl.Result{}, err
@@ -166,6 +177,9 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 func validateCubeCluster(cluster *v1alpha1.CubeCluster) error {
+	if err := validateAuthoritySpec(cluster); err != nil {
+		return err
+	}
 	images := cluster.Spec.Images
 	if images.API == "" || images.Router == "" || images.MetaStore == "" || images.Worker == "" || images.LeaseAgent == "" {
 		return fmt.Errorf("spec.images.api, router, metaStore, worker and leaseAgent are required")
@@ -245,6 +259,10 @@ func (r *CubeClusterReconciler) reconcileRouterRBAC(ctx context.Context, c *v1al
 		}
 		role.Labels = clusterLabels(c, cubeComponentRouter)
 		role.Rules = []rbacv1.PolicyRule{{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"get"}}, {APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{clusterName(c, cubeComponentRouter) + "-role-state"}, Verbs: []string{"get"}}}
+		if c.Spec.Authority != nil {
+			role.Rules[0].ResourceNames = []string{authorityLeaseName(c)}
+			role.Rules = append(role.Rules, rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get"}})
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -272,6 +290,9 @@ func (r *CubeClusterReconciler) reconcileMetaStore(ctx context.Context, c *v1alp
 		service.Labels = clusterLabels(c, cubeComponentMeta)
 		service.Spec.Selector = clusterLabels(c, cubeComponentMeta)
 		service.Spec.Ports = []corev1.ServicePort{{Name: "metastore", Port: 9999, TargetPort: intstr.FromString("metastore")}}
+		if c.Spec.Authority != nil {
+			service.Spec.Ports = []corev1.ServicePort{{Name: "authority", Port: authorityPort, TargetPort: intstr.FromString("authority")}}
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -290,6 +311,9 @@ func (r *CubeClusterReconciler) reconcileMetaStore(ctx context.Context, c *v1alp
 			set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentMeta)}, Spec: pvcSpec(c)}}
 		}
 		set.Spec.Template.Spec.Containers[0].Env = mergeEnv(set.Spec.Template.Spec.Containers[0].Env, rustSharedEnv(c))
+		if err := r.configureAuthorityPod(ctx, c, &set.Spec.Template, cubeComponentMeta); err != nil {
+			return err
+		}
 		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.MetaStore.Pod, 0, false)
 	})
 	return err
@@ -329,6 +353,9 @@ func (r *CubeClusterReconciler) reconcileWorkers(ctx context.Context, c *v1alpha
 			set.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}, {ObjectMeta: metav1.ObjectMeta{Name: "local-data", Labels: clusterLabels(c, cubeComponentWorker)}, Spec: pvcSpec(c)}}
 		}
 		set.Spec.Template.Spec.Containers[0].Env = mergeEnv(set.Spec.Template.Spec.Containers[0].Env, rustSharedEnv(c))
+		if err := r.configureAuthorityPod(ctx, c, &set.Spec.Template, cubeComponentWorker); err != nil {
+			return err
+		}
 		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.Workers.Pod, 0, false)
 	})
 	return err
@@ -361,21 +388,7 @@ func (r *CubeClusterReconciler) reconcileRouters(ctx context.Context, c *v1alpha
 		return err
 	}
 	roleConfig := name + "-role-state"
-	routerCR := &v1alpha1.CubestoreRouter{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, routerCR, func() error {
-		if err := r.own(c, routerCR); err != nil {
-			return err
-		}
-		routerCR.Spec = v1alpha1.CubestoreRouterSpec{Selector: map[string]string{cubeClusterNameLabel: c.Name, cubeComponentLabel: cubeComponentRouter}, Namespace: c.Namespace, RouterPort: 3030, HealthPath: "/router/status", ElectionStrategy: v1alpha1.ElectionStrategyLease, RoleConfigMap: roleConfig, MetaStore: v1alpha1.MetaStore{Address: fmt.Sprintf("%s.%s.svc:9999", clusterName(c, cubeComponentMeta), c.Namespace)}, Storage: v1alpha1.Storage{DataPVC: "data"}, StateStore: &v1alpha1.StateStore{Type: "kubernetes"}}
-		if c.Spec.Storage.ObjectStoreSecretRef != nil {
-			ref := *c.Spec.Storage.ObjectStoreSecretRef
-			if ref.Namespace == "" {
-				ref.Namespace = c.Namespace
-			}
-			routerCR.Spec.Storage.ObjectStoreSecretRef = &ref
-		}
-		return nil
-	}); err != nil {
+	if err := r.reconcileRouterDefinition(ctx, c); err != nil {
 		return err
 	}
 	set := &apps.Deployment{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace}}
@@ -396,7 +409,37 @@ func (r *CubeClusterReconciler) reconcileRouters(ctx context.Context, c *v1alpha
 			set.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr64(60)
 			set.Spec.Template.Spec.Containers[1].Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: append([]string(nil), c.Spec.Router.DrainCommand...)}}}
 		}
+		if err := r.configureAuthorityPod(ctx, c, &set.Spec.Template, cubeComponentRouter); err != nil {
+			return err
+		}
 		return r.configurePod(ctx, c, &set.Spec.Template, c.Spec.Router.Pod, 1, false)
+	})
+	return err
+}
+
+func (r *CubeClusterReconciler) reconcileRouterDefinition(ctx context.Context, c *v1alpha1.CubeCluster) error {
+	name := clusterName(c, cubeComponentRouter)
+	roleConfig := name + "-role-state"
+	routerCR := &v1alpha1.CubestoreRouter{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.Namespace}}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, routerCR, func() error {
+		if err := r.own(c, routerCR); err != nil {
+			return err
+		}
+		if c.Spec.Authority != nil {
+			if routerCR.Annotations == nil {
+				routerCR.Annotations = map[string]string{}
+			}
+			routerCR.Annotations[authorityBootstrapAnnotation] = string(c.UID)
+		}
+		routerCR.Spec = v1alpha1.CubestoreRouterSpec{Selector: map[string]string{cubeClusterNameLabel: c.Name, cubeComponentLabel: cubeComponentRouter}, Namespace: c.Namespace, RouterPort: 3030, HealthPath: "/router/status", ElectionStrategy: v1alpha1.ElectionStrategyLease, RoleConfigMap: roleConfig, MetaStore: v1alpha1.MetaStore{Address: fmt.Sprintf("%s.%s.svc:9999", clusterName(c, cubeComponentMeta), c.Namespace)}, Storage: v1alpha1.Storage{DataPVC: "data"}, StateStore: &v1alpha1.StateStore{Type: "kubernetes"}}
+		if c.Spec.Storage.ObjectStoreSecretRef != nil {
+			ref := *c.Spec.Storage.ObjectStoreSecretRef
+			if ref.Namespace == "" {
+				ref.Namespace = c.Namespace
+			}
+			routerCR.Spec.Storage.ObjectStoreSecretRef = &ref
+		}
+		return nil
 	})
 	return err
 }

@@ -237,7 +237,7 @@ func validateClusterOptions(c *v1alpha1.CubeCluster) error {
 		}
 		volumes := map[string]bool{}
 		for _, v := range p.Volumes {
-			if v.Name == "data" || v.Name == "local-data" || v.Name == "leadership" || v.Name == "promotion" || volumes[v.Name] {
+			if strings.HasPrefix(v.Name, "authority-") || v.Name == "data" || v.Name == "local-data" || v.Name == "leadership" || v.Name == "promotion" || volumes[v.Name] {
 				return fmt.Errorf("%s volume %q is reserved or duplicated", name, v.Name)
 			}
 			volumes[v.Name] = true
@@ -287,6 +287,9 @@ func validateClusterOptions(c *v1alpha1.CubeCluster) error {
 }
 
 func reservedEnvironment(name string) bool {
+	if strings.HasPrefix(name, "CUBESTORE_AUTHORITY_") {
+		return true
+	}
 	switch name {
 	case "POD_NAME", "POD_NAMESPACE", "CUBEJS_API_SECRET", "CUBEJS_CUBESTORE_HOST", "CUBEJS_CUBESTORE_PORT", "CUBEJS_EXT_DB_TYPE", "CUBEJS_PORT", "CUBEJS_CACHE_AND_QUEUE_DRIVER", "CUBEJS_REFRESH_WORKER", "CUBEJS_SCHEDULED_REFRESH", "CUBEJS_SCHEDULED_REFRESH_TIMER",
 		"CUBESTORE_SERVER_NAME", "CUBESTORE_NODE_NAME", "CUBESTORE_DATA_DIR", "CUBESTORE_REMOTE_DIR", "CUBESTORE_META_ADDR", "CUBESTORE_META_BIND_ADDR", "CUBESTORE_WORKER_PORT", "CUBESTORE_WORKERS", "CUBESTORE_HTTP_PORT", "CUBESTORE_HTTP_BIND_ADDR", "CUBESTORE_BIND_ADDR", "CUBESTORE_ROUTER_ROLE_STRICT", "CUBESTORE_ROUTER_LEADERSHIP_FILE", "CUBESTORE_ROUTER_PROMOTION_FILE", "CUBESTORE_MINIO_BUCKET", "CUBESTORE_MINIO_SUB_PATH", "CUBESTORE_MINIO_SERVER_ENDPOINT", "CUBESTORE_MINIO_ACCESS_KEY_ID", "CUBESTORE_MINIO_SECRET_ACCESS_KEY":

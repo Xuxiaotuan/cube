@@ -639,3 +639,21 @@ Go 授权超时夹具已修复，专项和全量离线 Go 测试通过。Rust Wo
 仍需完成：新协议编译与回归、Operator TLS/RBAC/token/严格模式集成、真实旧主隔离、数据库持久恢复、预聚合 generation/retirement/reference ledger、UNKNOWN 对账、Refresher 故障恢复和真实 Cube API 数据验收，以及统一镜像升级/回滚与生产等价环境验证。
 
 本轮没有镜像构建、部署或 Git 提交/推送。运行中的 `analytics` 尚未启用新 authority 配置，`ProductionReady=False/EvidenceIncomplete`。当前为 `evidence_incomplete`、生产 `NO-GO`，不得将历史 Service 切换成功等同于新协议或完整业务恢复验收通过。
+
+## 八项整改最新执行结果：禁止发布本轮候选代码
+
+Rust lib/tests/bin 编译已于本轮完成（2 分 20 秒），但 `authority_` 为 1 通过 / 1 失败，合法 Worker staging 被错误操作标签拒绝；`task4_rpc_` 2 项通过。Operator 安全接入候选代码编译通过，但首次 Lease 引导测试失败。
+
+预聚合侧 74 项测试通过仍不足以验收：本轮候选补丁会阻塞正常首次 `selected` 构建，并扩大清理暂停范围。该回退已报告，尚未部署、提交或推送，等待精准撤回/修复决定。
+
+Refresher harness 28 项、预检单测 7 项通过；真实认证 Cube API `/meta`、`/load` 返回 200，仅证明当前部署查询基线。重启 E2E 缺代理 Service，且历史 ledger 存在物理 ready 但未终结记录，没有清理 UNKNOWN 来制造通过。单节点 local-path 环境依旧不能证明多节点容灾。
+
+完整八项状态、具体失败和候选代码风险见 [闭环报告](HA-CLOSURE-2026-09-07.md) 的“八项整改执行检查点”；真实 API、预检和故障提案见 [本轮证据报告](demo/k8s/evidence/2026-09-07-eight-items/refresher-preflight-15EUIf/REPORT.md)。当前仍为生产 `NO-GO`。
+
+## 三处定向问题修复后的最新结果
+
+上一检查点中的 Worker 操作标签、Lease 引导键名及预聚合首次构建过度阻塞已修复。Rust lib/tests/bin 编译通过，`authority_` 2/2、`task4_rpc_` 2/2；Go controllers/agent 通过；预聚合三套测试 76/76 通过。正常清理已恢复对具体受保护表的过滤，不再按 Driver 能力全面停用。
+
+完整原始证据：[Rust 编译](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-build.log)、[新授权测试](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-authority.log)、[RPC 回归](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/rust-task4-rpc.log)、[Go 引导测试](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/go-authority-bootstrap.log)、[预聚合回归](demo/k8s/evidence/2026-09-07-eight-items/targeted-repairs/preaggregation-regression.log)。修复范围和剩余风险见 [闭环报告](HA-CLOSURE-2026-09-07.md) 的“三处定向修复”小节。
+
+这不是八项整改全部完成：Driver false 语义仍不够精确，权威恢复/并发清理仍未闭环，真实 strict 部署、数据库恢复及故障 E2E 尚未验收。本轮没有构建镜像、部署、提交或推送，生产仍为 `NO-GO`。

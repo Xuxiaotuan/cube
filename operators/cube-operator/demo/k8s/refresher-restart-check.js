@@ -11,6 +11,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const validRun = run => /^r[a-f0-9]{16}$/.test(run);
 
+// Pod/deployment snapshots and nested release proofs can contain literal
+// credentials in env or last-applied annotations. Keep those in memory only.
+function evidenceReplacer(key, value) {
+  if (/^(env|envFrom|annotations|managedFields|authorization|token|password|secret)$/i.test(key)) return undefined;
+  return value;
+}
+
 function integer(value, fallback, max) {
   const n = Number(value === undefined ? fallback : value);
   assert.ok(Number.isInteger(n) && n > 0 && n <= max, 'Invalid bounded integer');
@@ -250,7 +257,7 @@ async function runtime() {
   const driver = new CubeStoreDriver();
   const upstream = new URL(process.env.HA_UPSTREAM);
   assert.equal(upstream.protocol, 'http:');
-  const emit = (event, fields = {}) => console.log(JSON.stringify({ kind: 'refresher-restart', event, run, mode, time: Date.now(), ...fields }));
+  const emit = (event, fields = {}) => console.log(JSON.stringify({ kind: 'refresher-restart', event, run, mode, time: Date.now(), ...fields }, evidenceReplacer));
   const get = async key => { const rows = await driver.query('CACHE GET ?', [key]); return rows.length ? JSON.parse(rows[0].value) : null; };
   const registrationKey = `${helper.PREFIX}${run}`;
   const keys = () => driver.query('CACHE KEYS ?', [`PRE_AGG_BUILD_V1:ha_${run}_rollups.`]);
@@ -408,7 +415,7 @@ async function controller() {
   const args = ['--context', context, '--namespace', namespace, '--request-timeout=8s'];
   const k = (rest, input) => execFileSync(process.env.KUBECTL || 'kubectl', [...args, ...rest], { input, encoding: 'utf8', timeout: 12000, maxBuffer: 8 * 1024 * 1024 });
   const get = rest => JSON.parse(k(['get', ...rest, '-o', 'json']));
-  const save = (name, value) => fs.writeFileSync(path.join(dir, name), JSON.stringify(value, null, 2));
+  const save = (name, value) => fs.writeFileSync(path.join(dir, name), JSON.stringify(value, evidenceReplacer, 2), { mode: 0o600 });
   const ready = pod => !pod.metadata.deletionTimestamp && pod.status.conditions?.some(c => c.type === 'Ready' && c.status === 'True');
   const select = name => {
     const dep = get(['deployment', name]); assert.equal(dep.spec.replicas, 1);
@@ -502,7 +509,7 @@ async function controller() {
   finally { child.kill(); console.log(`Evidence retained: ${dir}; failed registrations expire; no table/object cleanup performed.`); }
 }
 
-module.exports = { Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods,
+module.exports = { evidenceReplacer, Gate, classify, recovered, schedulerEvidence, integer, until, startWireProxy, assertUnchangedPods,
   replacementRunning, requireFinalReady, assertProxyEndpoint, normalizeApiData, assertApiDidNotBuild };
 if (require.main === module) {
   const task = process.argv[2] === 'controller' ? controller : process.argv[2] === 'runtime' ? runtime : null;

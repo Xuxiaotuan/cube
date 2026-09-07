@@ -1,0 +1,90 @@
+warning: unused import: `std::future::Future`
+  --> cubestore/src/metastore/authority.rs:18:5
+   |
+18 | use std::future::Future;
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `MetaStoreTable`
+  --> cubestore/src/sql/mod.rs:52:5
+   |
+52 |     MetaStoreTable, Schema,
+   |     ^^^^^^^^^^^^^^
+
+warning: type `Fence` is more private than the item `RequestContext::Install::fence`
+   --> cubestore/src/metastore/authority.rs:162:34
+    |
+162 |     Install { state: Arc<State>, fence: Fence, until: Instant, revision: u64 },
+    |                                  ^^^^^^^^^^^^ field `RequestContext::Install::fence` is reachable at visibility `pub(crate)`
+    |
+note: but type `Fence` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:134:1
+    |
+134 | struct Fence {
+    | ^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Fence` is more private than the item `RequestContext::Router::fence`
+   --> cubestore/src/metastore/authority.rs:163:33
+    |
+163 |     Router { state: Arc<State>, fence: Fence, grant_id: String, until: Instant, revision: u64 },
+    |                                 ^^^^^^^^^^^^ field `RequestContext::Router::fence` is reachable at visibility `pub(crate)`
+    |
+note: but type `Fence` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:134:1
+    |
+134 | struct Fence {
+    | ^^^^^^^^^^^^
+
+warning: type `Principal` is more private than the item `RequestContext::Worker::principal`
+   --> cubestore/src/metastore/authority.rs:164:33
+    |
+164 |     Worker { state: Arc<State>, principal: Principal },
+    |                                 ^^^^^^^^^^^^^^^^^^^^ field `RequestContext::Worker::principal` is reachable at visibility `pub(crate)`
+    |
+note: but type `Principal` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:130:1
+    |
+130 | struct Principal { role: Role, pod_name: String, pod_uid: String, until: Instant }
+    | ^^^^^^^^^^^^^^^^
+
+warning: field `meta_store_ready` is never read
+   --> cubestore/src/http/mod.rs:127:5
+    |
+115 | struct PromotionMarker {
+    |        --------------- field in this struct
+...
+127 |     meta_store_ready: bool,
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = note: `PromotionMarker` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` on by default
+
+warning: field `fence` is never read
+   --> cubestore/src/metastore/authority.rs:162:34
+    |
+162 |     Install { state: Arc<State>, fence: Fence, until: Instant, revision: u64 },
+    |     -------                      ^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RequestContext` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `cubestore` (lib) generated 7 warnings (run `cargo fix --lib -p cubestore` to apply 2 suggestions)
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+warning: field `fence` is never read
+   --> cubestore/src/metastore/authority.rs:162:34
+    |
+162 |     Install { state: Arc<State>, fence: Fence, until: Instant, revision: u64 },
+    |     -------                      ^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RequestContext` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `cubestore` (lib test) generated 5 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 20s
+  Executable unittests src/lib.rs (target/debug/deps/cubestore-8d75b5587a4590f9)
+  Executable unittests src/bin/cubestored.rs (target/debug/deps/cubestored-817ed74fd9a3ecb6)

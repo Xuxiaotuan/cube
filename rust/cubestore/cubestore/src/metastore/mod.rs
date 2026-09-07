@@ -3973,7 +3973,7 @@ impl MetaStore for RocksMetaStore {
         max: Option<Row>,
         in_memory: bool,
     ) -> Result<IdRow<Chunk>, CubeError> {
-        self.write_operation("write_operation", move |db_ref, batch_pipe| {
+        self.write_operation("create_chunk", move |db_ref, batch_pipe| {
             let rocks_chunk = ChunkRocksTable::new(db_ref.clone());
 
             let chunk = Chunk::new(partition_id, row_count, min, max, in_memory);

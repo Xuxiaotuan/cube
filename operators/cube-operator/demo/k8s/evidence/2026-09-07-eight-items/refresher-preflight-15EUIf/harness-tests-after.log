@@ -1,0 +1,36 @@
+✔ topology permits unchanged Succeeded Job without Ready, alongside ready services (1.8125ms)
+✔ topology does not exempt Failed Job even with a stale Ready condition (0.531875ms)
+✔ topology does not exempt a running not-Ready Job (0.08975ms)
+✔ topology does not exempt Succeeded service or ownerless Pod (0.176125ms)
+✔ topology rejects missing service and replacement with the same name but different UID (0.10425ms)
+✔ completed Job exemption preserves presence, deletion, image and restart checks (1.085458ms)
+✔ topology still rejects an ordinary running service losing readiness (0.069791ms)
+✔ restart sequence releases for a started Running container before Ready, then requires final Ready (0.141042ms)
+✔ release refuses old UID still present, pending pod, or unstarted target container (0.093208ms)
+✔ release/final Ready reject ambiguous identity or changed runtime image (0.22925ms)
+✔ stable proxy endpoint accepts ClusterIP Service targeting the pinned API (0.166542ms)
+✔ stable proxy endpoint fails closed for wrong routing, stale IP or multiple pods (5.675625ms)
+✔ Cube API result normalization preserves every expected metric, independent of row order (0.31525ms)
+✔ post-recovery API evidence rejects API-triggered builds and wrong runtime identity (0.540792ms)
+✔ classifier matches exact run, CACHE key and CREATE tracing, not embedded text (0.439417ms)
+✔ uploaded: gate holds subsequent/reconnected traffic until explicit release (0.2105ms)
+✔ create-sent: gate holds subsequent/reconnected traffic until explicit release (0.094959ms)
+✔ physical-ready-ledger-unacked: gate holds subsequent/reconnected traffic until explicit release (0.082875ms)
+✔ gate rejects missing process attribution, invalid modes and premature release (0.151375ms)
+✔ recovery evidence accepts stable identity, immutable manifest and real table identity (0.096709ms)
+✔ recovery evidence rejects fork, manifest drift, missing ack and table replacement (0.580334ms)
+✔ scheduler proof refuses API activity and wrong pod/process/run (0.181542ms)
+✔ bounded integer and deadline helpers fail rather than fabricate completion (0.448333ms)
+✔ controller authorization is exact and checked before any kubectl call (525.668084ms)
+✔ uploaded: external wire gate survives client death and discards held writes (81.002042ms)
+✔ create-sent: external wire gate survives client death and discards held writes (286.566083ms)
+✔ physical-ready-ledger-unacked: external wire gate survives client death and discards held writes (33.737292ms)
+✔ evidence omits pod credentials and nested proof annotations without mutating runtime objects (0.278625ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1026.758541

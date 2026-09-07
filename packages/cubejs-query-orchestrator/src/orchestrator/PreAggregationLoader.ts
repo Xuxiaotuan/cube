@@ -509,10 +509,25 @@ export class PreAggregationLoader {
         try {
           if (this.preAggregationBuildId && this.preAggregation.external) {
             const driver = await this.externalDriverFactory() as any;
-            if (await driver.resumePreAggregationBuild(this.preAggregationBuildId)) {
+            if (this.preAggregationBuildId !== targetTableName || typeof driver.resumePreAggregationBuild !== 'function') {
+              throw Object.assign(new Error(`Cannot reconcile pre-aggregation build identity: ${this.preAggregationBuildId}`), {
+                code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
+              });
+            }
+            const resumed = await driver.resumePreAggregationBuild(this.preAggregationBuildId);
+            if (resumed === true) {
               await this.loadCache.fetchTables(this.preAggregation);
               return;
             }
+            if (resumed !== false) {
+              throw Object.assign(new Error(`Invalid pre-aggregation resume result: ${this.preAggregationBuildId}`), {
+                code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
+              });
+            }
+            // Restore the driver's existing source-strategy fallback, needed by
+            // selected first builds. false also covers missing intent/source;
+            // it is not an authoritative no-effect or safe-replay guarantee.
+            // Explicit UNKNOWN errors above must never enter this fallback.
           }
           return await refreshStrategy.bind(this)(
             client,

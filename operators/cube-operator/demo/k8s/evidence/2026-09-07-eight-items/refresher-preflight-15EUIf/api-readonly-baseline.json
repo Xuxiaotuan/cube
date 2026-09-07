@@ -1,0 +1,2049 @@
+{
+  "observedAt": "2026-09-07T08:49:33.453Z",
+  "scope": "existing deployment readonly baseline, not new Rust authority",
+  "ledger": [
+    {
+      "buildId": "ha_r4de147df1c22bf5f_rollups.router_ha_rollup_by_id_tzjzxtby_pwqxekyc_1l9ravo",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_r8aaeec181c23d43e_rollups.router_ha_rollup_by_id_lomfks4g_gomljlbg_1l9rb4r",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_rd660a608ac0f9a3f_rollups.router_ha_rollup_by_id_414zyckj_jasy0cb0_1l9rce3",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 6,
+        "locations": [
+          "temp://fca2ff653ee0e285ab65dfa2cb7334f25dbebc4222c4c019b4d8f86308968369.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_rd33e702ca583f8c0_rollups.router_ha_rollup_by_id_qahervm1_e1ddvozp_1l9rdn5",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_r1447bc6559650dfa_rollups.router_ha_rollup_by_id_g4fvxe5_z5evj1es_1l9rdt5",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_r3203dbb2fbc324ea_rollups.router_ha_rollup_by_id_4cwnkngl_aveylkpo_1l9re0q",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 10,
+        "locations": [
+          "temp://2425898cde7058a56f35c5610a2fe3b02f265804ff1ab18aeea8c62be9737242.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_r0904a84a3a766313_rollups.router_ha_rollup_by_id_wifwyoxz_zljzioq3_1l9rebq",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 12,
+        "locations": [
+          "temp://7f3d9350cf5231d48246ddaaeae6a9d0ccc729e6d8f9d649be5df7afd9763c03.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_r14bc37b4bfa7e982_rollups.router_ha_rollup_by_id_mnmbosks_j12mfxcv_1l9reqj",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 14,
+        "locations": [
+          "temp://37f9e9372c45607af53424ffb705ca9fee7f53f77b2af952d23acaa82e957f04.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_rf07dd05657f38faa_rollups.router_ha_rollup_by_id_2xk5wuif_uy1zg50p_1l9res3",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 16,
+        "locations": [
+          "temp://9e94dc13a5f1a089d2d268e163b30a44239ab872d76b6dad1f97ef0551161d27.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_r881fce58f7d219a2_rollups.router_ha_rollup_by_id_c4yjkgoi_funtlrq4_1l9resq",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 18,
+        "locations": [
+          "temp://a8236971f46dd86d55e6af7f52fe4bac22c7ad7dc8ec173cd681442f379ce173.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_r87c5ef93cff35d88_rollups.router_ha_rollup_by_id_ydjiylbi_sfgx3mlr_1l9reuk",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_r3facc45531b67310_rollups.router_ha_rollup_by_id_wrm441mn_subxnrde_1l9rfa2",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 21,
+        "locations": [
+          "temp://cfc7b808139f437fc6a6db97184bcb6d0d743429b605d375b3a0b74835a919de.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_rc3dfa03c9867e519_rollups.router_ha_rollup_by_id_rmt0skto_m2plu54g_1l9rfjc",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_ra552a74642ac663f_rollups.router_ha_rollup_by_id_vx04mpd2_si0bnbze_1l9rfu1",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 24,
+        "locations": [
+          "temp://e3929f4945bd4acc5c0f7363ae8c5f4cc33052d22a0b3fadd99fa7ca98e14a65.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_r2eaadaa775662174_rollups.router_ha_rollup_by_id_cnufmlo3_dhiyvq12_1l9rfv7",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 26,
+        "locations": [
+          "temp://6186ec20213d6312f4d48f5ba00c703352a4619e812131ff6a0680f41bcf9d66.csv.gz"
+        ]
+      }
+    },
+    {
+      "buildId": "ha_rcf69aef1b00c653b_rollups.router_ha_rollup_by_id_1wmbn020_onwhan4n_1l9rgnt",
+      "phases": {
+        "uploaded": false,
+        "create": false,
+        "ready": false,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "absent"
+      }
+    },
+    {
+      "buildId": "ha_rf8f47788f4d404f8_rollups.router_ha_rollup_by_id_jznx5i3p_0nbiitxl_1l9rh22",
+      "phases": {
+        "uploaded": true,
+        "create": true,
+        "ready": true,
+        "failed": false,
+        "retired": false
+      },
+      "physical": {
+        "state": "ready",
+        "tableId": 29,
+        "locations": [
+          "temp://519d779ef74ad2f592beef5c37a753713e0f831846fea3d4e4412fae74eafb49.csv.gz"
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "status": 200,
+    "cubes": [
+      "RouterHaRollup"
+    ]
+  },
+  "load": {
+    "status": 200,
+    "run": "r3203dbb2fbc324ea",
+    "data": [
+      {
+        "RouterHaRollup.id": "1",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "20",
+        "RouterHaRollup.idChecksum": "1"
+      },
+      {
+        "RouterHaRollup.id": "2",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "37",
+        "RouterHaRollup.idChecksum": "4"
+      },
+      {
+        "RouterHaRollup.id": "3",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "54",
+        "RouterHaRollup.idChecksum": "9"
+      },
+      {
+        "RouterHaRollup.id": "4",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "71",
+        "RouterHaRollup.idChecksum": "16"
+      },
+      {
+        "RouterHaRollup.id": "5",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "88",
+        "RouterHaRollup.idChecksum": "25"
+      },
+      {
+        "RouterHaRollup.id": "6",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "105",
+        "RouterHaRollup.idChecksum": "36"
+      },
+      {
+        "RouterHaRollup.id": "7",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "122",
+        "RouterHaRollup.idChecksum": "49"
+      },
+      {
+        "RouterHaRollup.id": "8",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "139",
+        "RouterHaRollup.idChecksum": "64"
+      },
+      {
+        "RouterHaRollup.id": "9",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "156",
+        "RouterHaRollup.idChecksum": "81"
+      },
+      {
+        "RouterHaRollup.id": "10",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "173",
+        "RouterHaRollup.idChecksum": "100"
+      },
+      {
+        "RouterHaRollup.id": "11",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "190",
+        "RouterHaRollup.idChecksum": "121"
+      },
+      {
+        "RouterHaRollup.id": "12",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "207",
+        "RouterHaRollup.idChecksum": "144"
+      },
+      {
+        "RouterHaRollup.id": "13",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "224",
+        "RouterHaRollup.idChecksum": "169"
+      },
+      {
+        "RouterHaRollup.id": "14",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "241",
+        "RouterHaRollup.idChecksum": "196"
+      },
+      {
+        "RouterHaRollup.id": "15",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "258",
+        "RouterHaRollup.idChecksum": "225"
+      },
+      {
+        "RouterHaRollup.id": "16",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "275",
+        "RouterHaRollup.idChecksum": "256"
+      },
+      {
+        "RouterHaRollup.id": "17",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "292",
+        "RouterHaRollup.idChecksum": "289"
+      },
+      {
+        "RouterHaRollup.id": "18",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "309",
+        "RouterHaRollup.idChecksum": "324"
+      },
+      {
+        "RouterHaRollup.id": "19",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "326",
+        "RouterHaRollup.idChecksum": "361"
+      },
+      {
+        "RouterHaRollup.id": "20",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "343",
+        "RouterHaRollup.idChecksum": "400"
+      },
+      {
+        "RouterHaRollup.id": "21",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "360",
+        "RouterHaRollup.idChecksum": "441"
+      },
+      {
+        "RouterHaRollup.id": "22",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "377",
+        "RouterHaRollup.idChecksum": "484"
+      },
+      {
+        "RouterHaRollup.id": "23",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "394",
+        "RouterHaRollup.idChecksum": "529"
+      },
+      {
+        "RouterHaRollup.id": "24",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "411",
+        "RouterHaRollup.idChecksum": "576"
+      },
+      {
+        "RouterHaRollup.id": "25",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "428",
+        "RouterHaRollup.idChecksum": "625"
+      },
+      {
+        "RouterHaRollup.id": "26",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "445",
+        "RouterHaRollup.idChecksum": "676"
+      },
+      {
+        "RouterHaRollup.id": "27",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "462",
+        "RouterHaRollup.idChecksum": "729"
+      },
+      {
+        "RouterHaRollup.id": "28",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "479",
+        "RouterHaRollup.idChecksum": "784"
+      },
+      {
+        "RouterHaRollup.id": "29",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "496",
+        "RouterHaRollup.idChecksum": "841"
+      },
+      {
+        "RouterHaRollup.id": "30",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "513",
+        "RouterHaRollup.idChecksum": "900"
+      },
+      {
+        "RouterHaRollup.id": "31",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "530",
+        "RouterHaRollup.idChecksum": "961"
+      },
+      {
+        "RouterHaRollup.id": "32",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "547",
+        "RouterHaRollup.idChecksum": "1024"
+      },
+      {
+        "RouterHaRollup.id": "33",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "564",
+        "RouterHaRollup.idChecksum": "1089"
+      },
+      {
+        "RouterHaRollup.id": "34",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "581",
+        "RouterHaRollup.idChecksum": "1156"
+      },
+      {
+        "RouterHaRollup.id": "35",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "598",
+        "RouterHaRollup.idChecksum": "1225"
+      },
+      {
+        "RouterHaRollup.id": "36",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "615",
+        "RouterHaRollup.idChecksum": "1296"
+      },
+      {
+        "RouterHaRollup.id": "37",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "632",
+        "RouterHaRollup.idChecksum": "1369"
+      },
+      {
+        "RouterHaRollup.id": "38",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "649",
+        "RouterHaRollup.idChecksum": "1444"
+      },
+      {
+        "RouterHaRollup.id": "39",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "666",
+        "RouterHaRollup.idChecksum": "1521"
+      },
+      {
+        "RouterHaRollup.id": "40",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "683",
+        "RouterHaRollup.idChecksum": "1600"
+      },
+      {
+        "RouterHaRollup.id": "41",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "700",
+        "RouterHaRollup.idChecksum": "1681"
+      },
+      {
+        "RouterHaRollup.id": "42",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "717",
+        "RouterHaRollup.idChecksum": "1764"
+      },
+      {
+        "RouterHaRollup.id": "43",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "734",
+        "RouterHaRollup.idChecksum": "1849"
+      },
+      {
+        "RouterHaRollup.id": "44",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "751",
+        "RouterHaRollup.idChecksum": "1936"
+      },
+      {
+        "RouterHaRollup.id": "45",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "768",
+        "RouterHaRollup.idChecksum": "2025"
+      },
+      {
+        "RouterHaRollup.id": "46",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "785",
+        "RouterHaRollup.idChecksum": "2116"
+      },
+      {
+        "RouterHaRollup.id": "47",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "802",
+        "RouterHaRollup.idChecksum": "2209"
+      },
+      {
+        "RouterHaRollup.id": "48",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "819",
+        "RouterHaRollup.idChecksum": "2304"
+      },
+      {
+        "RouterHaRollup.id": "49",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "836",
+        "RouterHaRollup.idChecksum": "2401"
+      },
+      {
+        "RouterHaRollup.id": "50",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "853",
+        "RouterHaRollup.idChecksum": "2500"
+      },
+      {
+        "RouterHaRollup.id": "51",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "870",
+        "RouterHaRollup.idChecksum": "2601"
+      },
+      {
+        "RouterHaRollup.id": "52",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "887",
+        "RouterHaRollup.idChecksum": "2704"
+      },
+      {
+        "RouterHaRollup.id": "53",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "904",
+        "RouterHaRollup.idChecksum": "2809"
+      },
+      {
+        "RouterHaRollup.id": "54",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "921",
+        "RouterHaRollup.idChecksum": "2916"
+      },
+      {
+        "RouterHaRollup.id": "55",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "938",
+        "RouterHaRollup.idChecksum": "3025"
+      },
+      {
+        "RouterHaRollup.id": "56",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "955",
+        "RouterHaRollup.idChecksum": "3136"
+      },
+      {
+        "RouterHaRollup.id": "57",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "972",
+        "RouterHaRollup.idChecksum": "3249"
+      },
+      {
+        "RouterHaRollup.id": "58",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "989",
+        "RouterHaRollup.idChecksum": "3364"
+      },
+      {
+        "RouterHaRollup.id": "59",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1006",
+        "RouterHaRollup.idChecksum": "3481"
+      },
+      {
+        "RouterHaRollup.id": "60",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1023",
+        "RouterHaRollup.idChecksum": "3600"
+      },
+      {
+        "RouterHaRollup.id": "61",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1040",
+        "RouterHaRollup.idChecksum": "3721"
+      },
+      {
+        "RouterHaRollup.id": "62",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1057",
+        "RouterHaRollup.idChecksum": "3844"
+      },
+      {
+        "RouterHaRollup.id": "63",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1074",
+        "RouterHaRollup.idChecksum": "3969"
+      },
+      {
+        "RouterHaRollup.id": "64",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1091",
+        "RouterHaRollup.idChecksum": "4096"
+      },
+      {
+        "RouterHaRollup.id": "65",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1108",
+        "RouterHaRollup.idChecksum": "4225"
+      },
+      {
+        "RouterHaRollup.id": "66",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1125",
+        "RouterHaRollup.idChecksum": "4356"
+      },
+      {
+        "RouterHaRollup.id": "67",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1142",
+        "RouterHaRollup.idChecksum": "4489"
+      },
+      {
+        "RouterHaRollup.id": "68",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1159",
+        "RouterHaRollup.idChecksum": "4624"
+      },
+      {
+        "RouterHaRollup.id": "69",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1176",
+        "RouterHaRollup.idChecksum": "4761"
+      },
+      {
+        "RouterHaRollup.id": "70",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1193",
+        "RouterHaRollup.idChecksum": "4900"
+      },
+      {
+        "RouterHaRollup.id": "71",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1210",
+        "RouterHaRollup.idChecksum": "5041"
+      },
+      {
+        "RouterHaRollup.id": "72",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1227",
+        "RouterHaRollup.idChecksum": "5184"
+      },
+      {
+        "RouterHaRollup.id": "73",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1244",
+        "RouterHaRollup.idChecksum": "5329"
+      },
+      {
+        "RouterHaRollup.id": "74",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1261",
+        "RouterHaRollup.idChecksum": "5476"
+      },
+      {
+        "RouterHaRollup.id": "75",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1278",
+        "RouterHaRollup.idChecksum": "5625"
+      },
+      {
+        "RouterHaRollup.id": "76",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1295",
+        "RouterHaRollup.idChecksum": "5776"
+      },
+      {
+        "RouterHaRollup.id": "77",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1312",
+        "RouterHaRollup.idChecksum": "5929"
+      },
+      {
+        "RouterHaRollup.id": "78",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1329",
+        "RouterHaRollup.idChecksum": "6084"
+      },
+      {
+        "RouterHaRollup.id": "79",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1346",
+        "RouterHaRollup.idChecksum": "6241"
+      },
+      {
+        "RouterHaRollup.id": "80",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1363",
+        "RouterHaRollup.idChecksum": "6400"
+      },
+      {
+        "RouterHaRollup.id": "81",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1380",
+        "RouterHaRollup.idChecksum": "6561"
+      },
+      {
+        "RouterHaRollup.id": "82",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1397",
+        "RouterHaRollup.idChecksum": "6724"
+      },
+      {
+        "RouterHaRollup.id": "83",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1414",
+        "RouterHaRollup.idChecksum": "6889"
+      },
+      {
+        "RouterHaRollup.id": "84",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1431",
+        "RouterHaRollup.idChecksum": "7056"
+      },
+      {
+        "RouterHaRollup.id": "85",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1448",
+        "RouterHaRollup.idChecksum": "7225"
+      },
+      {
+        "RouterHaRollup.id": "86",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1465",
+        "RouterHaRollup.idChecksum": "7396"
+      },
+      {
+        "RouterHaRollup.id": "87",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1482",
+        "RouterHaRollup.idChecksum": "7569"
+      },
+      {
+        "RouterHaRollup.id": "88",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1499",
+        "RouterHaRollup.idChecksum": "7744"
+      },
+      {
+        "RouterHaRollup.id": "89",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1516",
+        "RouterHaRollup.idChecksum": "7921"
+      },
+      {
+        "RouterHaRollup.id": "90",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1533",
+        "RouterHaRollup.idChecksum": "8100"
+      },
+      {
+        "RouterHaRollup.id": "91",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1550",
+        "RouterHaRollup.idChecksum": "8281"
+      },
+      {
+        "RouterHaRollup.id": "92",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1567",
+        "RouterHaRollup.idChecksum": "8464"
+      },
+      {
+        "RouterHaRollup.id": "93",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1584",
+        "RouterHaRollup.idChecksum": "8649"
+      },
+      {
+        "RouterHaRollup.id": "94",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1601",
+        "RouterHaRollup.idChecksum": "8836"
+      },
+      {
+        "RouterHaRollup.id": "95",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1618",
+        "RouterHaRollup.idChecksum": "9025"
+      },
+      {
+        "RouterHaRollup.id": "96",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1635",
+        "RouterHaRollup.idChecksum": "9216"
+      },
+      {
+        "RouterHaRollup.id": "97",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1652",
+        "RouterHaRollup.idChecksum": "9409"
+      },
+      {
+        "RouterHaRollup.id": "98",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1669",
+        "RouterHaRollup.idChecksum": "9604"
+      },
+      {
+        "RouterHaRollup.id": "99",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1686",
+        "RouterHaRollup.idChecksum": "9801"
+      },
+      {
+        "RouterHaRollup.id": "100",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1703",
+        "RouterHaRollup.idChecksum": "10000"
+      },
+      {
+        "RouterHaRollup.id": "101",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1720",
+        "RouterHaRollup.idChecksum": "10201"
+      },
+      {
+        "RouterHaRollup.id": "102",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1737",
+        "RouterHaRollup.idChecksum": "10404"
+      },
+      {
+        "RouterHaRollup.id": "103",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1754",
+        "RouterHaRollup.idChecksum": "10609"
+      },
+      {
+        "RouterHaRollup.id": "104",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1771",
+        "RouterHaRollup.idChecksum": "10816"
+      },
+      {
+        "RouterHaRollup.id": "105",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1788",
+        "RouterHaRollup.idChecksum": "11025"
+      },
+      {
+        "RouterHaRollup.id": "106",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1805",
+        "RouterHaRollup.idChecksum": "11236"
+      },
+      {
+        "RouterHaRollup.id": "107",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1822",
+        "RouterHaRollup.idChecksum": "11449"
+      },
+      {
+        "RouterHaRollup.id": "108",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1839",
+        "RouterHaRollup.idChecksum": "11664"
+      },
+      {
+        "RouterHaRollup.id": "109",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1856",
+        "RouterHaRollup.idChecksum": "11881"
+      },
+      {
+        "RouterHaRollup.id": "110",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1873",
+        "RouterHaRollup.idChecksum": "12100"
+      },
+      {
+        "RouterHaRollup.id": "111",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1890",
+        "RouterHaRollup.idChecksum": "12321"
+      },
+      {
+        "RouterHaRollup.id": "112",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1907",
+        "RouterHaRollup.idChecksum": "12544"
+      },
+      {
+        "RouterHaRollup.id": "113",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1924",
+        "RouterHaRollup.idChecksum": "12769"
+      },
+      {
+        "RouterHaRollup.id": "114",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1941",
+        "RouterHaRollup.idChecksum": "12996"
+      },
+      {
+        "RouterHaRollup.id": "115",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1958",
+        "RouterHaRollup.idChecksum": "13225"
+      },
+      {
+        "RouterHaRollup.id": "116",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1975",
+        "RouterHaRollup.idChecksum": "13456"
+      },
+      {
+        "RouterHaRollup.id": "117",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "1992",
+        "RouterHaRollup.idChecksum": "13689"
+      },
+      {
+        "RouterHaRollup.id": "118",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2009",
+        "RouterHaRollup.idChecksum": "13924"
+      },
+      {
+        "RouterHaRollup.id": "119",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2026",
+        "RouterHaRollup.idChecksum": "14161"
+      },
+      {
+        "RouterHaRollup.id": "120",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2043",
+        "RouterHaRollup.idChecksum": "14400"
+      },
+      {
+        "RouterHaRollup.id": "121",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2060",
+        "RouterHaRollup.idChecksum": "14641"
+      },
+      {
+        "RouterHaRollup.id": "122",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2077",
+        "RouterHaRollup.idChecksum": "14884"
+      },
+      {
+        "RouterHaRollup.id": "123",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2094",
+        "RouterHaRollup.idChecksum": "15129"
+      },
+      {
+        "RouterHaRollup.id": "124",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2111",
+        "RouterHaRollup.idChecksum": "15376"
+      },
+      {
+        "RouterHaRollup.id": "125",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2128",
+        "RouterHaRollup.idChecksum": "15625"
+      },
+      {
+        "RouterHaRollup.id": "126",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2145",
+        "RouterHaRollup.idChecksum": "15876"
+      },
+      {
+        "RouterHaRollup.id": "127",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2162",
+        "RouterHaRollup.idChecksum": "16129"
+      },
+      {
+        "RouterHaRollup.id": "128",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2179",
+        "RouterHaRollup.idChecksum": "16384"
+      },
+      {
+        "RouterHaRollup.id": "129",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2196",
+        "RouterHaRollup.idChecksum": "16641"
+      },
+      {
+        "RouterHaRollup.id": "130",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2213",
+        "RouterHaRollup.idChecksum": "16900"
+      },
+      {
+        "RouterHaRollup.id": "131",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2230",
+        "RouterHaRollup.idChecksum": "17161"
+      },
+      {
+        "RouterHaRollup.id": "132",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2247",
+        "RouterHaRollup.idChecksum": "17424"
+      },
+      {
+        "RouterHaRollup.id": "133",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2264",
+        "RouterHaRollup.idChecksum": "17689"
+      },
+      {
+        "RouterHaRollup.id": "134",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2281",
+        "RouterHaRollup.idChecksum": "17956"
+      },
+      {
+        "RouterHaRollup.id": "135",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2298",
+        "RouterHaRollup.idChecksum": "18225"
+      },
+      {
+        "RouterHaRollup.id": "136",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2315",
+        "RouterHaRollup.idChecksum": "18496"
+      },
+      {
+        "RouterHaRollup.id": "137",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2332",
+        "RouterHaRollup.idChecksum": "18769"
+      },
+      {
+        "RouterHaRollup.id": "138",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2349",
+        "RouterHaRollup.idChecksum": "19044"
+      },
+      {
+        "RouterHaRollup.id": "139",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2366",
+        "RouterHaRollup.idChecksum": "19321"
+      },
+      {
+        "RouterHaRollup.id": "140",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2383",
+        "RouterHaRollup.idChecksum": "19600"
+      },
+      {
+        "RouterHaRollup.id": "141",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2400",
+        "RouterHaRollup.idChecksum": "19881"
+      },
+      {
+        "RouterHaRollup.id": "142",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2417",
+        "RouterHaRollup.idChecksum": "20164"
+      },
+      {
+        "RouterHaRollup.id": "143",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2434",
+        "RouterHaRollup.idChecksum": "20449"
+      },
+      {
+        "RouterHaRollup.id": "144",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2451",
+        "RouterHaRollup.idChecksum": "20736"
+      },
+      {
+        "RouterHaRollup.id": "145",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2468",
+        "RouterHaRollup.idChecksum": "21025"
+      },
+      {
+        "RouterHaRollup.id": "146",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2485",
+        "RouterHaRollup.idChecksum": "21316"
+      },
+      {
+        "RouterHaRollup.id": "147",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2502",
+        "RouterHaRollup.idChecksum": "21609"
+      },
+      {
+        "RouterHaRollup.id": "148",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2519",
+        "RouterHaRollup.idChecksum": "21904"
+      },
+      {
+        "RouterHaRollup.id": "149",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2536",
+        "RouterHaRollup.idChecksum": "22201"
+      },
+      {
+        "RouterHaRollup.id": "150",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2553",
+        "RouterHaRollup.idChecksum": "22500"
+      },
+      {
+        "RouterHaRollup.id": "151",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2570",
+        "RouterHaRollup.idChecksum": "22801"
+      },
+      {
+        "RouterHaRollup.id": "152",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2587",
+        "RouterHaRollup.idChecksum": "23104"
+      },
+      {
+        "RouterHaRollup.id": "153",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2604",
+        "RouterHaRollup.idChecksum": "23409"
+      },
+      {
+        "RouterHaRollup.id": "154",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2621",
+        "RouterHaRollup.idChecksum": "23716"
+      },
+      {
+        "RouterHaRollup.id": "155",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2638",
+        "RouterHaRollup.idChecksum": "24025"
+      },
+      {
+        "RouterHaRollup.id": "156",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2655",
+        "RouterHaRollup.idChecksum": "24336"
+      },
+      {
+        "RouterHaRollup.id": "157",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2672",
+        "RouterHaRollup.idChecksum": "24649"
+      },
+      {
+        "RouterHaRollup.id": "158",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2689",
+        "RouterHaRollup.idChecksum": "24964"
+      },
+      {
+        "RouterHaRollup.id": "159",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2706",
+        "RouterHaRollup.idChecksum": "25281"
+      },
+      {
+        "RouterHaRollup.id": "160",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2723",
+        "RouterHaRollup.idChecksum": "25600"
+      },
+      {
+        "RouterHaRollup.id": "161",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2740",
+        "RouterHaRollup.idChecksum": "25921"
+      },
+      {
+        "RouterHaRollup.id": "162",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2757",
+        "RouterHaRollup.idChecksum": "26244"
+      },
+      {
+        "RouterHaRollup.id": "163",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2774",
+        "RouterHaRollup.idChecksum": "26569"
+      },
+      {
+        "RouterHaRollup.id": "164",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2791",
+        "RouterHaRollup.idChecksum": "26896"
+      },
+      {
+        "RouterHaRollup.id": "165",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2808",
+        "RouterHaRollup.idChecksum": "27225"
+      },
+      {
+        "RouterHaRollup.id": "166",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2825",
+        "RouterHaRollup.idChecksum": "27556"
+      },
+      {
+        "RouterHaRollup.id": "167",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2842",
+        "RouterHaRollup.idChecksum": "27889"
+      },
+      {
+        "RouterHaRollup.id": "168",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2859",
+        "RouterHaRollup.idChecksum": "28224"
+      },
+      {
+        "RouterHaRollup.id": "169",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2876",
+        "RouterHaRollup.idChecksum": "28561"
+      },
+      {
+        "RouterHaRollup.id": "170",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2893",
+        "RouterHaRollup.idChecksum": "28900"
+      },
+      {
+        "RouterHaRollup.id": "171",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2910",
+        "RouterHaRollup.idChecksum": "29241"
+      },
+      {
+        "RouterHaRollup.id": "172",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2927",
+        "RouterHaRollup.idChecksum": "29584"
+      },
+      {
+        "RouterHaRollup.id": "173",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2944",
+        "RouterHaRollup.idChecksum": "29929"
+      },
+      {
+        "RouterHaRollup.id": "174",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2961",
+        "RouterHaRollup.idChecksum": "30276"
+      },
+      {
+        "RouterHaRollup.id": "175",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2978",
+        "RouterHaRollup.idChecksum": "30625"
+      },
+      {
+        "RouterHaRollup.id": "176",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "2995",
+        "RouterHaRollup.idChecksum": "30976"
+      },
+      {
+        "RouterHaRollup.id": "177",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3012",
+        "RouterHaRollup.idChecksum": "31329"
+      },
+      {
+        "RouterHaRollup.id": "178",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3029",
+        "RouterHaRollup.idChecksum": "31684"
+      },
+      {
+        "RouterHaRollup.id": "179",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3046",
+        "RouterHaRollup.idChecksum": "32041"
+      },
+      {
+        "RouterHaRollup.id": "180",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3063",
+        "RouterHaRollup.idChecksum": "32400"
+      },
+      {
+        "RouterHaRollup.id": "181",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3080",
+        "RouterHaRollup.idChecksum": "32761"
+      },
+      {
+        "RouterHaRollup.id": "182",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3097",
+        "RouterHaRollup.idChecksum": "33124"
+      },
+      {
+        "RouterHaRollup.id": "183",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3114",
+        "RouterHaRollup.idChecksum": "33489"
+      },
+      {
+        "RouterHaRollup.id": "184",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3131",
+        "RouterHaRollup.idChecksum": "33856"
+      },
+      {
+        "RouterHaRollup.id": "185",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3148",
+        "RouterHaRollup.idChecksum": "34225"
+      },
+      {
+        "RouterHaRollup.id": "186",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3165",
+        "RouterHaRollup.idChecksum": "34596"
+      },
+      {
+        "RouterHaRollup.id": "187",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3182",
+        "RouterHaRollup.idChecksum": "34969"
+      },
+      {
+        "RouterHaRollup.id": "188",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3199",
+        "RouterHaRollup.idChecksum": "35344"
+      },
+      {
+        "RouterHaRollup.id": "189",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3216",
+        "RouterHaRollup.idChecksum": "35721"
+      },
+      {
+        "RouterHaRollup.id": "190",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3233",
+        "RouterHaRollup.idChecksum": "36100"
+      },
+      {
+        "RouterHaRollup.id": "191",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3250",
+        "RouterHaRollup.idChecksum": "36481"
+      },
+      {
+        "RouterHaRollup.id": "192",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3267",
+        "RouterHaRollup.idChecksum": "36864"
+      },
+      {
+        "RouterHaRollup.id": "193",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3284",
+        "RouterHaRollup.idChecksum": "37249"
+      },
+      {
+        "RouterHaRollup.id": "194",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3301",
+        "RouterHaRollup.idChecksum": "37636"
+      },
+      {
+        "RouterHaRollup.id": "195",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3318",
+        "RouterHaRollup.idChecksum": "38025"
+      },
+      {
+        "RouterHaRollup.id": "196",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3335",
+        "RouterHaRollup.idChecksum": "38416"
+      },
+      {
+        "RouterHaRollup.id": "197",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3352",
+        "RouterHaRollup.idChecksum": "38809"
+      },
+      {
+        "RouterHaRollup.id": "198",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3369",
+        "RouterHaRollup.idChecksum": "39204"
+      },
+      {
+        "RouterHaRollup.id": "199",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3386",
+        "RouterHaRollup.idChecksum": "39601"
+      },
+      {
+        "RouterHaRollup.id": "200",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3403",
+        "RouterHaRollup.idChecksum": "40000"
+      },
+      {
+        "RouterHaRollup.id": "201",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3420",
+        "RouterHaRollup.idChecksum": "40401"
+      },
+      {
+        "RouterHaRollup.id": "202",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3437",
+        "RouterHaRollup.idChecksum": "40804"
+      },
+      {
+        "RouterHaRollup.id": "203",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3454",
+        "RouterHaRollup.idChecksum": "41209"
+      },
+      {
+        "RouterHaRollup.id": "204",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3471",
+        "RouterHaRollup.idChecksum": "41616"
+      },
+      {
+        "RouterHaRollup.id": "205",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3488",
+        "RouterHaRollup.idChecksum": "42025"
+      },
+      {
+        "RouterHaRollup.id": "206",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3505",
+        "RouterHaRollup.idChecksum": "42436"
+      },
+      {
+        "RouterHaRollup.id": "207",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3522",
+        "RouterHaRollup.idChecksum": "42849"
+      },
+      {
+        "RouterHaRollup.id": "208",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3539",
+        "RouterHaRollup.idChecksum": "43264"
+      },
+      {
+        "RouterHaRollup.id": "209",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3556",
+        "RouterHaRollup.idChecksum": "43681"
+      },
+      {
+        "RouterHaRollup.id": "210",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3573",
+        "RouterHaRollup.idChecksum": "44100"
+      },
+      {
+        "RouterHaRollup.id": "211",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3590",
+        "RouterHaRollup.idChecksum": "44521"
+      },
+      {
+        "RouterHaRollup.id": "212",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3607",
+        "RouterHaRollup.idChecksum": "44944"
+      },
+      {
+        "RouterHaRollup.id": "213",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3624",
+        "RouterHaRollup.idChecksum": "45369"
+      },
+      {
+        "RouterHaRollup.id": "214",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3641",
+        "RouterHaRollup.idChecksum": "45796"
+      },
+      {
+        "RouterHaRollup.id": "215",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3658",
+        "RouterHaRollup.idChecksum": "46225"
+      },
+      {
+        "RouterHaRollup.id": "216",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3675",
+        "RouterHaRollup.idChecksum": "46656"
+      },
+      {
+        "RouterHaRollup.id": "217",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3692",
+        "RouterHaRollup.idChecksum": "47089"
+      },
+      {
+        "RouterHaRollup.id": "218",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3709",
+        "RouterHaRollup.idChecksum": "47524"
+      },
+      {
+        "RouterHaRollup.id": "219",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3726",
+        "RouterHaRollup.idChecksum": "47961"
+      },
+      {
+        "RouterHaRollup.id": "220",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3743",
+        "RouterHaRollup.idChecksum": "48400"
+      },
+      {
+        "RouterHaRollup.id": "221",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3760",
+        "RouterHaRollup.idChecksum": "48841"
+      },
+      {
+        "RouterHaRollup.id": "222",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3777",
+        "RouterHaRollup.idChecksum": "49284"
+      },
+      {
+        "RouterHaRollup.id": "223",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3794",
+        "RouterHaRollup.idChecksum": "49729"
+      },
+      {
+        "RouterHaRollup.id": "224",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3811",
+        "RouterHaRollup.idChecksum": "50176"
+      },
+      {
+        "RouterHaRollup.id": "225",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3828",
+        "RouterHaRollup.idChecksum": "50625"
+      },
+      {
+        "RouterHaRollup.id": "226",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3845",
+        "RouterHaRollup.idChecksum": "51076"
+      },
+      {
+        "RouterHaRollup.id": "227",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3862",
+        "RouterHaRollup.idChecksum": "51529"
+      },
+      {
+        "RouterHaRollup.id": "228",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3879",
+        "RouterHaRollup.idChecksum": "51984"
+      },
+      {
+        "RouterHaRollup.id": "229",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3896",
+        "RouterHaRollup.idChecksum": "52441"
+      },
+      {
+        "RouterHaRollup.id": "230",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3913",
+        "RouterHaRollup.idChecksum": "52900"
+      },
+      {
+        "RouterHaRollup.id": "231",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3930",
+        "RouterHaRollup.idChecksum": "53361"
+      },
+      {
+        "RouterHaRollup.id": "232",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3947",
+        "RouterHaRollup.idChecksum": "53824"
+      },
+      {
+        "RouterHaRollup.id": "233",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3964",
+        "RouterHaRollup.idChecksum": "54289"
+      },
+      {
+        "RouterHaRollup.id": "234",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3981",
+        "RouterHaRollup.idChecksum": "54756"
+      },
+      {
+        "RouterHaRollup.id": "235",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "3998",
+        "RouterHaRollup.idChecksum": "55225"
+      },
+      {
+        "RouterHaRollup.id": "236",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4015",
+        "RouterHaRollup.idChecksum": "55696"
+      },
+      {
+        "RouterHaRollup.id": "237",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4032",
+        "RouterHaRollup.idChecksum": "56169"
+      },
+      {
+        "RouterHaRollup.id": "238",
+        "RouterHaRollup.bucket": "fbc324ea_14",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4049",
+        "RouterHaRollup.idChecksum": "56644"
+      },
+      {
+        "RouterHaRollup.id": "239",
+        "RouterHaRollup.bucket": "fbc324ea_15",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4066",
+        "RouterHaRollup.idChecksum": "57121"
+      },
+      {
+        "RouterHaRollup.id": "240",
+        "RouterHaRollup.bucket": "fbc324ea_00",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4083",
+        "RouterHaRollup.idChecksum": "57600"
+      },
+      {
+        "RouterHaRollup.id": "241",
+        "RouterHaRollup.bucket": "fbc324ea_01",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4100",
+        "RouterHaRollup.idChecksum": "58081"
+      },
+      {
+        "RouterHaRollup.id": "242",
+        "RouterHaRollup.bucket": "fbc324ea_02",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4117",
+        "RouterHaRollup.idChecksum": "58564"
+      },
+      {
+        "RouterHaRollup.id": "243",
+        "RouterHaRollup.bucket": "fbc324ea_03",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4134",
+        "RouterHaRollup.idChecksum": "59049"
+      },
+      {
+        "RouterHaRollup.id": "244",
+        "RouterHaRollup.bucket": "fbc324ea_04",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4151",
+        "RouterHaRollup.idChecksum": "59536"
+      },
+      {
+        "RouterHaRollup.id": "245",
+        "RouterHaRollup.bucket": "fbc324ea_05",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4168",
+        "RouterHaRollup.idChecksum": "60025"
+      },
+      {
+        "RouterHaRollup.id": "246",
+        "RouterHaRollup.bucket": "fbc324ea_06",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4185",
+        "RouterHaRollup.idChecksum": "60516"
+      },
+      {
+        "RouterHaRollup.id": "247",
+        "RouterHaRollup.bucket": "fbc324ea_07",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4202",
+        "RouterHaRollup.idChecksum": "61009"
+      },
+      {
+        "RouterHaRollup.id": "248",
+        "RouterHaRollup.bucket": "fbc324ea_08",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4219",
+        "RouterHaRollup.idChecksum": "61504"
+      },
+      {
+        "RouterHaRollup.id": "249",
+        "RouterHaRollup.bucket": "fbc324ea_09",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4236",
+        "RouterHaRollup.idChecksum": "62001"
+      },
+      {
+        "RouterHaRollup.id": "250",
+        "RouterHaRollup.bucket": "fbc324ea_10",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4253",
+        "RouterHaRollup.idChecksum": "62500"
+      },
+      {
+        "RouterHaRollup.id": "251",
+        "RouterHaRollup.bucket": "fbc324ea_11",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4270",
+        "RouterHaRollup.idChecksum": "63001"
+      },
+      {
+        "RouterHaRollup.id": "252",
+        "RouterHaRollup.bucket": "fbc324ea_12",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4287",
+        "RouterHaRollup.idChecksum": "63504"
+      },
+      {
+        "RouterHaRollup.id": "253",
+        "RouterHaRollup.bucket": "fbc324ea_13",
+        "RouterHaRollup.rowCount": "1",
+        "RouterHaRollup.totalAmount": "4304",
+        "RouterHaRollup.idChecksum": "64009"
+      },
+      {
+  

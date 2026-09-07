@@ -31,6 +31,26 @@ spec:
             - images
             - storage
             properties:
+              authority:
+                description: Strict authority for fresh installations; existing legacy installations require a separately approved stop-write migration.
+                type: object
+                required: [apiTimeoutMs, validationTimeoutMs, maxClockSkewMs]
+                properties:
+                  apiTimeoutMs:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    maximum: 2147483647
+                  validationTimeoutMs:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    maximum: 2147483647
+                  maxClockSkewMs:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                    maximum: 2147483647
               images:
                 type: object
                 required:

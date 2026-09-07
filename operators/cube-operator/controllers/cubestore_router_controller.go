@@ -226,6 +226,9 @@ func (r *CubestoreRouterReconciler) resolveRouterLease(ctx context.Context, cr *
 	if err := ctx.Err(); err != nil {
 		return nil, leadership.LeaseRecord{}, err
 	}
+	if pending, err := r.initializeAuthorityLease(ctx, cr, candidates); pending || err != nil {
+		return nil, leadership.LeaseRecord{}, err
+	}
 	store, closeStore, err := r.routerLeaseStore(ctx, cr)
 	if err != nil {
 		return nil, leadership.LeaseRecord{}, err

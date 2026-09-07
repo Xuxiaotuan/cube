@@ -335,3 +335,23 @@ for (const [mode, sql, expectedBefore] of [
     assert.deepEqual(failures, []);
   });
 }
+
+{
+  const { test: evidenceTest } = require('node:test');
+  const evidenceAssert = require('node:assert/strict');
+  const { evidenceReplacer } = require('./refresher-restart-check');
+  evidenceTest('evidence omits pod credentials and nested proof annotations without mutating runtime objects', () => {
+    const pod = { metadata: { uid: 'pinned-uid', annotations: { lastApplied: 'sensitive' }, managedFields: ['sensitive'] },
+      spec: { containers: [{ name: 'api', image: 'frozen-image', env: [{ name: 'API_KEY', value: 'sensitive' }],
+        envFrom: [{ secretRef: { name: 'sensitive' } }] }] }, status: { phase: 'Running' } };
+    const input = { before: { pod }, proof: { replacement: pod }, authorization: 'sensitive',
+      token: 'sensitive', secret: 'sensitive', password: 'sensitive', manifest: { manifestHash: 'keep-hash' } };
+    const serialized = JSON.stringify(input, evidenceReplacer);
+    evidenceAssert.ok(!serialized.includes('sensitive'));
+    const saved = JSON.parse(serialized);
+    evidenceAssert.equal(saved.proof.replacement.metadata.uid, 'pinned-uid');
+    evidenceAssert.equal(saved.before.pod.spec.containers[0].image, 'frozen-image');
+    evidenceAssert.equal(saved.manifest.manifestHash, 'keep-hash');
+    evidenceAssert.equal(pod.spec.containers[0].env[0].value, 'sensitive');
+  });
+}

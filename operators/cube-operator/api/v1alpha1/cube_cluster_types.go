@@ -23,6 +23,8 @@ type CubeClusterList struct {
 }
 
 type CubeClusterSpec struct {
+	// Presence requests strict authority for a fresh installation only.
+	Authority    *CubeAuthoritySpec        `json:"authority,omitempty"`
 	Images       CubeClusterImages         `json:"images"`
 	API          CubeComponentSpec         `json:"api,omitempty"`
 	Router       CubeRouterClusterSpec     `json:"router,omitempty"`
@@ -32,6 +34,19 @@ type CubeClusterSpec struct {
 	APISecretRef *corev1.SecretKeySelector `json:"apiSecretRef,omitempty"`
 	// Presence enables a singleton scheduled-refresh process, not refresher HA.
 	Refresher *CubeComponentSpec `json:"refresher,omitempty"`
+}
+
+// Budgets must be supplied from the target environment, not inferred by the operator.
+type CubeAuthoritySpec struct {
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2147483647
+	APITimeoutMS int64 `json:"apiTimeoutMs"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2147483647
+	ValidationTimeoutMS int64 `json:"validationTimeoutMs"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=2147483647
+	MaxClockSkewMS *int64 `json:"maxClockSkewMs"`
 }
 
 type CubeClusterImages struct {
@@ -129,6 +144,14 @@ func (in *CubeCluster) DeepCopyInto(out *CubeCluster) {
 	out.TypeMeta = in.TypeMeta
 	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
 	out.Spec = in.Spec
+	if in.Spec.Authority != nil {
+		a := *in.Spec.Authority
+		if a.MaxClockSkewMS != nil {
+			n := *a.MaxClockSkewMS
+			a.MaxClockSkewMS = &n
+		}
+		out.Spec.Authority = &a
+	}
 	out.Spec.API.Pod = *in.Spec.API.Pod.DeepCopy()
 	out.Spec.Router.Pod = *in.Spec.Router.Pod.DeepCopy()
 	out.Spec.Router.DrainCommand = append([]string(nil), in.Spec.Router.DrainCommand...)

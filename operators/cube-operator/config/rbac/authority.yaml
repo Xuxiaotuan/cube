@@ -1,0 +1,35 @@
+# Installed by the cluster RBAC administrator, never by the Operator.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cubestore-authority-tokenreview
+rules:
+- apiGroups: [authentication.k8s.io]
+  resources: [tokenreviews]
+  verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cubestore-authority-binding-manager
+rules:
+- apiGroups: [rbac.authorization.k8s.io]
+  resources: [clusterroles]
+  resourceNames: [cubestore-authority-tokenreview]
+  verbs: [get, bind]
+- apiGroups: [rbac.authorization.k8s.io]
+  resources: [clusterrolebindings]
+  verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cubestore-authority-binding-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cubestore-authority-binding-manager
+subjects:
+- kind: ServiceAccount
+  name: cube-operator
+  namespace: cube-operator-demo
