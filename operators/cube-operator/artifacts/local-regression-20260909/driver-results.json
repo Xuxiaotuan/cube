@@ -1,0 +1,26 @@
+[
+  {
+    "name": "driver-jest",
+    "exitCode": 1,
+    "signal": null,
+    "logfile": "/tmp/cube-ha-driver-jest-20260908.log"
+  },
+  {
+    "name": "driver-tsc",
+    "exitCode": 2,
+    "signal": null,
+    "logfile": "/tmp/cube-ha-driver-tsc-20260908.log"
+  },
+  {
+    "name": "orchestrator-jest",
+    "exitCode": 0,
+    "signal": null,
+    "logfile": "/tmp/cube-ha-orchestrator-jest-20260908.log"
+  },
+  {
+    "name": "orchestrator-tsc",
+    "exitCode": 0,
+    "signal": null,
+    "logfile": "/tmp/cube-ha-orchestrator-tsc-20260908.log"
+  }
+]

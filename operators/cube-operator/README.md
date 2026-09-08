@@ -165,3 +165,27 @@ kubectl --context orbstack -n cube-ha-remediation get endpointslices
 - `config/manager/`：Operator 部署对象。
 - `config/rbac/`：权限清单。
 - `demo/k8s/`：演示、检查脚本及分日期原始证据。
+
+## 2026-09-08 原子预聚合账本进展
+
+本轮新增 MetaStore 原子账本、受认证 Router HTTP 桥接及显式 Driver 客户端。Rust lib/bins 编译检查通过；Driver 53/53 测试及类型检查通过。Rust 测试构建在 600 秒上限内未完成，未执行用例。
+
+**当前仍为生产 `NO-GO`，不是全部整改完成。** 真实预聚合 CREATE/绑定/发布、查询及流式引用生命周期、Operator 新入口认证接线仍未完成集成；没有部署新镜像或执行 Kubernetes 切主 E2E。新账本入口拒绝默认无密码认证，不会自动替换原预聚合流程。
+
+实现范围、链路图、原始日志与待完成门禁见 [2026-09-08 原子账本进展](HA-ATOMIC-LEDGER-2026-09-08.md)。历史测试不得当作本轮新增协议的验收结果。
+
+## 2026-09-08 业务接入续作（未验证）
+
+已将原子账本接入真实预聚合领取、建表/绑定、发布和回收路径，并新增 Rust 实际查询/流式引用保护、默认 Router 密码认证及 Operator Secret 接线。本批没有运行编译、测试、镜像构建或部署，不能沿用上一阶段的通过结果。
+
+**仍为生产 `NO-GO`，且有明确代码阻断项，不只是缺测试：** 重复 Bind 会覆盖原子建表来源标记；Driver 授权记录缺 key/generation 显式比较；故障脚本直接构造 WebSocket 尚需认证接线。此外，建表拒绝持久化、部分诊断读取、来源丢失和过期构建恢复仍未闭环。
+
+完整范围、配置契约和待修问题见 [业务接入续作报告](HA-BUSINESS-INTEGRATION-2026-09-08.md)。请勿将本批源码的能力声明当作运行验收。
+
+## 2026-09-09 本地修补与回归
+
+四处已授权修补已写入：Bind 保留原子建表标记、schema 缺失拒绝结果持久化、Driver key/generation 比对、故障脚本旧主 WebSocket 认证。Operator 两包回归、Driver 原有 53 项、Orchestrator 67 项及脚本 15 项纯逻辑测试通过。
+
+**第二轮结果：** Driver 三处 mock 类型转换已修正，新增构建套件 15/15 和类型检查通过；Rust 枚举构造已修正，但测试目标因 `MetaStoreMock` 漏实现四个新增方法而编译失败（E0046，821.8 秒，退出码 101），行为测试仍为 0 项。整体未通过，生产仍为 `NO-GO`。没有 Kubernetes 故障注入、镜像部署或 Git 操作。
+
+精确错误、各层结果及原始日志见 [2026-09-09 本地回归报告](HA-LOCAL-REGRESSION-2026-09-09.md)。

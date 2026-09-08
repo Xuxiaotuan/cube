@@ -1,0 +1,70 @@
+Archive date: 2026-09-09 Asia/Shanghai
+Started: 2026-09-08T16:01:54.207Z
+Source-only Jest mappings: {"@cubejs-backend/cubestore-driver":"packages/cubejs-cubestore-driver/src","@cubejs-backend/query-orchestrator":"packages/cubejs-query-orchestrator/src","@cubejs-backend/base-driver":"packages/cubejs-base-driver/src","@cubejs-backend/shared":"packages/cubejs-backend-shared/src"}
+
+=== driver-jest ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/jest/bin/jest.js","--config","{\"testEnvironment\":\"node\",\"collectCoverage\":false,\"coverageDirectory\":\"coverage/\",\"coverageReporters\":[\"text\",\"html\",\"lcov\"],\"coveragePathIgnorePatterns\":[\".*\\\\.d\\\\.ts\"],\"collectCoverageFrom\":[\"dist/src/**/*.js\",\"dist/src/**/*.ts\"],\"moduleDirectories\":[\"node_modules\",\"<rootDir>/node_modules\"],\"moduleNameMapper\":{\"^uuid$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/uuid/dist/index.js\",\"^yaml$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/yaml/index.js\",\"^antlr4$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/antlr4/dist/antlr4.node.cjs\",\"^(\\\\.{1,2}/.*)\\\\.js$\":\"$1\",\"^@cubejs-backend/cubestore-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/src\",\"^@cubejs-backend/query-orchestrator$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/src\",\"^@cubejs-backend/base-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-base-driver/src\",\"^@cubejs-backend/shared$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-backend-shared/src\"},\"setupFiles\":[\"/Users/xujiawei/magic/workbench/cube/jest.setup.js\"],\"snapshotFormat\":{\"escapeString\":true,\"printBasicPrototype\":true},\"rootDir\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver\",\"cacheDirectory\":\"/tmp/cube-ha-source-jest-cache-20260908\",\"testMatch\":[\"<rootDir>/test/**/*.test.ts\"],\"moduleFileExtensions\":[\"ts\",\"js\",\"json\"],\"transform\":{\"^.+\\\\.ts$\":[\"/Users/xujiawei/magic/workbench/cube/node_modules/ts-jest/dist/index.js\",{\"tsconfig\":{\"module\":\"commonjs\",\"target\":\"es2022\",\"esModuleInterop\":true,\"experimentalDecorators\":true,\"skipLibCheck\":true,\"strict\":true,\"noImplicitAny\":false,\"strictNullChecks\":true,\"strictFunctionTypes\":true,\"strictBindCallApply\":true,\"strictPropertyInitialization\":true,\"rootDir\":\"/Users/xujiawei/magic/workbench/cube\",\"baseUrl\":\"/Users/xujiawei/magic/workbench/cube\",\"paths\":{\"@cubejs-backend/cubestore-driver\":[\"packages/cubejs-cubestore-driver/src\"],\"@cubejs-backend/query-orchestrator\":[\"packages/cubejs-query-orchestrator/src\"],\"@cubejs-backend/base-driver\":[\"packages/cubejs-base-driver/src\"],\"@cubejs-backend/shared\":[\"packages/cubejs-backend-shared/src\"]}}}]}}","--runInBand","--runTestsByPath","/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts","/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts","/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts","--json","--outputFile=/tmp/cube-ha-driver-jest-20260908.json"]
+(node:28261) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts (14.587 s)
+FAIL packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts
+  ● Test suite failed to run
+
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m222[0m:[93m6[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+      Type 'typeof fetch' is missing the following properties from type 'Mock<any, any, any>': getMockName, mock, mockClear, mockReset, and 13 more.
+
+    [7m222[0m     (fetch as jest.Mock).mockReset();
+    [7m   [0m [91m     ~~~~~~~~~~~~~~~~~~[0m
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m235[0m:[93m6[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+
+    [7m235[0m     (fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({ writeReady: true, recoveryCapabilities: {
+    [7m   [0m [91m     ~~~~~~~~~~~~~~~~~~[0m
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m241[0m:[93m13[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+
+    [7m241[0m     expect((fetch as jest.Mock).mock.calls.every(([url]) => String(url).endsWith('/router/status'))).toBe(true);
+    [7m   [0m [91m            ~~~~~~~~~~~~~~~~~~[0m
+
+PASS packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       53 passed, 53 total
+Snapshots:   0 total
+Time:        16.884 s
+Ran all test suites within paths "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts".
+Test results written to: ../../../../../tmp/cube-ha-driver-jest-20260908.json
+
+Exit: 1; signal: null
+
+=== driver-tsc ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/typescript/bin/tsc","--project","packages/cubejs-cubestore-driver/tsconfig.json","--noEmit","--tsBuildInfoFile","/tmp/cube-ha-driver-20260908.tsbuildinfo"]
+packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts(222,6): error TS2352: Conversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'typeof fetch' is missing the following properties from type 'Mock<any, any, any>': getMockName, mock, mockClear, mockReset, and 13 more.
+packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts(235,6): error TS2352: Conversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts(241,13): error TS2352: Conversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+
+Exit: 2; signal: null
+
+=== orchestrator-jest ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/jest/bin/jest.js","--config","{\"testEnvironment\":\"node\",\"collectCoverage\":false,\"coverageDirectory\":\"coverage/\",\"coverageReporters\":[\"text\",\"html\",\"lcov\"],\"coveragePathIgnorePatterns\":[\".*\\\\.d\\\\.ts\"],\"collectCoverageFrom\":[\"dist/src/**/*.js\",\"dist/src/**/*.ts\"],\"moduleDirectories\":[\"node_modules\",\"<rootDir>/node_modules\"],\"moduleNameMapper\":{\"^uuid$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/uuid/dist/index.js\",\"^yaml$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/yaml/index.js\",\"^antlr4$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/antlr4/dist/antlr4.node.cjs\",\"^(\\\\.{1,2}/.*)\\\\.js$\":\"$1\",\"^@cubejs-backend/cubestore-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/src\",\"^@cubejs-backend/query-orchestrator$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/src\",\"^@cubejs-backend/base-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-base-driver/src\",\"^@cubejs-backend/shared$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-backend-shared/src\"},\"setupFiles\":[\"/Users/xujiawei/magic/workbench/cube/jest.setup.js\"],\"snapshotFormat\":{\"escapeString\":true,\"printBasicPrototype\":true},\"rootDir\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator\",\"cacheDirectory\":\"/tmp/cube-ha-source-jest-cache-20260908\",\"testMatch\":[\"<rootDir>/test/**/*.test.ts\"],\"moduleFileExtensions\":[\"ts\",\"js\",\"json\"],\"transform\":{\"^.+\\\\.ts$\":[\"/Users/xujiawei/magic/workbench/cube/node_modules/ts-jest/dist/index.js\",{\"tsconfig\":{\"module\":\"commonjs\",\"target\":\"es2022\",\"esModuleInterop\":true,\"experimentalDecorators\":true,\"skipLibCheck\":true,\"strict\":true,\"noImplicitAny\":false,\"strictNullChecks\":false,\"strictFunctionTypes\":false,\"strictBindCallApply\":false,\"strictPropertyInitialization\":false,\"rootDir\":\"/Users/xujiawei/magic/workbench/cube\",\"baseUrl\":\"/Users/xujiawei/magic/workbench/cube\",\"paths\":{\"@cubejs-backend/cubestore-driver\":[\"packages/cubejs-cubestore-driver/src\"],\"@cubejs-backend/query-orchestrator\":[\"packages/cubejs-query-orchestrator/src\"],\"@cubejs-backend/base-driver\":[\"packages/cubejs-base-driver/src\"],\"@cubejs-backend/shared\":[\"packages/cubejs-backend-shared/src\"]}}}]}}","--runInBand","--runTestsByPath","/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/PreAggregationRecovery.test.ts","/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/PreAggregations.test.ts","/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/ReplacePreAggregationTableNames.test.ts","--json","--outputFile=/tmp/cube-ha-orchestrator-jest-20260908.json"]
+(node:28342) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS packages/cubejs-query-orchestrator/test/unit/PreAggregations.test.ts (6.188 s)
+PASS packages/cubejs-query-orchestrator/test/unit/PreAggregationRecovery.test.ts
+PASS packages/cubejs-query-orchestrator/test/unit/ReplacePreAggregationTableNames.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       67 passed, 67 total
+Snapshots:   0 total
+Time:        7.312 s
+Ran all test suites within paths "/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/PreAggregationRecovery.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/PreAggregations.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/test/unit/ReplacePreAggregationTableNames.test.ts".
+Test results written to: ../../../../../tmp/cube-ha-orchestrator-jest-20260908.json
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+
+Exit: 0; signal: null
+
+=== orchestrator-tsc ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/typescript/bin/tsc","--project","packages/cubejs-query-orchestrator/tsconfig.json","--noEmit","--tsBuildInfoFile","/tmp/cube-ha-orchestrator-20260908.tsbuildinfo"]
+
+Exit: 0; signal: null

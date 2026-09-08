@@ -444,6 +444,10 @@ export class PreAggregationLoader {
         if (build) {
           Object.assign(newVersionEntry, build.versionEntry);
           this.preAggregationBuildId = build.buildId;
+        } else if (driver.isAtomicPreAggregationLedgerStrict?.()) {
+          throw Object.assign(new Error('Strict pre-aggregation selection returned no authoritative build'), {
+            code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
+          });
         }
       }
     }
@@ -507,6 +511,7 @@ export class PreAggregationLoader {
     return cancelCombinator(
       async saveCancelFn => {
         try {
+          const runRefresh = async () => {
           if (this.preAggregationBuildId && this.preAggregation.external) {
             const driver = await this.externalDriverFactory() as any;
             if (this.preAggregationBuildId !== targetTableName || typeof driver.resumePreAggregationBuild !== 'function') {
@@ -524,10 +529,8 @@ export class PreAggregationLoader {
                 code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
               });
             }
-            // Restore the driver's existing source-strategy fallback, needed by
-            // selected first builds. false also covers missing intent/source;
-            // it is not an authoritative no-effect or safe-replay guarantee.
-            // Explicit UNKNOWN errors above must never enter this fallback.
+            // false permits only the selected initial source strategy. Strict
+            // drivers reconcile authority first and never return false on UNKNOWN.
           }
           return await refreshStrategy.bind(this)(
             client,
@@ -535,6 +538,19 @@ export class PreAggregationLoader {
             saveCancelFn,
             invalidationKeys
           );
+          };
+          if (this.preAggregation.external) {
+            const driver = await this.externalDriverFactory() as any;
+            if (driver.isAtomicPreAggregationLedgerStrict?.()) {
+              if (!this.preAggregationBuildId || typeof driver.withPreAggregationBuildLease !== 'function') {
+                throw Object.assign(new Error('Strict refresh requires an authoritative build lease'), {
+                  code: 'MUTATION_UNKNOWN', name: 'MutationUnknownError',
+                });
+              }
+              return await driver.withPreAggregationBuildLease(this.preAggregationBuildId, runRefresh);
+            }
+          }
+          return await runRefresh();
         } catch (e: any) {
           if (this.preAggregationBuildId && this.preAggregation.external && e?.name === 'ConnectionError') {
             // A transport failure while reading/writing the ledger says nothing
@@ -1148,11 +1164,18 @@ export class PreAggregationLoader {
       const protectedTables = (protectionDriver as any).getProtectedPreAggregationTables
         ? await (protectionDriver as any).getProtectedPreAggregationTables() : [];
       const safeToDrop = toDrop.filter(table => !protectedTables.includes(table));
-      await Promise.all(safeToDrop.map(table => saveCancelFn(client.dropTable(table))));
+      const dropped = await Promise.all(safeToDrop.map(async table => {
+        const driver = client as any;
+        if (external && driver.isAtomicPreAggregationLedgerStrict?.()) {
+          return await saveCancelFn(driver.retirePreAggregationTable(table)) ? table : null;
+        }
+        await saveCancelFn(client.dropTable(table));
+        return table;
+      }));
       this.logger('Dropping orphaned tables completed', {
         ...queryOptions,
         external,
-        tablesToDrop: JSON.stringify(safeToDrop),
+        tablesToDrop: JSON.stringify(dropped.filter(Boolean)),
       });
     });
   }

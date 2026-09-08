@@ -1,0 +1,13 @@
+yarn run v1.22.22
+$ /Users/xujiawei/magic/workbench/cube/node_modules/.bin/jest --config /tmp/cube-ledger-source-jest-20260908.cjs --runInBand
+(node:86141) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts
+PASS packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       53 passed, 53 total
+Snapshots:   0 total
+Time:        2.596 s
+Ran all test suites.
+Done in 3.56s.

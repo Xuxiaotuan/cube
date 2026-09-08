@@ -22,9 +22,26 @@ spec:
     apiTimeoutMs: 1000
     validationTimeoutMs: 3000
     maxClockSkewMs: 250
+  # Supply an existing Secret in this namespace; no password is stored here.
+  # Operator derives API/Refresher PASS and ledger strict=true, and Router
+  # DRAIN_USER/PASSWORD, from these two native pod.env inputs.
+  api:
+    pod:
+      env:
+      - name: CUBEJS_CUBESTORE_USER
+        value: "${CUBESTORE_SQL_USER}"
   router:
     highAvailability: true
     replicas: 2
+    drainCommand: ["/cube/cubestored", "--drain"]
+    pod:
+      env:
+      - name: CUBESTORE_SQL_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: "${CUBESTORE_SQL_SECRET}"
+            key: password
+            optional: false
   metaStore:
     replicas: 1
   workers:

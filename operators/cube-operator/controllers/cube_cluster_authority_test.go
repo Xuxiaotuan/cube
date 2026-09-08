@@ -31,7 +31,9 @@ func strictAuthorityFixture(t *testing.T) (*v1alpha1.CubeCluster, *CubeClusterRe
 	t.Helper()
 	c := businessCluster()
 	c.Spec.Authority = &v1alpha1.CubeAuthoritySpec{APITimeoutMS: 1000, ValidationTimeoutMS: 3000, MaxClockSkewMS: ptr64(250)}
-	r := clusterReconciler(t, c, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: authorityReviewRole}, Rules: authorityTokenReviewRules()})
+	c.Spec.Router.Pod.Env = []corev1.EnvVar{{Name: "CUBESTORE_SQL_PASSWORD", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "router-sql-auth"}, Key: "password"}}}}
+	c.Spec.API.Pod.Env = []corev1.EnvVar{{Name: "CUBEJS_CUBESTORE_USER", Value: "ledger-test-user"}}
+	r := clusterReconciler(t, c, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: authorityReviewRole}, Rules: authorityTokenReviewRules()}, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "router-sql-auth", Namespace: c.Namespace}, Data: map[string][]byte{"password": []byte("test-only-password")}})
 	if err := coordinationv1.AddToScheme(r.Scheme); err != nil {
 		t.Fatal(err)
 	}

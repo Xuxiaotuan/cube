@@ -102,6 +102,10 @@ use tracing::{instrument, Instrument};
 use super::serialized_plan::PreSerializedPlan;
 use super::{try_make_memory_data_source, QueryPlannerImpl};
 
+#[path = "query_lifetime.rs"]
+mod query_lifetime;
+use query_lifetime::QueryDrain;
+
 /// Unbounded `MemoryPool` that records the peak of all operator reservations for a
 /// single query execution. The pool lives in that query's `RuntimeEnv`, so the peak
 /// is per-query and isolated from concurrent queries sharing the process. Covers only
@@ -232,10 +236,10 @@ pub struct QueryExecutorImpl {
 crate::di_service!(QueryExecutorImpl, [QueryExecutor]);
 
 impl QueryExecutorImpl {
-    fn execution_context(&self) -> Result<Arc<SessionContext>, CubeError> {
+    fn execution_context(&self, drain: Arc<QueryDrain>) -> Result<Arc<SessionContext>, CubeError> {
         // This is supposed to be identical to QueryImplImpl::execution_context.
         Ok(Arc::new(QueryPlannerImpl::make_execution_context(
-            self.metadata_cache_factory.make_session_config(),
+            self.metadata_cache_factory.make_session_config().with_extension(drain),
         )))
     }
 }
@@ -248,6 +252,7 @@ impl QueryExecutor for QueryExecutorImpl {
         cluster: Arc<dyn Cluster>,
         worker_traces: Arc<crate::trace::WorkerTraceCollector>,
     ) -> Result<Option<u64>, CubeError> {
+        let drain = QueryDrain::new();
         let (physical_plan, _logical_plan) = {
             let _g = crate::trace::OpGuard::start(
                 crate::trace::OpKind::Planning,
@@ -260,7 +265,8 @@ impl QueryExecutor for QueryExecutorImpl {
         let config = self
             .metadata_cache_factory
             .make_session_config()
-            .with_extension(worker_traces);
+            .with_extension(worker_traces)
+            .with_extension(drain.clone());
         // Per-query tracking pool in this execution's own RuntimeEnv: the peak is
         // isolated from concurrent queries sharing the process.
         let memory_pool = TrackingMemoryPool::new();
@@ -280,6 +286,7 @@ impl QueryExecutor for QueryExecutorImpl {
             );
             let _results = collect(physical_plan.clone(), session_context.task_ctx()).await?;
         }
+        drain.finish().await?;
         // Harvest per-node DataFusion metrics of the final stages (router-level nodes
         // above ClusterSend), aggregated by node type into the active trace.
         record_plan_node_metrics(&physical_plan);
@@ -315,10 +322,13 @@ impl QueryExecutor for QueryExecutorImpl {
 
         let execution_time = SystemTime::now();
 
-        let session_context = self.execution_context()?;
+        let drain = QueryDrain::new();
+        let session_context = self.execution_context(drain.clone())?;
         let results = collect(split_plan.clone(), session_context.task_ctx())
             .instrument(collect_span)
             .await;
+        let drained = drain.finish().await;
+        let results = results.and_then(|rows| drained.map(|_| rows));
         let execution_time = execution_time.elapsed()?;
         debug!("Query data processing time: {:?}", execution_time,);
         app_metrics::DATA_QUERY_TIME_MS.report(execution_time.as_millis() as i64);
@@ -396,6 +406,7 @@ impl QueryExecutor for QueryExecutorImpl {
         );
 
         let execution_time = SystemTime::now();
+        let drain = QueryDrain::new();
         let session_context = match &memory_pool {
             Some(pool) => {
                 let runtime = Arc::new(
@@ -404,11 +415,11 @@ impl QueryExecutor for QueryExecutorImpl {
                         .build()?,
                 );
                 Arc::new(QueryPlannerImpl::make_execution_context_with_runtime(
-                    self.metadata_cache_factory.make_session_config(),
+                    self.metadata_cache_factory.make_session_config().with_extension(drain.clone()),
                     runtime,
                 ))
             }
-            None => self.execution_context()?,
+            None => self.execution_context(drain.clone())?,
         };
         let results = collect(worker_plan.clone(), session_context.task_ctx())
             .instrument(tracing::span!(
@@ -416,6 +427,8 @@ impl QueryExecutor for QueryExecutorImpl {
                 "collect_physical_plan"
             ))
             .await;
+        let drained = drain.finish().await;
+        let results = results.and_then(|rows| drained.map(|_| rows));
         debug!(
             "Partition Query data processing time: {:?}",
             execution_time.elapsed()?
@@ -1366,6 +1379,7 @@ impl ExecutionPlan for CubeTableExec {
         mut partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
+        query_lifetime::track(context.clone(), || {
         let exec = self
             .partition_execs
             .iter()
@@ -1382,6 +1396,7 @@ impl ExecutionPlan for CubeTableExec {
                 partition
             ));
         exec.execute(partition, context)
+        })
     }
 
     fn name(&self) -> &str {
@@ -1924,6 +1939,7 @@ impl ExecutionPlan for ClusterSendExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
+        query_lifetime::track(context.clone(), || {
         let (node_name, partitions) = &self.partitions[partition];
 
         let plan = self.serialized_plan_for_partitions(partitions)?;
@@ -1997,6 +2013,7 @@ impl ExecutionPlan for ClusterSendExec {
             });
             Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
         }
+        })
     }
 
     fn name(&self) -> &str {

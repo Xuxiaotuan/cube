@@ -269,6 +269,8 @@ pub trait SqlAuthService: Send + Sync {
     async fn authenticate(&self, user: Option<String>) -> Result<Option<String>, CubeError>;
 }
 
+mod password_auth;
+
 pub struct SqlAuthDefaultImpl;
 
 crate::di_service!(SqlAuthDefaultImpl, [SqlAuthService]);
@@ -276,6 +278,6 @@ crate::di_service!(SqlAuthDefaultImpl, [SqlAuthService]);
 #[async_trait]
 impl SqlAuthService for SqlAuthDefaultImpl {
     async fn authenticate(&self, _user: Option<String>) -> Result<Option<String>, CubeError> {
-        Ok(None)
+        password_auth::configured_password()
     }
 }

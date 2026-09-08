@@ -1,0 +1,40 @@
+Archive date: 2026-09-09 Asia/Shanghai
+Started: 2026-09-08T16:08:01.289Z
+Source Jest; diagnostics enabled; only previously failed targets.
+
+=== jest ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/jest/bin/jest.js","--config","{\"rootDir\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver\",\"testEnvironment\":\"node\",\"setupFiles\":[\"/Users/xujiawei/magic/workbench/cube/jest.setup.js\"],\"collectCoverage\":false,\"cacheDirectory\":\"/tmp/cube-ha-source-jest-cache-20260908\",\"testMatch\":[\"<rootDir>/test/**/*.test.ts\"],\"moduleNameMapper\":{\"^uuid$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/uuid/dist/index.js\",\"^yaml$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/yaml/index.js\",\"^antlr4$\":\"/Users/xujiawei/magic/workbench/cube/node_modules/antlr4/dist/antlr4.node.cjs\",\"^(\\\\.{1,2}/.*)\\\\.js$\":\"$1\",\"^@cubejs-backend/cubestore-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/src\",\"^@cubejs-backend/query-orchestrator$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-query-orchestrator/src\",\"^@cubejs-backend/base-driver$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-base-driver/src\",\"^@cubejs-backend/shared$\":\"/Users/xujiawei/magic/workbench/cube/packages/cubejs-backend-shared/src\"},\"moduleDirectories\":[\"node_modules\",\"<rootDir>/node_modules\"],\"moduleFileExtensions\":[\"ts\",\"js\",\"json\"],\"transform\":{\"^.+\\\\.ts$\":[\"/Users/xujiawei/magic/workbench/cube/node_modules/ts-jest/dist/index.js\",{\"diagnostics\":true,\"tsconfig\":{\"module\":\"commonjs\",\"target\":\"es2022\",\"esModuleInterop\":true,\"experimentalDecorators\":true,\"skipLibCheck\":true,\"strict\":true,\"noImplicitAny\":false,\"strictNullChecks\":true,\"strictFunctionTypes\":true,\"strictBindCallApply\":true,\"strictPropertyInitialization\":true,\"rootDir\":\"/Users/xujiawei/magic/workbench/cube\",\"baseUrl\":\"/Users/xujiawei/magic/workbench/cube\",\"paths\":{\"@cubejs-backend/cubestore-driver\":[\"packages/cubejs-cubestore-driver/src\"],\"@cubejs-backend/query-orchestrator\":[\"packages/cubejs-query-orchestrator/src\"],\"@cubejs-backend/base-driver\":[\"packages/cubejs-base-driver/src\"],\"@cubejs-backend/shared\":[\"packages/cubejs-backend-shared/src\"]}}}]}}","--runInBand","--runTestsByPath","/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts","--json","--outputFile=/tmp/cube-ha-driver-testfix-jest-20260909.json"]
+(node:30603) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts (9.897 s)
+  strict atomic pre-aggregation business integration
+    ✓ rejects a shape-valid authority response with a mismatched key (14 ms)
+    ✓ rejects a shape-valid authority response with a mismatched generation (3 ms)
+    ✓ selects through the ledger and never overwrites a pending target or uses CACHE NX (3 ms)
+    ✓ performs typed create/bind then publish before physical ready observation (8 ms)
+    ✓ keeps the same publish request id across UNKNOWN and a resumed build (4 ms)
+    ✓ advances publish request ids only after explicit durable NOT_READY rejection (3 ms)
+    ✓ does not regenerate source intent when its authority survives cache loss (1 ms)
+    ✓ does not rebuild a published target when physical observation says absent (1 ms)
+    ✓ retains referenced tables and retries retirement after a definite rejection (4 ms)
+    ✓ never retires a bound but unpublished build (2 ms)
+  strict driver capability and authentication boundaries
+    ✓ rejects malformed strict configuration instead of treating it as false (47 ms)
+    ✓ rejects non-true queryReferences (undefined) without ledger POST or cache fallback (3 ms)
+    ✓ rejects non-true queryReferences (false) without ledger POST or cache fallback (1 ms)
+    ✓ rejects non-true queryReferences (true) without ledger POST or cache fallback (1 ms)
+    ✓ passes configured Basic auth to WebSocket connections without opening a connection (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        10.185 s
+Ran all test suites within paths "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts".
+Test results written to: ../../../../../tmp/cube-ha-driver-testfix-jest-20260909.json
+
+Exit: 0; signal: null
+
+=== tsc ===
+["/opt/homebrew/Cellar/node/25.4.0/bin/node","/Users/xujiawei/magic/workbench/cube/node_modules/typescript/bin/tsc","--project","packages/cubejs-cubestore-driver/tsconfig.json","--noEmit","--tsBuildInfoFile","/tmp/cube-ha-driver-testfix-20260909.tsbuildinfo"]
+
+Exit: 0; signal: null

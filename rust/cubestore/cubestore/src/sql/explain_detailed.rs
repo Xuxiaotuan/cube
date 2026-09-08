@@ -54,10 +54,11 @@ impl super::SqlServiceImpl {
             };
             let _g =
                 crate::trace::OpGuard::start_wrapper(OpKind::Transport, "route_select_detailed");
-            let main_trace = self
-                .cluster
-                .run_router_select_detailed(&main_node, serialized_plan)
-                .await?;
+            let cluster = self.cluster.clone();
+            let main_trace = super::query_refs::execute(self.db.clone(), self.mutation_gate.clone(),
+                serialized_plan, async move |plan| {
+                    cluster.run_router_select_detailed(&main_node, plan).await
+                }).await?;
             Ok::<_, CubeError>(main_trace)
         })
         .await?;

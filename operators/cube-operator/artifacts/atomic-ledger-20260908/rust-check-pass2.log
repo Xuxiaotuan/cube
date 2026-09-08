@@ -1,0 +1,301 @@
+   Compiling librocksdb-sys v0.10.0+7.10.2 (https://github.com/cube-js/rust-rocksdb?branch=cubestore#d1869c00)
+    Checking ordered-multimap v0.7.3
+   Compiling dsrs v0.6.1 (https://github.com/cube-js/datasketches-rs.git?branch=cubestore#8ccba2f4)
+    Checking time-macros v0.1.1
+    Checking num-bigint v0.3.3
+    Checking crossbeam-utils v0.7.2
+    Checking memoffset v0.5.6
+   Compiling rustversion v1.0.5
+    Checking block-buffer v0.7.3
+    Checking maybe-uninit v2.0.0
+   Compiling failure_derive v0.1.8
+    Checking lexical-core v0.7.6
+    Checking digest v0.8.1
+    Checking opentelemetry_sdk v0.26.0
+    Checking hyper-tls v0.5.0
+    Checking datafusion-functions-aggregate v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking link-cplusplus v1.0.9
+   Compiling num_enum_derive v0.7.3
+    Checking rustls-pemfile v2.1.2
+   Compiling rand v0.6.5
+    Checking rustls-webpki v0.101.7
+    Checking sct v0.7.1
+   Compiling chrono-tz-build v0.1.0
+    Checking sha1 v0.10.6
+    Checking net2 v0.2.37
+   Compiling flatbuffers v25.12.19
+    Checking digest v0.9.0
+    Checking block-buffer v0.9.0
+   Compiling rdkafka-sys v4.8.0+2.3.0
+   Compiling multer v2.1.0
+   Compiling cxxbridge-macro v1.0.122
+   Compiling crossbeam-epoch v0.9.14
+   Compiling num-rational v0.3.2
+    Checking iovec v0.1.4
+    Checking cpufeatures v0.1.5
+    Checking opaque-debug v0.2.3
+    Checking trim-in-place v0.1.7
+    Checking cache-padded v1.1.1
+    Checking fake-simd v0.1.2
+   Compiling crossbeam-queue v0.3.8
+    Checking fastrand v1.5.0
+    Checking waker-fn v1.1.0
+    Checking predicates-core v1.0.2
+    Checking parking v2.0.0
+    Checking foreign-types-shared v0.1.1
+    Checking sync_wrapper v0.1.2
+    Checking untrusted v0.7.1
+    Checking futures-core-preview v0.3.0-alpha.19
+    Checking utf-8 v0.7.6
+   Compiling protobuf v2.24.1
+    Checking data-encoding v2.4.0
+   Compiling openssl v0.10.66
+    Checking sync_wrapper v1.0.1
+    Checking reqwest v0.12.5
+    Checking tungstenite v0.20.1
+    Checking ring v0.16.20
+    Checking reqwest v0.11.27
+    Checking foreign-types v0.3.2
+    Checking futures-lite v1.12.0
+    Checking sha2 v0.8.2
+    Checking concurrent-queue v1.2.2
+    Checking rust-ini v0.21.1
+    Checking sha-1 v0.9.7
+    Checking mio v0.6.23
+    Checking cxx v1.0.122
+   Compiling chrono-tz v0.8.2
+    Checking rustls v0.21.12
+    Checking num_enum v0.7.3
+    Checking datafusion-functions-nested v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking lexical v5.2.2
+    Checking failure v0.1.8
+    Checking crossbeam-epoch v0.8.2
+    Checking time v0.2.7
+   Compiling mime_guess v2.0.3
+    Checking datafusion-catalog-listing v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking rand_chacha v0.1.1
+    Checking rand_pcg v0.1.2
+    Checking structopt v0.3.26
+    Checking ahash v0.7.4
+    Checking memoffset v0.6.5
+    Checking memoffset v0.8.0
+    Checking sasl2-sys v0.1.22+2.1.28
+    Checking rust_decimal v1.15.0
+    Checking threadpool v1.8.1
+    Checking tonic v0.12.3
+    Checking datafusion-functions-table v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking rand_xorshift v0.1.1
+    Checking rand_hc v0.1.0
+    Checking rand_isaac v0.1.1
+    Checking datafusion-functions-window v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking simple_asn1 v0.4.1
+    Checking bigdecimal v0.1.2
+    Checking unicase v2.6.0
+   Compiling num_enum_derive v0.5.3
+    Checking datafusion-physical-optimizer v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking pem v0.8.3
+    Checking rand_os v0.1.3
+    Checking rand_jitter v0.1.4
+    Checking attohttpc v0.28.5
+    Checking datafusion-optimizer v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking headers-core v0.2.0
+    Checking crossbeam-channel v0.5.7
+    Checking itertools v0.10.1
+    Checking crossbeam-utils v0.6.6
+    Checking sharded-slab v0.1.7
+    Checking polling v2.1.0
+    Checking float-cmp v0.8.0
+    Checking ordered-float v1.1.1
+    Checking uuid v0.8.2
+    Checking quick-xml v0.32.0
+    Checking thread_local v1.1.8
+   Compiling derivative v2.2.0
+   Compiling openssl-macros v0.1.0
+    Checking mach v0.3.2
+    Checking socket2 v0.4.4
+    Checking time v0.1.43
+    Checking integer-encoding v1.1.7
+    Checking normalize-line-endings v0.3.0
+    Checking event-listener v2.5.1
+    Checking sha1 v0.6.0
+    Checking home v0.5.9
+    Checking bytes v0.5.6
+    Checking treeline v0.1.0
+    Checking xml-rs v0.8.4
+   Compiling cfg-if v0.1.10
+    Checking thin-dst v1.1.0
+    Checking minimal-lexical v0.2.1
+    Checking difference v2.0.0
+   Compiling moka v0.10.1
+    Checking predicates v1.0.8
+    Checking nom v7.1.3
+   Compiling mockall_derive v0.8.3
+    Checking serde-xml-rs v0.5.1
+    Checking predicates-tree v1.0.3
+    Checking mysql_common v0.22.2
+    Checking aws-creds v0.38.0 (https://github.com/cube-js/rust-s3.git?rev=9deb3475c7963deaa6c30de59771e61af5b15b8f#9deb3475)
+    Checking async-lock v2.4.0
+    Checking thrift v0.13.0
+    Checking headers v0.3.4
+    Checking async-io v1.6.0
+    Checking quanta v0.10.1
+    Checking num_enum v0.5.3
+    Checking tracing-subscriber v0.3.18
+    Checking crossbeam-channel v0.3.9
+    Checking datafusion v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking jsonwebtoken v7.2.0
+    Checking opentelemetry-proto v0.26.1
+    Checking triomphe v0.1.5
+    Checking hashbrown v0.11.2
+    Checking rocksdb v0.20.1 (https://github.com/cube-js/rust-rocksdb?branch=cubestore#d1869c00)
+    Checking crossbeam-deque v0.7.4
+    Checking tokio-rustls v0.24.1
+    Checking mio-uds v0.6.8
+    Checking tokio-tungstenite v0.20.1
+    Checking opentelemetry-http v0.26.0
+    Checking futures-timer v1.0.3
+    Checking async-macros v1.0.0
+    Checking datafusion-proto-common v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking aws-region v0.25.4
+   Compiling Inflector v0.11.4
+    Checking hmac v0.12.1
+    Checking tracing-log v0.2.0
+    Checking colored v2.1.0
+    Checking scheduled-thread-pool v0.2.7
+    Checking kv-log-macro v1.0.7
+    Checking num-traits v0.1.43
+    Checking num-complex v0.3.1
+    Checking bincode v1.3.3
+   Compiling actix-macros v0.2.3
+   Compiling deepsize_derive v0.1.2
+   Compiling maybe-async v0.2.10
+   Compiling async-stream-impl v0.3.6
+    Checking async-task v1.3.1
+    Checking md5 v0.7.0
+    Checking dotenv v0.15.0
+    Checking fragile v1.0.0
+    Checking tagptr v0.2.0
+    Checking downcast v0.10.0
+    Checking adler32 v1.2.0
+   Compiling unindent v0.1.8
+    Checking scoped-tls v1.0.0
+    Checking pin-project-lite v0.1.12
+   Compiling byteorder v1.4.3
+   Compiling cuberpc v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cuberpc)
+    Checking async-std v0.99.12
+    Checking warp v0.3.6
+   Compiling indoc v1.0.4
+    Checking deflate v1.0.0
+    Checking mockall v0.8.3
+    Checking cloud-storage v0.7.1
+    Checking rust-s3 v0.32.3 (https://github.com/cube-js/rust-s3.git?rev=9deb3475c7963deaa6c30de59771e61af5b15b8f#9deb3475)
+    Checking async-stream v0.3.6
+    Checking deepsize v0.2.0
+    Checking actix-rt v2.7.0
+    Checking ipc-channel v0.18.0
+    Checking num v0.3.1
+    Checking enum_primitive v0.1.1
+    Checking simple_logger v2.3.0
+    Checking tracing-opentelemetry v0.27.0
+    Checking datafusion-proto v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+    Checking opentelemetry-otlp v0.26.0
+    Checking cubezetasketch v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubezetasketch)
+    Checking deadqueue v0.2.4
+    Checking cubeshared v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cube/cubeshared)
+    Checking cuberockstore v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cuberockstore)
+    Checking lru v0.6.6
+    Checking rdkafka v0.29.0
+    Checking nanoid v0.3.0
+    Checking flexbuffers v0.2.2
+    Checking parquet-format v2.6.1
+    Checking msql-srv v0.9.2 (https://github.com/cube-js/msql-srv#b560de0d)
+    Checking cubedatasketches v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubedatasketches)
+    Checking cubehll v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubehll)
+    Checking bigdecimal v0.2.0
+    Checking http-auth-basic v0.1.3
+    Checking anyhow v1.0.42
+    Checking async-compression v0.3.8
+    Checking humansize v2.1.3
+    Checking serde_bytes v0.11.5
+   Compiling ctor v0.1.20
+   Compiling serde_repr v0.1.16
+    Checking arc-swap v1.7.1
+    Checking json v0.12.4
+    Checking parse-size v1.0.0
+    Checking futures-timer v3.0.2
+    Checking cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+warning: unused import: `std::future::Future`
+  --> cubestore/src/metastore/authority.rs:18:5
+   |
+18 | use std::future::Future;
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `MetaStoreTable`
+  --> cubestore/src/sql/mod.rs:52:5
+   |
+52 |     MetaStoreTable, Schema,
+   |     ^^^^^^^^^^^^^^
+
+warning: type `Fence` is more private than the item `RequestContext::Install::fence`
+   --> cubestore/src/metastore/authority.rs:162:34
+    |
+162 |     Install { state: Arc<State>, fence: Fence, until: Instant, revision: u64 },
+    |                                  ^^^^^^^^^^^^ field `RequestContext::Install::fence` is reachable at visibility `pub(crate)`
+    |
+note: but type `Fence` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:134:1
+    |
+134 | struct Fence {
+    | ^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Fence` is more private than the item `RequestContext::Router::fence`
+   --> cubestore/src/metastore/authority.rs:163:33
+    |
+163 |     Router { state: Arc<State>, fence: Fence, grant_id: String, until: Instant, revision: u64 },
+    |                                 ^^^^^^^^^^^^ field `RequestContext::Router::fence` is reachable at visibility `pub(crate)`
+    |
+note: but type `Fence` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:134:1
+    |
+134 | struct Fence {
+    | ^^^^^^^^^^^^
+
+warning: type `Principal` is more private than the item `RequestContext::Worker::principal`
+   --> cubestore/src/metastore/authority.rs:164:33
+    |
+164 |     Worker { state: Arc<State>, principal: Principal },
+    |                                 ^^^^^^^^^^^^^^^^^^^^ field `RequestContext::Worker::principal` is reachable at visibility `pub(crate)`
+    |
+note: but type `Principal` is only usable at visibility `pub(self)`
+   --> cubestore/src/metastore/authority.rs:130:1
+    |
+130 | struct Principal { role: Role, pod_name: String, pod_uid: String, until: Instant }
+    | ^^^^^^^^^^^^^^^^
+
+warning: field `meta_store_ready` is never read
+   --> cubestore/src/http/mod.rs:128:5
+    |
+116 | struct PromotionMarker {
+    |        --------------- field in this struct
+...
+128 |     meta_store_ready: bool,
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = note: `PromotionMarker` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` on by default
+
+warning: field `fence` is never read
+   --> cubestore/src/metastore/authority.rs:162:34
+    |
+162 |     Install { state: Arc<State>, fence: Fence, until: Instant, revision: u64 },
+    |     -------                      ^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RequestContext` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `cubestore` (lib) generated 7 warnings (run `cargo fix --lib -p cubestore` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9m 54s

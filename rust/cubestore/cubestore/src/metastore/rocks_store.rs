@@ -83,7 +83,14 @@ pub enum TableId {
         QueueItems = 0x0D00,
         QueueResults = 0x0E00,
         TraceObjects = 0x0F00,
-        QueueItemPayload = 0x1000
+        QueueItemPayload = 0x1000,
+        PreAggregationHeads = 0x1100,
+        PreAggregationBuilds = 0x1200,
+        PreAggregationRequests = 0x1300,
+        PreAggregationReferences = 0x1400,
+        PreAggregationBindings = 0x1500,
+        PreAggregationQueries = 0x1600,
+        PreAggregationReaders = 0x1700
 
     }
 }
@@ -93,6 +100,13 @@ impl TableId {
     pub fn has_ttl(&self) -> bool {
         match self {
             TableId::RouterAuthority => false,
+            TableId::PreAggregationHeads
+            | TableId::PreAggregationBuilds
+            | TableId::PreAggregationRequests
+            | TableId::PreAggregationReferences
+            | TableId::PreAggregationBindings
+            | TableId::PreAggregationQueries
+            | TableId::PreAggregationReaders => false,
             TableId::Schemas => false,
             TableId::Tables => false,
             TableId::Indexes => false,

@@ -1051,6 +1051,11 @@ pub trait RocksTable: BaseRocksTable + Debug + Send + Sync {
         row: IdRow<Self::T>,
         batch_pipe: &mut BatchPipe<'_, S>,
     ) -> Result<IdRow<Self::T>, CubeError> {
+        if Self::table_id() == TableId::Tables {
+            crate::metastore::pre_aggregation_ledger::guard_table_delete(
+                self.table_ref(), row.get_id(),
+            )?;
+        }
         let deleted_row = self.delete_index_row(row.get_row(), row.get_id())?;
         batch_pipe.add_event(MetaStoreEvent::Delete(Self::table_id(), row.get_id()));
 

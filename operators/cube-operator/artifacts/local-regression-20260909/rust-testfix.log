@@ -1,0 +1,263 @@
+COMMAND: cargo +nightly-2025-08-01 test --locked --offline -j1 -p cubestore --lib --no-run
+   Compiling librocksdb-sys v0.10.0+7.10.2 (https://github.com/cube-js/rust-rocksdb?branch=cubestore#d1869c00)
+   Compiling system-configuration v0.5.1
+   Compiling mime_guess v2.0.3
+   Compiling ordered-multimap v0.7.3
+   Compiling time-macros v0.1.1
+   Compiling dsrs v0.6.1 (https://github.com/cube-js/datasketches-rs.git?branch=cubestore#8ccba2f4)
+   Compiling num-bigint v0.3.3
+   Compiling memoffset v0.5.6
+   Compiling crossbeam-utils v0.7.2
+   Compiling maybe-uninit v2.0.0
+   Compiling lexical-core v0.7.6
+   Compiling block-buffer v0.7.3
+   Compiling digest v0.8.1
+   Compiling opentelemetry_sdk v0.26.0
+   Compiling crossbeam-deque v0.8.1
+   Compiling hyper-tls v0.5.0
+   Compiling datafusion-functions-aggregate v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling link-cplusplus v1.0.9
+   Compiling num_enum_derive v0.7.3
+   Compiling rustls-pemfile v2.1.2
+   Compiling rustls-webpki v0.101.7
+   Compiling sct v0.7.1
+   Compiling chrono-tz-build v0.1.0
+   Compiling sha1 v0.10.6
+   Compiling net2 v0.2.37
+   Compiling block-buffer v0.9.0
+   Compiling digest v0.9.0
+   Compiling rayon v1.5.1
+   Compiling iovec v0.1.4
+   Compiling cpufeatures v0.1.5
+   Compiling anstyle v1.0.11
+   Compiling half v1.8.2
+   Compiling ciborium-io v0.2.0
+   Compiling trim-in-place v0.1.7
+   Compiling clap_lex v0.7.5
+   Compiling predicates-core v1.0.2
+   Compiling sync_wrapper v1.0.1
+   Compiling opaque-debug v0.2.3
+   Compiling utf-8 v0.7.6
+   Compiling data-encoding v2.4.0
+   Compiling cache-padded v1.1.1
+   Compiling foreign-types-shared v0.1.1
+   Compiling parking v2.0.0
+   Compiling waker-fn v1.1.0
+   Compiling fake-simd v0.1.2
+   Compiling plotters-backend v0.3.7
+   Compiling sync_wrapper v0.1.2
+   Compiling untrusted v0.7.1
+   Compiling fastrand v1.5.0
+   Compiling futures-core-preview v0.3.0-alpha.19
+   Compiling futures-lite v1.12.0
+   Compiling ring v0.16.20
+   Compiling reqwest v0.11.27
+   Compiling plotters-svg v0.3.7
+   Compiling sha2 v0.8.2
+   Compiling foreign-types v0.3.2
+   Compiling concurrent-queue v1.2.2
+   Compiling tungstenite v0.20.1
+   Compiling reqwest v0.12.5
+   Compiling clap_builder v4.5.40
+   Compiling rust-ini v0.21.1
+   Compiling ciborium-ll v0.2.0
+   Compiling sha-1 v0.9.7
+   Compiling mio v0.6.23
+   Compiling cxx v1.0.122
+   Compiling chrono-tz v0.8.2
+   Compiling rustls v0.21.12
+   Compiling num_enum v0.7.3
+   Compiling datafusion-functions-nested v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling rayon-core v1.9.1
+   Compiling time v0.2.7
+   Compiling lexical v5.2.2
+   Compiling crossbeam-epoch v0.8.2
+   Compiling failure v0.1.8
+   Compiling datafusion-catalog-listing v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling rand_pcg v0.1.2
+   Compiling rand_chacha v0.1.1
+   Compiling structopt v0.3.26
+   Compiling ahash v0.7.4
+   Compiling memoffset v0.6.5
+   Compiling sasl2-sys v0.1.22+2.1.28
+   Compiling rust_decimal v1.15.0
+   Compiling tonic v0.12.3
+   Compiling datafusion-functions-table v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling rand_isaac v0.1.1
+   Compiling rand_xorshift v0.1.1
+   Compiling rand_hc v0.1.0
+   Compiling bigdecimal v0.1.2
+   Compiling simple_asn1 v0.4.1
+   Compiling datafusion-functions-window v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling num_enum_derive v0.5.3
+   Compiling datafusion-physical-optimizer v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling pem v0.8.3
+   Compiling threadpool v1.8.1
+   Compiling rand_os v0.1.3
+   Compiling rand_jitter v0.1.4
+   Compiling attohttpc v0.28.5
+   Compiling datafusion-optimizer v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling headers-core v0.2.0
+   Compiling crossbeam-utils v0.6.6
+   Compiling polling v2.1.0
+   Compiling ordered-float v1.1.1
+   Compiling float-cmp v0.8.0
+   Compiling sharded-slab v0.1.7
+   Compiling quick-xml v0.32.0
+   Compiling uuid v0.8.2
+   Compiling thread_local v1.1.8
+   Compiling socket2 v0.4.4
+   Compiling time v0.1.43
+   Compiling mach v0.3.2
+   Compiling normalize-line-endings v0.3.0
+   Compiling xml-rs v0.8.4
+   Compiling thin-dst v1.1.0
+   Compiling event-listener v2.5.1
+   Compiling home v0.5.9
+   Compiling integer-encoding v1.1.7
+   Compiling sha1 v0.6.0
+   Compiling difference v2.0.0
+   Compiling cast v0.3.0
+   Compiling treeline v0.1.0
+   Compiling bytes v0.5.6
+   Compiling mysql_common v0.22.2
+   Compiling predicates-tree v1.0.3
+   Compiling criterion-plot v0.5.0
+   Compiling predicates v1.0.8
+   Compiling thrift v0.13.0
+   Compiling aws-creds v0.38.0 (https://github.com/cube-js/rust-s3.git?rev=9deb3475c7963deaa6c30de59771e61af5b15b8f#9deb3475)
+   Compiling async-lock v2.4.0
+   Compiling serde-xml-rs v0.5.1
+   Compiling quanta v0.10.1
+   Compiling headers v0.3.4
+   Compiling async-io v1.6.0
+   Compiling num_enum v0.5.3
+   Compiling openssl v0.10.66
+   Compiling tracing-subscriber v0.3.18
+   Compiling crossbeam-channel v0.3.9
+   Compiling datafusion v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling rand v0.6.5
+   Compiling jsonwebtoken v7.2.0
+   Compiling opentelemetry-proto v0.26.1
+   Compiling rdkafka-sys v4.8.0+2.3.0
+   Compiling triomphe v0.1.5
+   Compiling hashbrown v0.11.2
+   Compiling rocksdb v0.20.1 (https://github.com/cube-js/rust-rocksdb?branch=cubestore#d1869c00)
+   Compiling crossbeam-deque v0.7.4
+   Compiling tokio-rustls v0.24.1
+   Compiling flatbuffers v25.12.19
+   Compiling multer v2.1.0
+   Compiling num-rational v0.3.2
+   Compiling mio-uds v0.6.8
+   Compiling ciborium v0.2.0
+   Compiling crossbeam-queue v0.3.8
+   Compiling clap v4.5.40
+   Compiling opentelemetry-http v0.26.0
+   Compiling tokio-tungstenite v0.20.1
+   Compiling protobuf v2.24.1
+   Compiling plotters v0.3.7
+   Compiling async-macros v1.0.0
+   Compiling futures-timer v1.0.3
+   Compiling datafusion-proto-common v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling nom v7.1.3
+   Compiling aws-region v0.25.4
+   Compiling hmac v0.12.1
+   Compiling mockall_derive v0.8.3
+   Compiling tinytemplate v1.2.1
+   Compiling tracing-log v0.2.0
+   Compiling scheduled-thread-pool v0.2.7
+   Compiling kv-log-macro v1.0.7
+   Compiling num-complex v0.3.1
+   Compiling num-traits v0.1.43
+   Compiling Inflector v0.11.4
+   Compiling colored v2.1.0
+   Compiling console v0.15.8
+   Compiling bincode v1.3.3
+   Compiling async-task v1.3.1
+   Compiling is-terminal v0.4.16
+   Compiling diff v0.1.12
+   Compiling md5 v0.7.0
+   Compiling fragile v1.0.0
+   Compiling tagptr v0.2.0
+   Compiling oorandom v11.1.3
+   Compiling dotenv v0.15.0
+   Compiling anes v0.1.6
+   Compiling pin-project-lite v0.1.12
+   Compiling linked-hash-map v0.5.6
+   Compiling adler32 v1.2.0
+   Compiling downcast v0.10.0
+   Compiling scoped-tls v1.0.0
+   Compiling similar v2.7.0
+   Compiling insta v1.41.1
+   Compiling warp v0.3.6
+   Compiling mockall v0.8.3
+   Compiling deflate v1.0.0
+   Compiling async-std v0.99.12
+   Compiling criterion v0.5.1
+   Compiling cloud-storage v0.7.1
+   Compiling moka v0.10.1
+   Compiling rust-s3 v0.32.3 (https://github.com/cube-js/rust-s3.git?rev=9deb3475c7963deaa6c30de59771e61af5b15b8f#9deb3475)
+   Compiling pretty_assertions v0.7.2
+   Compiling async-stream v0.3.6
+   Compiling deepsize v0.2.0
+   Compiling actix-rt v2.7.0
+   Compiling ipc-channel v0.18.0
+   Compiling simple_logger v2.3.0
+   Compiling cuberpc v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cuberpc)
+   Compiling enum_primitive v0.1.1
+   Compiling num v0.3.1
+   Compiling tracing-opentelemetry v0.27.0
+   Compiling msql-srv v0.9.2 (https://github.com/cube-js/msql-srv#b560de0d)
+   Compiling datafusion-proto v46.0.1 (https://github.com/cube-js/arrow-datafusion?branch=cube-46.0.1#ea204976)
+   Compiling cubezetasketch v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubezetasketch)
+   Compiling opentelemetry-otlp v0.26.0
+   Compiling deadqueue v0.2.4
+   Compiling cubeshared v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cube/cubeshared)
+   Compiling cuberockstore v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cuberockstore)
+   Compiling lru v0.6.6
+   Compiling rdkafka v0.29.0
+   Compiling nanoid v0.3.0
+   Compiling flexbuffers v0.2.2
+   Compiling cubedatasketches v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubedatasketches)
+   Compiling parquet-format v2.6.1
+   Compiling bigdecimal v0.2.0
+   Compiling http-auth-basic v0.1.3
+   Compiling cubehll v0.1.0 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubehll)
+   Compiling async-compression v0.3.8
+   Compiling serde_bytes v0.11.5
+   Compiling humansize v2.1.3
+   Compiling futures-timer v3.0.2
+   Compiling arc-swap v1.7.1
+   Compiling md5 v0.8.0
+   Compiling parse-size v1.0.0
+   Compiling json v0.12.4
+   Compiling cubestore v1.7.15 (/Users/xujiawei/magic/workbench/cube/rust/cubestore/cubestore)
+warning: unused import: `std::future::Future`
+  --> cubestore/src/metastore/authority.rs:18:5
+   |
+18 | use std::future::Future;
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+error[E0046]: not all trait items implemented, missing: `acquire_pre_aggregation_query_refs`, `release_pre_aggregation_query_refs`, `mutate_pre_aggregation_ledger`, `get_pre_aggregation_ledger`
+   --> cubestore/src/queryplanner/test_utils.rs:28:1
+    |
+ 28 | impl MetaStore for MetaStoreMock {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `acquire_pre_aggregation_query_refs`, `release_pre_aggregation_query_refs`, `mutate_pre_aggregation_ledger`, `get_pre_aggregation_ledger` in implementation
+    |
+   ::: cubestore/src/metastore/mod.rs:821:1
+    |
+821 | #[cuberpc::service(trace_guard = crate::trace::metastore_trace_guard)]
+    | ----------------------------------------------------------------------
+    | |
+    | `acquire_pre_aggregation_query_refs` from trait
+    | `release_pre_aggregation_query_refs` from trait
+    | `mutate_pre_aggregation_ledger` from trait
+    | `get_pre_aggregation_ledger` from trait
+
+For more information about this error, try `rustc --explain E0046`.
+warning: `cubestore` (lib test) generated 1 warning
+error: could not compile `cubestore` (lib test) due to 1 previous error; 1 warning emitted
+
+STAGE_EXIT=101 ELAPSED_SECONDS=821.8

@@ -1,0 +1,7 @@
+COMMAND: cargo +nightly-2025-08-01 test --locked --offline -j1 -p cubestore --lib --no-run
+   Compiling librocksdb-sys v0.10.0+7.10.2 (https://github.com/cube-js/rust-rocksdb?branch=cubestore#d1869c00)
+
+STAGE_EXIT=-15 ELAPSED_SECONDS=94.8
+s run cargo process group 28470; known invalid enum struct update in new test; no source fix attempted.
+
+ABORT_ARCHIVE: user-requested SIGTERM only to cargo PGID 28470; STAGE_EXIT=-15; elapsed 94.8s; dependency stage librocksdb-sys; no compiler source diagnostic; 0 tests executed. Earlier concurrent marker was partially overwritten by wrapper exit summary.

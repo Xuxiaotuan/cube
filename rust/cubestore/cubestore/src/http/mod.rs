@@ -1,4 +1,5 @@
 pub mod status;
+mod ledger;
 
 use std::sync::Arc;
 
@@ -372,6 +373,7 @@ impl HttpServer {
                     Ok::<_, Rejection>(warp::reply::with_status(warp::reply::json(&result), code))
                 }
             });
+        let ledger_route = ledger::routes(self.auth.clone(), self.sql_service.clone());
         let build_service = self.sql_service.clone();
         let build_route = warp::path!("router" / "build-status")
             .and(warp::get())
@@ -721,6 +723,7 @@ impl HttpServer {
                 .or(ready_route)
                 .or(drain_route)
                 .or(build_route)
+                .or(ledger_route)
                 .or(upload_status_route)
                 .or(router_status_route)
                 .or(router_lease_route)

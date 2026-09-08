@@ -83,6 +83,7 @@ mod explain_detailed;
 pub mod ha;
 mod ha_admission;
 pub mod parser;
+mod query_refs;
 mod table_creator;
 pub mod upload;
 
@@ -258,7 +259,8 @@ pub trait SqlService: DIService + Send + Sync {
         serde_json::json!({
             "uploadReceipts": false, "preAggregationStatus": false,
             "fileImportRecovery": false, "arbitraryInsertReplay": false,
-            "jobAttemptFencing": false
+            "jobAttemptFencing": false,
+            "atomicCreateAndBind": false, "queryReferences": false, "atomicDrop": false
         })
     }
 
@@ -266,6 +268,21 @@ pub trait SqlService: DIService + Send + Sync {
         Err(CubeError::internal(
             "MetaStore health is not supported by this SQL service".into(),
         ))
+    }
+
+    async fn mutate_pre_aggregation_ledger(
+        &self,
+        _request: crate::metastore::pre_aggregation_ledger::LedgerRequest,
+    ) -> Result<crate::metastore::pre_aggregation_ledger::LedgerResult, CubeError> {
+        Err(CubeError::internal("Atomic pre-aggregation ledger is not supported by this SQL service".to_string()))
+    }
+
+    async fn read_pre_aggregation_ledger(
+        &self,
+        _key: String,
+        _generation: Option<String>,
+    ) -> Result<Option<crate::metastore::pre_aggregation_ledger::LedgerRecord>, CubeError> {
+        Err(CubeError::internal("Atomic pre-aggregation ledger is not supported by this SQL service".to_string()))
     }
 
     async fn router_build_status(
@@ -1424,6 +1441,8 @@ impl SqlServiceImpl {
                         let cluster = self.cluster.clone();
                         let executor = self.query_executor.clone();
                         let serialized_plan_time_start = SystemTime::now();
+                        let query_db = self.db.clone();
+                        let query_gate = self.mutation_gate.clone();
                         let serialized_plan = serialized.to_serialized_plan()?;
                         app_metrics::DATA_QUERY_TO_SERIALIZED_PLAN_TIME_US
                             .report(serialized_plan_time_start.elapsed()?.as_micros() as i64);
@@ -1431,6 +1450,7 @@ impl SqlServiceImpl {
                             self.query_timeout,
                             self.cache
                                 .get(query, context, serialized_plan, async move |plan| {
+                                    query_refs::execute(query_db, query_gate, plan, async move |plan| {
                                     let records;
                                     if workers.len() == 0 {
                                         records =
@@ -1451,6 +1471,7 @@ impl SqlServiceImpl {
                                         },
                                     )
                                     .await??)
+                                    }).await
                                 })
                                 .with_current_subscriber(),
                         )
@@ -1488,6 +1509,33 @@ impl SqlServiceImpl {
 
 #[async_trait]
 impl SqlService for SqlServiceImpl {
+    async fn mutate_pre_aggregation_ledger(
+        &self,
+        request: crate::metastore::pre_aggregation_ledger::LedgerRequest,
+    ) -> Result<crate::metastore::pre_aggregation_ledger::LedgerResult, CubeError> {
+        if !crate::metastore::authority::strict_enabled() {
+            return Err(CubeError::internal("Atomic ledger requires strict MetaStore authority".to_string()));
+        }
+        let guard = self.mutation_gate.begin()?;
+        guard.run(async {
+            self.meta_store_health().await?;
+            guard.check()?;
+            self.db.mutate_pre_aggregation_ledger(request).await
+        }).await
+    }
+
+    async fn read_pre_aggregation_ledger(
+        &self,
+        key: String,
+        generation: Option<String>,
+    ) -> Result<Option<crate::metastore::pre_aggregation_ledger::LedgerRecord>, CubeError> {
+        if !crate::metastore::authority::strict_enabled() {
+            return Err(CubeError::internal("Atomic ledger requires strict MetaStore authority".to_string()));
+        }
+        let guard = self.mutation_gate.begin()?;
+        guard.run(self.db.get_pre_aggregation_ledger(key, generation)).await
+    }
+
     async fn exec_query(&self, q: &str) -> Result<QueryResult, CubeError> {
         self.exec_query_with_context(SqlQueryContext::default(), q)
             .await
@@ -1498,7 +1546,7 @@ impl SqlService for SqlServiceImpl {
         context: SqlQueryContext,
         query: &str,
     ) -> Result<QueryResult, CubeError> {
-        if ha::is_read_query(query) {
+        if ha::is_read_query(query) && !crate::metastore::authority::strict_enabled() {
             return self.exec_query_unfenced(context, query).await;
         }
         let guard = self.mutation_gate.begin()?;
@@ -1523,7 +1571,9 @@ impl SqlService for SqlServiceImpl {
         serde_json::json!({
             "uploadReceipts": true, "preAggregationStatus": true,
             "fileImportRecovery": true, "arbitraryInsertReplay": false,
-            "jobAttemptFencing": true, "requiresUpgradedJobProtocol": true
+            "jobAttemptFencing": true, "requiresUpgradedJobProtocol": true,
+            "atomicCreateAndBind": true, "queryReferences": true, "atomicDrop": true,
+            "aggregateIndexes": false
         })
     }
 

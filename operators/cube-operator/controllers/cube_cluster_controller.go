@@ -95,6 +95,9 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.validateStorageTransition(ctx, &cluster); err != nil {
 		return r.setClusterCondition(ctx, &cluster, cubeClusterConditionResources, metav1.ConditionFalse, "StorageTransitionBlocked", err.Error())
 	}
+	if err := r.validateCubeSQLSecret(ctx, &cluster); err != nil {
+		return r.configurationError(ctx, &cluster, err)
+	}
 	if err := r.reconcileAPISecret(ctx, &cluster); err != nil {
 		return r.configurationError(ctx, &cluster, err)
 	}
@@ -178,6 +181,9 @@ func (r *CubeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 func validateCubeCluster(cluster *v1alpha1.CubeCluster) error {
 	if err := validateAuthoritySpec(cluster); err != nil {
+		return err
+	}
+	if err := validateCubeSQLAuth(cluster); err != nil {
 		return err
 	}
 	images := cluster.Spec.Images

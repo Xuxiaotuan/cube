@@ -70,7 +70,7 @@ export class WebSocketConnection {
 
   private cubeStoreVersion: string | null = null;
 
-  public constructor(url: string) {
+  public constructor(url: string, private readonly headers: Record<string, string> = {}) {
     this.url = url;
     this.messageCounter = 1;
     this.maxConnectRetries = getEnv('cubeStoreMaxConnectRetries');
@@ -81,7 +81,7 @@ export class WebSocketConnection {
 
   protected async initWebSocket(): Promise<CubeStoreWebSocket> {
     if (!this.webSocket) {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...this.headers };
       headers['x-process-id'] = getProcessUid();
 
       const webSocket = new WebSocket(this.url, { headers }) as CubeStoreWebSocket;

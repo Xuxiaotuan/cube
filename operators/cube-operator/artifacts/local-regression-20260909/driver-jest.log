@@ -1,0 +1,28 @@
+(node:28261) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts (14.587 s)
+FAIL packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts
+  ● Test suite failed to run
+
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m222[0m:[93m6[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+      Type 'typeof fetch' is missing the following properties from type 'Mock<any, any, any>': getMockName, mock, mockClear, mockReset, and 13 more.
+
+    [7m222[0m     (fetch as jest.Mock).mockReset();
+    [7m   [0m [91m     ~~~~~~~~~~~~~~~~~~[0m
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m235[0m:[93m6[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+
+    [7m235[0m     (fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({ writeReady: true, recoveryCapabilities: {
+    [7m   [0m [91m     ~~~~~~~~~~~~~~~~~~[0m
+    [96mpackages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts[0m:[93m241[0m:[93m13[0m - [91merror[0m[90m TS2352: [0mConversion of type 'typeof fetch' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+
+    [7m241[0m     expect((fetch as jest.Mock).mock.calls.every(([url]) => String(url).endsWith('/router/status'))).toBe(true);
+    [7m   [0m [91m            ~~~~~~~~~~~~~~~~~~[0m
+
+PASS packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       53 passed, 53 total
+Snapshots:   0 total
+Time:        16.884 s
+Ran all test suites within paths "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationBuilds.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/AtomicPreAggregationLedger.test.ts", "/Users/xujiawei/magic/workbench/cube/packages/cubejs-cubestore-driver/test/PreAggregationRecovery.test.ts".
+Test results written to: ../../../../../tmp/cube-ha-driver-jest-20260908.json

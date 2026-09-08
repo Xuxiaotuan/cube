@@ -29,6 +29,8 @@ import fetch from 'node-fetch';
 import { ConnectionConfig } from './types';
 import { ConnectionError } from './errors';
 import { WebSocketConnection, MutationUnknownError } from './WebSocketConnection';
+import { AtomicPreAggregationLedger, LedgerCreate } from './AtomicPreAggregationLedger';
+import { AtomicPreAggregationBuilds } from './AtomicPreAggregationBuilds';
 import {
   ExistingResult,
   IdempotencyOwnershipLostError,
@@ -101,7 +103,82 @@ type RouterRoleStatePayload = {
 };
 
 export class CubeStoreDriver extends BaseDriver implements DriverInterface {
-  private readonly preAggregationBuilds = new PreAggregationBuildStore((sql, values) => this.query(sql, values));
+  private readonly strictAtomicPreAggregationLedger = (() => {
+    const value = process.env.CUBEJS_CUBESTORE_PRE_AGGREGATION_LEDGER_STRICT;
+    if (value !== undefined && value !== 'true' && value !== 'false') {
+      throw new Error('CUBEJS_CUBESTORE_PRE_AGGREGATION_LEDGER_STRICT must be true or false');
+    }
+    return value === 'true';
+  })();
+
+  private readonly atomicPreAggregationLedger = new AtomicPreAggregationLedger(async (method, path, body) => {
+    try {
+      const leader = await this.detectLeaderIndex(true);
+      if (leader !== null) this.activeConnectionIndex = leader;
+      const base = this.uploadBaseUrl(this.activeRouterBaseUrl());
+      if (this.strictAtomicPreAggregationLedger) await this.requireAtomicPreAggregationCapabilities(base);
+      const response = await fetch(`${base}${path}`, {
+        method,
+        timeout: this.leaderProbeTimeoutMs,
+        headers: { ...this.recoveryHeaders(), 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      if (!response.ok) {
+        throw new Error(`Atomic ledger unavailable: HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      throw new MutationUnknownError('Atomic ledger response unavailable; do not replay SQL or fall back to cache records', error as Error);
+    }
+  });
+
+  public getAtomicPreAggregationLedger(): AtomicPreAggregationLedger {
+    return this.atomicPreAggregationLedger;
+  }
+
+  private readonly preAggregationBuilds = new PreAggregationBuildStore((sql, values) => this.query(sql, values), this.strictAtomicPreAggregationLedger);
+
+  private readonly atomicPreAggregationBuilds = new AtomicPreAggregationBuilds({
+    ledger: this.atomicPreAggregationLedger,
+    source: this.preAggregationBuilds,
+    capabilities: () => this.requireAtomicPreAggregationCapabilities(),
+    status: table => this.getPreAggregationBuildStatus(table),
+    upload: upload => this.uploadTempFile(upload, true),
+    sleep: ms => this.sleep(ms),
+    timeout: () => this.preAggregationReconcileTimeoutMs,
+  });
+
+  public isAtomicPreAggregationLedgerStrict(): boolean {
+    return this.strictAtomicPreAggregationLedger;
+  }
+
+  private async requireAtomicPreAggregationCapabilities(base?: string): Promise<void> {
+    if (!this.config.user || !this.config.password) {
+      throw new MutationUnknownError('Strict atomic ledger requires CUBEJS_CUBESTORE_USER and CUBEJS_CUBESTORE_PASS');
+    }
+    try {
+      if (!base) {
+        const leader = await this.detectLeaderIndex(true);
+        if (leader !== null) this.activeConnectionIndex = leader;
+        base = this.uploadBaseUrl(this.activeRouterBaseUrl());
+      }
+      // The POST uses this same router, not a cached capability from an old leader.
+      const response = await fetch(`${base}/router/status`, { timeout: this.leaderProbeTimeoutMs });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const status = await response.json();
+      const required = ['atomicCreateAndBind', 'queryReferences', 'atomicDrop', 'uploadReceipts',
+        'preAggregationStatus', 'fileImportRecovery', 'jobAttemptFencing'];
+      if (status?.writeReady !== true || required.some(key => status?.recoveryCapabilities?.[key] !== true)) {
+        throw new Error('Router is not write-ready or lacks strict atomic file-import capabilities');
+      }
+    } catch (error) {
+      throw new MutationUnknownError('Strict atomic ledger capability handshake failed; legacy fallback is forbidden', error as Error);
+    }
+  }
+
+  public async withPreAggregationBuildLease<T>(table: string, action: () => Promise<T>): Promise<T> {
+    return this.strictAtomicPreAggregationLedger ? this.atomicPreAggregationBuilds.withLease(table, action) : action();
+  }
 
   protected readonly preAggregationReconcileTimeoutMs = Number(process.env.CUBE_STORE_PRE_AGGREGATION_RECONCILE_TIMEOUT_MS) || 120000;
 
@@ -377,7 +454,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
     this.routerBaseUrls = baseUrls;
     this.routerStatusUrls = baseUrls.map(baseUrl => this.routerStatusUrl(baseUrl));
-    this.connections = baseUrls.map(baseUrl => new WebSocketConnection(`${baseUrl}/ws`));
+    this.connections = baseUrls.map(baseUrl => new WebSocketConnection(`${baseUrl}/ws`, this.recoveryHeaders()));
   }
 
   public async hasCapability(capability: CubeStoreCapability): Promise<boolean> {
@@ -387,6 +464,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   public async testConnection() {
+    if (this.strictAtomicPreAggregationLedger) await this.requireAtomicPreAggregationCapabilities();
     await this.query('SELECT 1', []);
   }
 
@@ -952,6 +1030,13 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
     }
 
     const execute = async () => {
+      if (this.strictAtomicPreAggregationLedger) {
+        const atomicCreate = this.atomicCreateSpec(tableName, columns, options, queryTracingObj);
+        const record = await this.preAggregationBuilds.read(tableName);
+        if (!record) throw new MutationUnknownError(`Missing strict source intent for ${tableName}`);
+        await this.preAggregationBuilds.save({ ...record, phase: 'create', create: { sql, params }, atomicCreate });
+        return this.atomicPreAggregationBuilds.create(tableName);
+      }
       if (queryTracingObj?.preAggregationBuildId && options.files?.every(file => !file.startsWith('stream://'))) {
         const record = await this.preAggregationBuilds.read(tableName);
         if (!record) throw new MutationUnknownError(`Missing durable build identity for ${tableName}`);
@@ -990,6 +1075,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   private async readyPreAggregationTables(schema: string, tables: any[]): Promise<any[]> {
+    if (this.strictAtomicPreAggregationLedger) return this.atomicPreAggregationBuilds.readyTables(schema, tables);
     const ready: any[] = [];
     for (const table of tables) {
       const name = `${schema}.${table.table_name}`;
@@ -1057,6 +1143,16 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   public async uploadTableWithIndexes(table: string, columns: Column[], tableData: any, indexesSql: IndexesSQL, uniqueKeyColumns: string[] | null, queryTracingObj?: any, externalOptions?: ExternalCreateTableOptions) {
     const createTableIndexes = externalOptions?.createTableIndexes;
     const aggregationsColumns = externalOptions?.aggregationsColumns;
+
+    if (this.strictAtomicPreAggregationLedger) {
+      await this.requireAtomicPreAggregationCapabilities();
+      if (queryTracingObj?.preAggregationBuildId !== table || tableData.streamingSource || uniqueKeyColumns?.length ||
+          aggregationsColumns?.length || createTableIndexes?.some(index => index.type === 'aggregate') ||
+          (indexesSql?.length && !createTableIndexes?.length)) {
+        throw new MutationUnknownError('Strict ledger supports claimed file imports with regular typed indexes only');
+      }
+      queryTracingObj = { ...queryTracingObj, atomicCreateIndexes: createTableIndexes || [] };
+    }
 
     const indexes = createTableIndexes?.length ? createTableIndexes.map(this.createIndexString).join(' ') : '';
 
@@ -1258,6 +1354,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         if (!record) throw new MutationUnknownError(`Missing durable build identity for ${table}`);
         const manifestHash = createHash('sha256').update(JSON.stringify(uploads.map(({ name, sha256, size }) => ({ name, sha256, size })))).digest('hex');
         if (record.manifestHash && record.manifestHash !== manifestHash) {
+          if (this.strictAtomicPreAggregationLedger) throw new MutationUnknownError(`Strict source manifest changed: ${table}`);
           const status = await this.getPreAggregationBuildStatus(table);
           if (status?.state !== 'absent' || record.tableId != null) throw new MutationUnknownError(`Regenerated input changed but target outcome is unresolved: ${table}`);
           const error = Object.assign(new Error(`Regenerated input differs from immutable build manifest; a new build attempt is required: ${table}`), { code: 'PRE_AGG_REBUILD_REQUIRED' });
@@ -1267,6 +1364,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
         // Persist the complete, ordered manifest before dispatching any upload.
         options.files = uploads.map(upload => `temp://${upload.name}`);
         await this.preAggregationBuilds.save({ ...record, phase: 'uploading', uploads, manifestHash,
+          ...(this.strictAtomicPreAggregationLedger ? { atomicCreate: this.atomicCreateSpec(table, columns, options, queryTracingObj) } : {}),
           create: { sql: this.createTableSqlWithOptions(table, columns, options), params: options.files } });
       }
       const files: string[] = [];
@@ -1324,6 +1422,7 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   public async resolvePreAggregationBuild(key: string, versionEntry: any, protectedTables: string[], force = false) {
+    if (this.strictAtomicPreAggregationLedger) return this.atomicPreAggregationBuilds.resolve(key, versionEntry, protectedTables, force);
     const timestamp = versionEntry.naming_version === 2 ? Math.floor(versionEntry.last_updated_at / 1000).toString(32) : versionEntry.last_updated_at;
     const buildId = `${versionEntry.table_name}_${versionEntry.content_version}_${versionEntry.structure_version}_${timestamp}`;
     const initialStatus = await this.getPreAggregationBuildStatus(buildId);
@@ -1343,10 +1442,12 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
   }
 
   public async getProtectedPreAggregationTables(): Promise<string[]> {
+    if (this.strictAtomicPreAggregationLedger) return this.atomicPreAggregationBuilds.protectedTables();
     return this.preAggregationBuilds.protectedTables();
   }
 
   public async resumePreAggregationBuild(table: string): Promise<boolean> {
+    if (this.strictAtomicPreAggregationLedger) return this.atomicPreAggregationBuilds.resume(table);
     const record = await this.preAggregationBuilds.read(table);
     // Only a durable, selected build can enter the initial source strategy.
     // Missing recovery evidence is not permission to start a new mutation.
@@ -1486,6 +1587,62 @@ export class CubeStoreDriver extends BaseDriver implements DriverInterface {
 
   private recoveryHeaders(): Record<string, string> {
     return this.config.user ? { Authorization: `Basic ${Buffer.from(`${this.config.user}:${this.config.password || ''}`).toString('base64')}` } : {};
+  }
+
+  public async retirePreAggregationTable(table: string): Promise<boolean> {
+    if (!this.strictAtomicPreAggregationLedger) {
+      await super.dropTable(table);
+      return true;
+    }
+    return this.atomicPreAggregationBuilds.retireAndDrop(table);
+  }
+
+  public async dropTable(table: string, options?: QueryOptions): Promise<unknown> {
+    if (this.strictAtomicPreAggregationLedger) return this.retirePreAggregationTable(table);
+    return super.dropTable(table, options);
+  }
+
+  private atomicCreateSpec(tableName: string, columns: Column[], options: CreateTableOptions, tracing: any): LedgerCreate {
+    const parts = tableName.split('.');
+    if (tracing?.preAggregationBuildId !== tableName || parts.length !== 2 || !columns.length ||
+        !options.files?.length || options.files.some(file => typeof file !== 'string' || !file || file.startsWith('stream://')) ||
+        options.streamOffset || options.uniqueKey || options.aggregations || options.selectStatement || options.sourceTable || options.sealAt ||
+        (options.inputFormat && !['csv', 'csv_no_header'].includes(options.inputFormat)) ||
+        (options.delimiter !== undefined && !/^[\x00-\x7f]$/.test(options.delimiter))) {
+      throw new MutationUnknownError(`Unsupported or incomplete strict file CREATE: ${tableName}`);
+    }
+    const typedIndexes: CreateTableIndex[] = tracing.atomicCreateIndexes || [];
+    if ((options.indexes || '') !== typedIndexes.map(this.createIndexString).join(' ') ||
+        typedIndexes.some(index => index.type && index.type !== 'regular')) {
+      throw new MutationUnknownError(`Strict CREATE needs regular typed indexes: ${tableName}`);
+    }
+    const versionParts = parts[1].split('_');
+    if (versionParts.length < 4) throw new MutationUnknownError(`Invalid strict pre-aggregation name: ${tableName}`);
+    const columnType = (type: string): string => {
+      const normalized = type.toLowerCase().replace(/\s/g, '');
+      if (['string', 'uuid', 'text'].includes(normalized) || /^varchar\([0-9]+\)$/.test(normalized)) return 'text';
+      if (['int', 'integer', 'bigint', 'smallint'].includes(normalized)) return 'int';
+      if (['float', 'double'].includes(normalized)) return 'float';
+      if (['timestamp', 'timestamp(3)'].includes(normalized)) return 'timestamp';
+      if (['boolean', 'bytes', 'int96'].includes(normalized) || /^decimal\([0-9]+,[0-9]+\)$/.test(normalized)) return normalized;
+      throw new MutationUnknownError(`Unsupported strict CREATE column type: ${type}`);
+    };
+    return {
+      schema: parts[0], table: parts[1],
+      columns: columns.map(column => ({ name: column.name, columnType: columnType(column.type) })),
+      locations: [...options.files],
+      indexes: typedIndexes.map(index => {
+        const name = index.indexName.startsWith(`${parts[0]}.`) ? index.indexName.slice(parts[0].length + 1) : index.indexName;
+        if (name.includes('.')) throw new MutationUnknownError(`Cross-schema strict index: ${index.indexName}`);
+        return { name, columns: index.columns, type: 'regular' };
+      }),
+      importFormat: options.inputFormat === 'csv_no_header' ? 'csvNoHeader' : 'csv',
+      contentVersion: versionParts[versionParts.length - 3],
+      structureVersion: versionParts[versionParts.length - 2],
+      ...(options.buildRangeEnd !== undefined ? { buildRangeEnd: options.buildRangeEnd } : {}),
+      ...(options.delimiter !== undefined ? { delimiter: options.delimiter } : {}),
+      ...(options.disableQuoting !== undefined ? { disableQuoting: options.disableQuoting } : {}),
+    };
   }
 
   private async importStreamingSource(columns: Column[], tableData: StreamingSourceTableData, table: string, indexes: string, uniqueKeyColumns: string[] | null, queryTracingObj?: any, sealAt?: string) {

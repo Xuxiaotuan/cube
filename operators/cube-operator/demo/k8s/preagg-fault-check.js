@@ -68,6 +68,45 @@ function identity(record) {
   return { buildId: record.buildId, versionEntry: record.versionEntry, create: record.create,
     uploads: (record.uploads || []).map(({ name, sha256, size }) => ({ name, sha256, size })) };
 }
+function assertAtomicLedgerProof(record, ledger, status) {
+  assert.ok(ledger, 'Strict build has no authoritative ledger record');
+  assert.equal(ledger.key, record.buildId, 'Ledger belongs to another build');
+  assert.match(ledger.generation, /^(0|[1-9][0-9]*)$/, 'Generation must remain a decimal string');
+  if (record.phase !== 'ready') return;
+  assert.ok(record.atomicLedger, 'Ready build has no ledger identity pointer');
+  assert.equal(record.atomicLedger.key, ledger.key);
+  assert.equal(record.atomicLedger.generation, ledger.generation);
+  assert.equal(record.atomicLedger.owner, ledger.owner);
+  assert.equal(ledger.state, 'published', 'Cache ready is not authoritative publication');
+  assert.ok(ledger.manifest, 'Published build has no immutable manifest');
+  assert.equal(`${ledger.manifest.schema}.${ledger.manifest.table}`, record.buildId);
+  assert.equal(ledger.manifest.contentVersion, record.versionEntry.content_version);
+  assert.equal(ledger.manifest.structureVersion, record.versionEntry.structure_version);
+  assert.deepEqual(ledger.manifest.locations, record.create.params);
+  assert.ok(status, 'Missing independent physical build status');
+  assert.equal(status.state, 'ready');
+  assert.equal(typeof status.tableId, 'string');
+  assert.equal(ledger.manifest.tableId, status.tableId, 'Published physical table identity changed');
+  assert.equal(record.tableId, status.tableId, 'Cached table identity differs from physical table');
+  assert.deepEqual(ledger.manifest.locations, status.locations);
+}
+
+async function observeAtomicLedger(record) {
+  if (process.env.CUBEJS_CUBESTORE_PRE_AGGREGATION_LEDGER_STRICT !== 'true') return null;
+  const read = (path, query) => retryObservation({
+    operation: { kind: 'status', method: 'GET', path },
+    request: () => driver.routerRecoveryJson(`${path}?${query}`),
+    deadline, availability: observationAvailability, emit,
+  });
+  const pointer = record.atomicLedger;
+  const query = `key=${encodeURIComponent(record.buildId)}${pointer ? `&generation=${encodeURIComponent(pointer.generation)}` : ''}`;
+  const ledger = await read('/router/pre-aggregation-ledger', query);
+  const status = record.phase === 'ready'
+    ? await read('/router/build-status', `table=${encodeURIComponent(record.buildId)}`) : null;
+  assertAtomicLedgerProof(record, ledger, status);
+  return { ledger, physicalStatus: status };
+}
+
 async function manifests() {
   // CubeStore CACHE KEYS selects the colon-delimited namespace, not a
   // Redis-style arbitrary key prefix. Only inspect this run's returned keys.
@@ -93,7 +132,8 @@ async function manifests() {
     const phase = ['retired', 'ready', 'failed', 'create', 'uploaded', 'uploading', 'selected'].find(item => markers[item]);
     const tableIdentity = await read(`PRE_AGG_TABLE_ID_V1:${buildIdentity.buildId}`);
     const record = { ...(markers[phase] || buildIdentity), ...(tableIdentity === null ? {} : { tableId: tableIdentity }) };
-    result.push({ key, buildIdentity, immutableManifest, markers, tableIdentity, record });
+    const atomicProof = await observeAtomicLedger(record);
+    result.push({ key, buildIdentity, immutableManifest, markers, tableIdentity, record, atomicProof });
   }
   return result.sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -191,7 +231,8 @@ function transientObservationError(error) {
       ['MUTATION_UNKNOWN', 'MUTATION_NOT_DISPATCHED'].includes(error.code)) return false;
   if ([502, 503].includes(error.statusCode)) return true;
   if (error.statusCode && ![200, 400, 500].includes(error.statusCode)) return false;
-  if (/^HTTP (?:502|503) \/(?:router\/(?:status|build-status)|upload-temp-file-status):/.test(text)) return true;
+  if (/^HTTP (?:502|503) \/(?:router\/(?:status|build-status|pre-aggregation-ledger)|upload-temp-file-status):/.test(text)) return true;
+  if (/^Recovery metadata unavailable: HTTP (?:502|503)$/.test(text)) return true;
   if (/^(?:ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN)$/.test(error.code || '')) return true;
   return /^(?:ConnectionError:\s*)?CubeStore connection error:\s*(?:WrongConnection:\s*(?:Router is draining|NotLeader|LeaderNotReady)\b|(?:ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN)\b)/i.test(text);
 }
@@ -199,7 +240,7 @@ function transientObservationError(error) {
 async function retryObservation({ operation, request, deadline, availability, emit, now = Date.now, sleep = pause }) {
   const cacheRead = operation.kind === 'cache' && ['CACHE GET ?', 'CACHE KEYS ?'].includes(operation.sql);
   const statusRead = operation.kind === 'status' && operation.method === 'GET' &&
-    ['/router/build-status', '/router/status', '/upload-temp-file-status'].includes(operation.path);
+    ['/router/build-status', '/router/status', '/upload-temp-file-status', '/router/pre-aggregation-ledger'].includes(operation.path);
   assert.ok(cacheRead || statusRead, 'Observation retries are restricted to explicit read-only operations');
   let failures = 0;
   while (now() < deadline) {
@@ -357,7 +398,7 @@ async function main() {
 
   if (mode === 'drain-failover') {
     assert.ok(process.env.HA_OLD_LEADER_IP, 'A pinned old leader IP is required');
-    staleConnection = new WebSocketConnection(`ws://${process.env.HA_OLD_LEADER_IP}:3030/ws`);
+    staleConnection = new WebSocketConnection(`ws://${process.env.HA_OLD_LEADER_IP}:3030/ws`, driver.recoveryHeaders());
     await staleConnection.query('SELECT 1', [], { responseFormat: QueryResultFormat.Legacy });
   }
   proxy = await startProxy({ upstream, run, mode,

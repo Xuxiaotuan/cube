@@ -6,6 +6,9 @@ mod job_attempt_tests;
 pub mod listener;
 pub mod multi_index;
 pub mod partition;
+pub mod pre_aggregation_ledger;
+#[cfg(test)]
+mod pre_aggregation_ledger_tests;
 pub mod replay_handle;
 mod rocks_fs;
 mod rocks_store;
@@ -817,6 +820,24 @@ pub struct PartitionData {
 
 #[cuberpc::service(trace_guard = crate::trace::metastore_trace_guard)]
 pub trait MetaStore: DIService + Send + Sync {
+    async fn acquire_pre_aggregation_query_refs(
+        &self,
+        query_id: String,
+        table_ids: Vec<String>,
+    ) -> Result<pre_aggregation_ledger::LedgerQueryRefs, CubeError>;
+    async fn release_pre_aggregation_query_refs(
+        &self,
+        query_id: String,
+    ) -> Result<pre_aggregation_ledger::LedgerQueryRefs, CubeError>;
+    async fn mutate_pre_aggregation_ledger(
+        &self,
+        request: pre_aggregation_ledger::LedgerRequest,
+    ) -> Result<pre_aggregation_ledger::LedgerResult, CubeError>;
+    async fn get_pre_aggregation_ledger(
+        &self,
+        key: String,
+        generation: Option<String>,
+    ) -> Result<Option<pre_aggregation_ledger::LedgerRecord>, CubeError>;
     async fn wait_for_current_seq_to_sync(&self) -> Result<(), CubeError>;
     fn schemas_table(&self) -> SchemaMetaStoreTable;
     async fn create_schema(
@@ -2176,8 +2197,265 @@ impl RocksMetaStore {
     }
 }
 
+impl RocksMetaStore {
+    fn create_table_in_batch(
+        db_ref: DbTableRef<'_>,
+        batch_pipe: &mut BatchPipe<'_, RocksMetaStore>,
+        schema_name: String,
+        table_name: String,
+        columns: Vec<Column>,
+        locations: Option<Vec<String>>,
+        import_format: Option<ImportFormat>,
+        indexes: Vec<IndexDef>,
+        is_ready: bool,
+        build_range_end: Option<DateTime<Utc>>,
+        seal_at: Option<DateTime<Utc>>,
+        select_statement: Option<String>,
+        source_coulumns: Option<Vec<Column>>,
+        stream_offset: Option<StreamOffset>,
+        unique_key_column_names: Option<Vec<String>>,
+        aggregates: Option<Vec<(String, String)>>,
+        partition_split_threshold: Option<u64>,
+        trace_obj: Option<String>,
+        drop_if_exists: bool,
+        extension: Option<String>,
+    ) -> Result<IdRow<Table>, CubeError> {
+
+            batch_pipe.set_post_commit_callback(|metastore| {
+                metastore.cached_tables.reset();
+            });
+
+            if drop_if_exists {
+                if let Ok(exists_table) = get_table_impl(db_ref.clone(), schema_name.clone(), table_name.clone()) {
+                    RocksMetaStore::drop_table_impl(exists_table.get_id(), db_ref.clone(), batch_pipe)?;
+                }
+            }
+
+            let rocks_table = TableRocksTable::new(db_ref.clone());
+            let rocks_index = IndexRocksTable::new(db_ref.clone());
+            let rocks_schema = SchemaRocksTable::new(db_ref.clone());
+            let rocks_partition = PartitionRocksTable::new(db_ref.clone());
+            let rocks_multi_index = MultiIndexRocksTable::new(db_ref.clone());
+            let rocks_multi_partition = MultiPartitionRocksTable::new(db_ref.clone());
+            let trace_objects_table = TraceObjectRocksTable::new(db_ref.clone());
+
+            let schema_id =
+                rocks_schema.get_single_row_by_index(&schema_name, &SchemaRocksIndex::Name)?;
+            let mut table_columns = columns.clone();
+            let mut seq_column_index = None;
+            let unique_key_column_indices = if let Some(column_names) = unique_key_column_names {
+                let seq_column =
+                    Column::new("__seq".to_string(), ColumnType::Int, table_columns.len());
+                seq_column_index = Some(seq_column.column_index as u64);
+                table_columns.push(seq_column);
+                Some(
+                    column_names
+                        .iter()
+                        .map(|key_column| {
+                            let column = columns
+                                .iter()
+                                .find(|c| &c.name == key_column)
+                                .ok_or_else(|| {
+                                    CubeError::user(format!(
+                                        "Key column {} not found among column definitions {:?}",
+                                        key_column, columns
+                                    ))
+                                })?;
+                            Ok(column.column_index as u64)
+                        })
+                        .collect::<Result<Vec<u64>, CubeError>>()?,
+                )
+            } else {
+                None
+            };
+            let aggregate_column_indices = if let Some(ref aggrs) = aggregates {
+                let res = aggrs.iter()
+                    .map(|aggr| {
+                        let aggr_column = &aggr.1;
+                        let column = columns
+                            .iter()
+                            .find(|c| &c.name == aggr_column)
+                            .ok_or_else(|| {
+                                    CubeError::user(format!(
+                                        "Aggregate column {} not found among column definitions {:?}",
+                                        aggr_column, columns
+                                    ))
+                            })?;
+
+                        let index = column.column_index as u64;
+                        if let Some(unique_indices) = &unique_key_column_indices {
+                            if unique_indices.iter().find(|i| i == &&index).is_some() {
+                                return Err(CubeError::user(format!(
+                                            "Aggregate column {} is in unique key. A column can't be in an unique key and an aggregation at the same time",
+                                            aggr_column
+                                            )));
+                            }
+                        }
+                        let function = aggr.0.parse::<AggregateFunction>()?;
+
+                        if !function.allowed_for_type(&column.column_type) {
+                            return Err(CubeError::user(
+                                    format!(
+                                        "Aggregate function {} not allowed for column type {}",
+                                        function, &column.column_type
+                                        )
+                            ))
+                        }
+                        Ok(AggregateColumnIndex::new(index, function))
+                    })
+                .collect::<Result<Vec<_>,_>>()?;
+
+                res
+            } else {
+                vec![]
+            };
+            let table = Table::new(
+                table_name,
+                schema_id.get_id(),
+                table_columns.clone(),
+                locations,
+                import_format,
+                is_ready,
+                build_range_end,
+                seal_at,
+                select_statement,
+                source_coulumns,
+                stream_offset,
+                unique_key_column_indices,
+                aggregate_column_indices,
+                seq_column_index,
+                partition_split_threshold,
+                extension,
+            );
+            let table_id = rocks_table.insert(table, batch_pipe)?;
+
+            if let Some(trace_obj) = trace_obj {
+                let trace_object = TraceObject::new(table_id.get_id(), trace_obj);
+                trace_objects_table.insert(trace_object, batch_pipe)?;
+            }
+
+            for index_def in indexes.into_iter() {
+                let multi_index;
+                let mut multi_partitions;
+                match &index_def.multi_index {
+                    None => {
+                        multi_index = None;
+                        multi_partitions = vec![];
+                    }
+                    Some(mi) => {
+                        let mi = rocks_multi_index.get_single_row_by_index(
+                            &MultiIndexIndexKey::ByName(schema_id.get_id(), mi.clone()),
+                            &MultiIndexRocksIndex::ByName,
+                        )?;
+                        multi_partitions = rocks_multi_partition.get_rows_by_index(
+                            &MultiPartitionIndexKey::ByMultiIndexId(mi.get_id()),
+                            &MultiPartitionRocksIndex::ByMultiIndexId,
+                        )?;
+                        multi_partitions.retain(|m| m.row.active());
+                        multi_index = Some(mi);
+                    }
+                }
+                RocksMetaStore::add_index(
+                    batch_pipe,
+                    &rocks_index,
+                    &rocks_partition,
+                    &table_columns,
+                    &table_id,
+                    multi_index.as_ref(),
+                    &multi_partitions,
+                    index_def,
+                )?;
+            }
+
+            let aggr_column_names = if let Some(ref aggrs) = aggregates {
+                aggrs.iter()
+                    .map(|aggr| aggr.1.clone())
+                    .collect::<Vec<String>>()
+            } else {
+                vec![]
+            };
+            let def_index_columns = table_id
+                .get_row()
+                .unique_key_columns()
+                .map(|c| c.into_iter().map(|c| c.clone()).collect::<Vec<Column>>())
+                .unwrap_or(table_columns.clone())
+                .iter()
+                .filter_map(|c| match c.get_column_type() {
+                    ColumnType::Bytes => None,
+                    ColumnType::HyperLogLog(_) => None,
+                    _ => {
+                        if !aggr_column_names.contains(&c.get_name())
+                            && seq_column_index.is_none()
+                            || (seq_column_index.is_some()
+                                && c.get_index() as u64 != seq_column_index.unwrap())
+                        {
+                            Some(c.get_name().clone())
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect_vec();
+            RocksMetaStore::add_index(
+                batch_pipe,
+                &rocks_index,
+                &rocks_partition,
+                &table_columns,
+                &table_id,
+                None,
+                &[],
+                IndexDef {
+                    name: "default".to_string(),
+                    multi_index: None,
+                    columns: def_index_columns,
+                    index_type: IndexType::Regular
+                },
+            )?;
+
+            Ok(table_id)
+    }
+}
+
 #[async_trait]
 impl MetaStore for RocksMetaStore {
+    async fn acquire_pre_aggregation_query_refs(
+        &self,
+        query_id: String,
+        table_ids: Vec<String>,
+    ) -> Result<pre_aggregation_ledger::LedgerQueryRefs, CubeError> {
+        self.write_operation("acquire_pre_aggregation_query_refs", move |db, pipe| {
+            pre_aggregation_ledger::acquire_query_refs(&db, pipe, query_id, table_ids)
+        }).await
+    }
+
+    async fn release_pre_aggregation_query_refs(
+        &self,
+        query_id: String,
+    ) -> Result<pre_aggregation_ledger::LedgerQueryRefs, CubeError> {
+        self.write_operation("release_pre_aggregation_query_refs", move |db, pipe| {
+            pre_aggregation_ledger::release_query_refs(&db, pipe, query_id)
+        }).await
+    }
+
+    async fn mutate_pre_aggregation_ledger(
+        &self,
+        request: pre_aggregation_ledger::LedgerRequest,
+    ) -> Result<pre_aggregation_ledger::LedgerResult, CubeError> {
+        self.write_operation("mutate_pre_aggregation_ledger", move |db, pipe| {
+            pre_aggregation_ledger::mutate(db, pipe, request)
+        }).await
+    }
+
+    async fn get_pre_aggregation_ledger(
+        &self,
+        key: String,
+        generation: Option<String>,
+    ) -> Result<Option<pre_aggregation_ledger::LedgerRecord>, CubeError> {
+        self.read_operation("get_pre_aggregation_ledger", move |db| {
+            pre_aggregation_ledger::get(&db, &key, generation.as_deref())
+        }).await
+    }
+
     async fn wait_for_current_seq_to_sync(&self) -> Result<(), CubeError> {
         if !self.store.config.upload_to_remote() {
             return Err(CubeError::internal(
@@ -2409,198 +2687,7 @@ impl MetaStore for RocksMetaStore {
         extension: Option<String>,
     ) -> Result<IdRow<Table>, CubeError> {
         self.write_operation("create_table", move |db_ref, batch_pipe| {
-            batch_pipe.set_post_commit_callback(|metastore| {
-                metastore.cached_tables.reset();
-            });
-
-            if drop_if_exists {
-                if let Ok(exists_table) = get_table_impl(db_ref.clone(), schema_name.clone(), table_name.clone()) {
-                    RocksMetaStore::drop_table_impl(exists_table.get_id(), db_ref.clone(), batch_pipe)?;
-                }
-            }
-
-            let rocks_table = TableRocksTable::new(db_ref.clone());
-            let rocks_index = IndexRocksTable::new(db_ref.clone());
-            let rocks_schema = SchemaRocksTable::new(db_ref.clone());
-            let rocks_partition = PartitionRocksTable::new(db_ref.clone());
-            let rocks_multi_index = MultiIndexRocksTable::new(db_ref.clone());
-            let rocks_multi_partition = MultiPartitionRocksTable::new(db_ref.clone());
-            let trace_objects_table = TraceObjectRocksTable::new(db_ref.clone());
-
-            let schema_id =
-                rocks_schema.get_single_row_by_index(&schema_name, &SchemaRocksIndex::Name)?;
-            let mut table_columns = columns.clone();
-            let mut seq_column_index = None;
-            let unique_key_column_indices = if let Some(column_names) = unique_key_column_names {
-                let seq_column =
-                    Column::new("__seq".to_string(), ColumnType::Int, table_columns.len());
-                seq_column_index = Some(seq_column.column_index as u64);
-                table_columns.push(seq_column);
-                Some(
-                    column_names
-                        .iter()
-                        .map(|key_column| {
-                            let column = columns
-                                .iter()
-                                .find(|c| &c.name == key_column)
-                                .ok_or_else(|| {
-                                    CubeError::user(format!(
-                                        "Key column {} not found among column definitions {:?}",
-                                        key_column, columns
-                                    ))
-                                })?;
-                            Ok(column.column_index as u64)
-                        })
-                        .collect::<Result<Vec<u64>, CubeError>>()?,
-                )
-            } else {
-                None
-            };
-            let aggregate_column_indices = if let Some(ref aggrs) = aggregates {
-                let res = aggrs.iter()
-                    .map(|aggr| {
-                        let aggr_column = &aggr.1;
-                        let column = columns
-                            .iter()
-                            .find(|c| &c.name == aggr_column)
-                            .ok_or_else(|| {
-                                    CubeError::user(format!(
-                                        "Aggregate column {} not found among column definitions {:?}",
-                                        aggr_column, columns
-                                    ))
-                            })?;
-
-                        let index = column.column_index as u64;
-                        if let Some(unique_indices) = &unique_key_column_indices {
-                            if unique_indices.iter().find(|i| i == &&index).is_some() {
-                                return Err(CubeError::user(format!(
-                                            "Aggregate column {} is in unique key. A column can't be in an unique key and an aggregation at the same time",
-                                            aggr_column
-                                            )));
-                            }
-                        }
-                        let function = aggr.0.parse::<AggregateFunction>()?;
-
-                        if !function.allowed_for_type(&column.column_type) {
-                            return Err(CubeError::user(
-                                    format!(
-                                        "Aggregate function {} not allowed for column type {}",
-                                        function, &column.column_type
-                                        )
-                            ))
-                        }
-                        Ok(AggregateColumnIndex::new(index, function))
-                    })
-                .collect::<Result<Vec<_>,_>>()?;
-
-                res
-            } else {
-                vec![]
-            };
-            let table = Table::new(
-                table_name,
-                schema_id.get_id(),
-                table_columns.clone(),
-                locations,
-                import_format,
-                is_ready,
-                build_range_end,
-                seal_at,
-                select_statement,
-                source_coulumns,
-                stream_offset,
-                unique_key_column_indices,
-                aggregate_column_indices,
-                seq_column_index,
-                partition_split_threshold,
-                extension,
-            );
-            let table_id = rocks_table.insert(table, batch_pipe)?;
-
-            if let Some(trace_obj) = trace_obj {
-                let trace_object = TraceObject::new(table_id.get_id(), trace_obj);
-                trace_objects_table.insert(trace_object, batch_pipe)?;
-            }
-
-            for index_def in indexes.into_iter() {
-                let multi_index;
-                let mut multi_partitions;
-                match &index_def.multi_index {
-                    None => {
-                        multi_index = None;
-                        multi_partitions = vec![];
-                    }
-                    Some(mi) => {
-                        let mi = rocks_multi_index.get_single_row_by_index(
-                            &MultiIndexIndexKey::ByName(schema_id.get_id(), mi.clone()),
-                            &MultiIndexRocksIndex::ByName,
-                        )?;
-                        multi_partitions = rocks_multi_partition.get_rows_by_index(
-                            &MultiPartitionIndexKey::ByMultiIndexId(mi.get_id()),
-                            &MultiPartitionRocksIndex::ByMultiIndexId,
-                        )?;
-                        multi_partitions.retain(|m| m.row.active());
-                        multi_index = Some(mi);
-                    }
-                }
-                RocksMetaStore::add_index(
-                    batch_pipe,
-                    &rocks_index,
-                    &rocks_partition,
-                    &table_columns,
-                    &table_id,
-                    multi_index.as_ref(),
-                    &multi_partitions,
-                    index_def,
-                )?;
-            }
-
-            let aggr_column_names = if let Some(ref aggrs) = aggregates {
-                aggrs.iter()
-                    .map(|aggr| aggr.1.clone())
-                    .collect::<Vec<String>>()
-            } else {
-                vec![]
-            };
-            let def_index_columns = table_id
-                .get_row()
-                .unique_key_columns()
-                .map(|c| c.into_iter().map(|c| c.clone()).collect::<Vec<Column>>())
-                .unwrap_or(table_columns.clone())
-                .iter()
-                .filter_map(|c| match c.get_column_type() {
-                    ColumnType::Bytes => None,
-                    ColumnType::HyperLogLog(_) => None,
-                    _ => {
-                        if !aggr_column_names.contains(&c.get_name())
-                            && seq_column_index.is_none()
-                            || (seq_column_index.is_some()
-                                && c.get_index() as u64 != seq_column_index.unwrap())
-                        {
-                            Some(c.get_name().clone())
-                        } else {
-                            None
-                        }
-                    }
-                })
-                .collect_vec();
-            RocksMetaStore::add_index(
-                batch_pipe,
-                &rocks_index,
-                &rocks_partition,
-                &table_columns,
-                &table_id,
-                None,
-                &[],
-                IndexDef {
-                    name: "default".to_string(),
-                    multi_index: None,
-                    columns: def_index_columns,
-                    index_type: IndexType::Regular
-                },
-            )?;
-
-            Ok(table_id)
+            Self::create_table_in_batch(db_ref, batch_pipe, schema_name, table_name, columns, locations, import_format, indexes, is_ready, build_range_end, seal_at, select_statement, source_coulumns, stream_offset, unique_key_column_names, aggregates, partition_split_threshold, trace_obj, drop_if_exists, extension)
         })
         .await
     }

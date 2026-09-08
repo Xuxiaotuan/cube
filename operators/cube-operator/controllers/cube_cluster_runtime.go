@@ -324,6 +324,15 @@ func (r *CubeClusterReconciler) configurePod(ctx context.Context, c *v1alpha1.Cu
 	p := options.DeepCopy()
 	container := &t.Spec.Containers[index]
 	container.Env = mergeEnv(container.Env, p.Env)
+	if c.Spec.Authority != nil {
+		user, ref, err := cubeSQLAuth(c)
+		if err != nil {
+			return err
+		}
+		// Explicit derived values override envFrom without exposing Secret data.
+		// Only the Router process and Driver processes need SQL credentials.
+		container.Env = mergeEnv(container.Env, cubeSQLAuthEnvironment(user, ref, t.Labels[cubeComponentLabel]))
+	}
 	container.EnvFrom = p.EnvFrom
 	container.VolumeMounts = append(container.VolumeMounts, p.VolumeMounts...)
 	t.Spec.Volumes = append(t.Spec.Volumes, p.Volumes...)
@@ -516,6 +525,11 @@ func configurationReferences(c *v1alpha1.CubeCluster) []configReference {
 	return refs
 }
 func (r *CubeClusterReconciler) configurationDigest(ctx context.Context, c *v1alpha1.CubeCluster) (string, error) {
+	// Recheck through APIReader before each rendered workload, not just once
+	// before reconciliation. Never replace a missing user Secret with defaults.
+	if err := r.validateCubeSQLSecret(ctx, c); err != nil {
+		return "", err
+	}
 	data := map[string]any{}
 	for _, ref := range configurationReferences(c) {
 		key := client.ObjectKey{Namespace: c.Namespace, Name: ref.name}

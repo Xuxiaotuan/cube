@@ -1,0 +1,23 @@
+✔ PURE atomic proof requires authoritative publication and independent physical identity (1.817083ms)
+✔ PURE atomic proof rejects cache-only ready, stale identity and mismatched physical data (1.576375ms)
+✔ PURE load policy: explicit transients only, arbitrary 400/auth/SQL errors fail closed (1.325166ms)
+✔ PURE load polling: draining/503/ContinueWait recover with counted evidence (6.120459ms)
+✔ PURE load polling: ordinary errors stop immediately without retry (0.31325ms)
+✔ PURE load polling: observed receipt-loss MutationUnknownError retries only the load request (0.222667ms)
+✔ PURE load polling: continuous transient failure is bounded by 120s and original deadline (4.204125ms)
+✔ PURE load HTTP transport: retains HTML 502/503, refuses HTML 400 and preserves same request (14.888875ms)
+✔ PURE observation: real draining read retries same key and records recovery under original deadline (3.321334ms)
+✔ PURE observation: mutations are rejected before invoking any request (0.943625ms)
+✔ PURE observation: original deadline bounds repeated transients, GET status is allowed (1.472375ms)
+✔ PURE observation: permission/identity/SQL/mutation unknown errors fail immediately; failed states remain visible (0.376334ms)
+✔ PURE stale writer: accepts only matching request/server frame and exact TS drain mapping (0.851292ms)
+✔ PURE stale writer: transport/unknown/timeout/errors alone cannot prove fencing (0.875375ms)
+✔ PURE stale writer: rejects mismatched IDs/SQL/response types and missing or unrelated refusals (0.335875ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 134.065292

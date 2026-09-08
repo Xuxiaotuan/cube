@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { LedgerCreate, LedgerIdentity } from './AtomicPreAggregationLedger';
+import { MutationUnknownError } from './WebSocketConnection';
 
 export type BuildUpload = { name: string; sha256: string; size: number; path: string };
 
@@ -13,6 +15,11 @@ export type PreAggregationBuild = {
   tableId?: string | number;
   error?: string;
   createdAt?: number;
+  // Source intent and an authority locator, never a cache-based claim receipt.
+  atomicLedger?: LedgerIdentity;
+  atomicCreate?: LedgerCreate;
+  publishAttempt?: number;
+  retireAttempt?: number;
 };
 
 /** Business intent lives in the existing shared Cube Store CacheStore, without a TTL.
@@ -21,7 +28,7 @@ export type PreAggregationBuild = {
 export class PreAggregationBuildStore {
   private readonly prefix = 'PRE_AGG_BUILD_V1:';
 
-  public constructor(private readonly query: (sql: string, values: any[]) => Promise<any[]>) {}
+  public constructor(private readonly query: (sql: string, values: any[]) => Promise<any[]>, private readonly strict = false) {}
 
   private async get(key: string) {
     const rows = await this.query('CACHE GET ?', [key]);
@@ -42,6 +49,7 @@ export class PreAggregationBuildStore {
   public async read(table: string): Promise<PreAggregationBuild | null> {
     const identity: PreAggregationBuild | null = await this.get(`${this.prefix}${table}`);
     if (!identity) return null;
+    if (this.strict) return identity;
     // Immutable phase markers make progress monotonic even when a stale queue
     // owner writes after another worker completed the build.
     let record = identity;
@@ -57,6 +65,33 @@ export class PreAggregationBuildStore {
   }
 
   public async save(record: PreAggregationBuild): Promise<void> {
+    if (this.strict) {
+      if (!record.atomicLedger || record.atomicLedger.key !== record.buildId) {
+        throw new MutationUnknownError(`Missing atomic ledger locator: ${record.buildId}`);
+      }
+      const current = await this.read(record.buildId);
+      for (const field of ['atomicLedger', 'create', 'atomicCreate', 'manifestHash'] as const) {
+        if (current?.[field] !== undefined && record[field] !== undefined &&
+            JSON.stringify(current[field]) !== JSON.stringify(record[field])) {
+          throw new MutationUnknownError(`Conflicting source intent ${field}: ${record.buildId}`);
+        }
+      }
+      if (current?.tableId != null && record.tableId != null && String(current.tableId) !== String(record.tableId)) {
+        throw new MutationUnknownError(`Conflicting source table identity: ${record.buildId}`);
+      }
+      const next = { ...current, ...record,
+        protectedTables: [...new Set([...(current?.protectedTables || []), ...record.protectedTables])],
+        publishAttempt: Math.max(current?.publishAttempt || 0, record.publishAttempt || 0),
+        retireAttempt: Math.max(current?.retireAttempt || 0, record.retireAttempt || 0),
+      };
+      if (current && ['ready', 'retired'].includes(current.phase) && !['ready', 'retired'].includes(next.phase)) {
+        next.phase = current.phase;
+      }
+      // This ordinary cache write is only a recovery aid. All mutations and
+      // publication are fenced by the authoritative ledger, not this read/write.
+      await this.set(`${this.prefix}${record.buildId}`, next);
+      return;
+    }
     if (record.create) {
       // Paths belong to one worker. Only immutable transmitted bytes and the
       // complete CREATE fingerprint participate in shared manifest identity.
@@ -85,6 +120,7 @@ export class PreAggregationBuildStore {
   }
 
   public async resolve(key: string, candidate: PreAggregationBuild, force = false): Promise<PreAggregationBuild> {
+    if (this.strict) throw new MutationUnknownError('Strict build selection requires the atomic ledger');
     candidate = { ...candidate, createdAt: candidate.createdAt ?? Date.now() };
     // NX selects one durable target before enqueueing. Terminal attempts form a
     // chain so retiring an old attempt cannot remove another worker's new claim.
